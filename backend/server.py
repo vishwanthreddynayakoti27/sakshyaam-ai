@@ -623,12 +623,21 @@ def convert_to_third_person_fir(text: str) -> str:
     return result
 
 
+@api_router.post("/fir/analyze-errors", response_model=ErrorAnalysisResponse)
+async def analyze_fir_errors(
+    complaint_text: str = Form(...),
+    officer_id: str = Depends(get_current_officer)
+):
+    analysis = analyze_complaint_errors(complaint_text)
+    return ErrorAnalysisResponse(**analysis)
+
+
 @api_router.post("/fir/create", response_model=FIRDraft)
 async def create_fir_draft(
     complaint_text: str = Form(...),
     officer_id: str = Depends(get_current_officer)
 ):
-    fir_text = format_to_legal_text(complaint_text)
+    fir_text = convert_to_third_person_fir(complaint_text)
     
     fir_draft = FIRDraft(
         officer_id=officer_id,
