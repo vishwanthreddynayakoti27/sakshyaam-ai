@@ -1,0 +1,131 @@
+{
+  "project_name": "NYAYA PRAHARI",
+  "identity": {
+    "persona": "E1",
+    "mission": "Build a Dark Cyber-Guardian Intelligence Dashboard for Police",
+    "tone": "Authoritative, Secure, Government-Professional, High-Tech",
+    "aesthetic": "Dark Mode, Neon Accents, Glassmorphism, Cyber-Security"
+  },
+  "theme": {
+    "mode": "dark",
+    "colors": {
+      "primary": "#0A0A1B",
+      "secondary": "#11112b",
+      "accent": "#00F2FF",
+      "alert": "#FF3131",
+      "success": "#00FF94",
+      "warning": "#FFB800",
+      "text": {
+        "primary": "#FFFFFF",
+        "secondary": "#94A3B8",
+        "muted": "#64748B"
+      },
+      "border": "rgba(255, 255, 255, 0.1)",
+      "glass": "rgba(10, 10, 27, 0.6)"
+    },
+    "gradients": {
+      "primary": "linear-gradient(180deg, rgba(10,10,27,0) 0%, rgba(10,10,27,0.8) 100%)",
+      "accent_glow": "0 0 20px rgba(0, 242, 255, 0.3)",
+      "alert_glow": "0 0 20px rgba(255, 49, 49, 0.3)"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Rajdhani, sans-serif",
+      "body": "Inter, sans-serif",
+      "code": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-5xl font-bold tracking-tight",
+      "h2": "text-4xl font-bold tracking-tight",
+      "h3": "text-3xl font-semibold",
+      "h4": "text-2xl font-semibold",
+      "body_lg": "text-lg leading-relaxed",
+      "body_base": "text-base leading-relaxed",
+      "caption": "text-sm text-muted-foreground"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');"
+    ]
+  },
+  "layout": {
+    "grid_system": "Bento Grid (CSS Grid)",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "spacing": {
+      "section_gap": "gap-8",
+      "component_padding": "p-6"
+    },
+    "sidebar": {
+      "width": "w-64",
+      "collapsed_width": "w-20",
+      "style": "fixed left-0 h-full border-r border-white/10 bg-black/40 backdrop-blur-xl z-50"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-accent text-black font-bold hover:bg-accent/80 transition-all duration-300 shadow-[0_0_15px_rgba(0,242,255,0.4)] rounded-sm uppercase tracking-wider",
+      "secondary": "bg-transparent border border-accent/50 text-accent hover:bg-accent/10 transition-all duration-300 rounded-sm uppercase tracking-wider",
+      "alert": "bg-alert/10 border border-alert text-alert hover:bg-alert/20 transition-all duration-300 rounded-sm shadow-[0_0_15px_rgba(255,49,49,0.2)]",
+      "ghost": "hover:bg-white/5 text-white/80 hover:text-white transition-all rounded-sm"
+    },
+    "cards": {
+      "base": "bg-black/40 backdrop-blur-md border border-white/10 rounded-lg overflow-hidden transition-all duration-300 hover:border-accent/30 hover:shadow-[0_0_20px_rgba(0,242,255,0.1)]",
+      "glass": "bg-white/5 backdrop-blur-xl border border-white/10 shadow-lg rounded-xl",
+      "interactive": "group relative overflow-hidden bg-gradient-to-br from-white/5 to-transparent border border-white/10 hover:border-accent/50 transition-all duration-500"
+    },
+    "inputs": {
+      "base": "bg-black/20 border border-white/10 focus:border-accent focus:ring-1 focus:ring-accent/50 rounded-md py-2 px-4 text-white placeholder:text-white/30 transition-all",
+      "file_upload": "border-2 border-dashed border-white/20 hover:border-accent/50 bg-white/5 hover:bg-white/10 transition-all rounded-xl p-8 text-center cursor-pointer"
+    }
+  },
+  "image_assets": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1746470427657-eb0b0115455f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Cyber Data Flow Abstract",
+      "usage": "Login Page Background, Dashboard Hero Overlay"
+    },
+    "module_thumbnails": [
+      {
+        "category": "Language Intelligence",
+        "url": "https://images.unsplash.com/photo-1759771963975-8a4885446f1f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwyfHxkaWdpdGFsJTIwc291bmQlMjB3YXZlJTIwbmVvbiUyMHRlY2hub2xvZ3l8ZW58MHx8fHwxNzcyMzg0MzI1fDA&ixlib=rb-4.1.0&q=85",
+        "alt": "Digital Sound Wave",
+        "usage": "Audio/Language Module Card"
+      },
+      {
+        "category": "CDR Analysis",
+        "url": "https://images.unsplash.com/photo-1746470427686-4c3551f3d689?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Network Nodes Abstract",
+        "usage": "CDR Analyzer Module Card"
+      },
+      {
+        "category": "General Tech",
+        "url": "https://images.unsplash.com/photo-1746470427617-91e8dd28298d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHw0fHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Blue Green Abstract",
+        "usage": "BNS/General Module Card"
+      }
+    ]
+  },
+  "universal_guidelines": [
+    "Always use 'Rajdhani' font for headings to maintain the cyber-guardian aesthetic.",
+    "Use 'Lucide-React' icons with a stroke width of 1.5px for a clean look.",
+    "Implement a 'Glassmorphism' effect for all major containers (bg-black/40 + backdrop-blur).",
+    "Use the neon cyan (#00F2FF) sparingly for high-priority actions and active states.",
+    "Ensure all text has sufficient contrast against dark backgrounds (Text-White or Text-Slate-300).",
+    "Add 'data-testid' to all interactive elements for testing.",
+    "Do NOT use rounded-full buttons; prefer sharp or slightly rounded (rounded-sm/md) for authoritative feel.",
+    "All forms must have validation feedback (Red border + Error message).",
+    "Use 'Sonner' for toast notifications, styled with dark background and neon borders."
+  ],
+  "accessibility": {
+    "contrast": "Ensure 4.5:1 contrast ratio for normal text.",
+    "focus_states": "Visible neon cyan ring on focus.",
+    "reduced_motion": "Respect prefers-reduced-motion media query."
+  },
+  "instructions_to_main_agent": [
+    "Install 'lucide-react' and 'recharts' if not present.",
+    "Update 'tailwind.config.js' to include the custom colors and font families.",
+    "Create a 'Layout' component that handles the Sidebar and Topbar structure.",
+    "Use the provided image URLs for the respective sections.",
+    "Follow the 'Bento Grid' layout for the Dashboard home."
+  ]
+}
