@@ -10,7 +10,9 @@ import {
   User, 
   LogOut,
   Menu,
-  X
+  X,
+  Shield,
+  DollarSign
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
