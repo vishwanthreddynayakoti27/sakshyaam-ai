@@ -947,6 +947,89 @@ async def get_fraud_request(fraud_id: str, officer_id: str = Depends(get_current
     return FraudRequest(**fraud_req)
 
 
+@api_router.post("/remand/create", response_model=RemandReport)
+async def create_remand_report(
+    remand_data: RemandReportCreate,
+    officer_id: str = Depends(get_current_officer)
+):
+    fir = await db.fir_drafts.find_one({"id": remand_data.fir_id, "officer_id": officer_id}, {"_id": 0})
+    if not fir:
+        raise HTTPException(status_code=404, detail="FIR draft not found")
+    
+    today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+    
+    report_text = f"""REMAND REPORT
+
+Date: {today}
+
+To,
+The Honorable Judicial Magistrate
+
+Subject: Request for {remand_data.remand_type} of the accused
+
+Respected Sir/Madam,
+
+It is most respectfully submitted that:
+
+1. The accused, {remand_data.accused_name}, has been arrested in connection with the investigation of the above-mentioned FIR.
+
+2. The accused has been charged under the following sections:
+   {remand_data.charges}
+
+3. GROUNDS FOR REMAND:
+   
+   a) The investigation in this case is at a crucial stage and requires further interrogation of the accused to uncover the complete facts and circumstances of the case.
+   
+   b) The accused's custodial interrogation is necessary to recover evidence, identify co-conspirators (if any), and establish the chain of events.
+   
+   c) The presence of the accused is required for conducting identification parades, scene reconstruction, and other investigative procedures.
+   
+   d) There is a reasonable apprehension that if released, the accused may tamper with evidence, influence witnesses, or abscond from justice.
+
+4. DURATION REQUESTED:
+   It is, therefore, most respectfully prayed that the accused be remanded to {remand_data.remand_type.lower()} for a period of {remand_data.remand_duration} to facilitate proper investigation and ensure that justice is served.
+
+5. The investigation is being conducted in accordance with the provisions of the Code of Criminal Procedure, 1973, and all legal safeguards are being observed.
+
+It is, therefore, most humbly prayed that this Honorable Court may be pleased to grant the remand of the accused as requested above.
+
+Thanking you,
+
+Yours faithfully,
+
+[Investigating Officer]
+[Police Station]
+Date: {today}
+"""
+    
+    remand_report = RemandReport(
+        officer_id=officer_id,
+        fir_id=remand_data.fir_id,
+        accused_name=remand_data.accused_name,
+        charges=remand_data.charges,
+        remand_duration=remand_data.remand_duration,
+        remand_type=remand_data.remand_type,
+        report_text=report_text
+    )
+    
+    doc = remand_report.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.remand_reports.insert_one(doc)
+    
+    return remand_report
+
+
+@api_router.get("/remand/list", response_model=List[RemandReport])
+async def list_remand_reports(officer_id: str = Depends(get_current_officer)):
+    reports = await db.remand_reports.find({"officer_id": officer_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    for report in reports:
+        if isinstance(report.get('created_at'), str):
+            report['created_at'] = datetime.fromisoformat(report['created_at'])
+    
+    return reports
+
+
 app.include_router(api_router)
 
 app.add_middleware(
