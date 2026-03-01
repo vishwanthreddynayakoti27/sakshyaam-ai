@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Languages, FileText, Scale, Phone, ArrowRight, Zap } from 'lucide-react';
+import { Languages, FileText, Scale, Phone, ArrowRight, Zap, Shield, DollarSign } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 
