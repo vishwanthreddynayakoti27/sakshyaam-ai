@@ -692,6 +692,133 @@ async def get_cdr_records(
     return {"records": records, "count": len(records)}
 
 
+@api_router.post("/forensic/analyze", response_model=ForensicAnalysisResponse)
+async def analyze_media_forensic(
+    file: UploadFile = File(...),
+    officer_id: str = Depends(get_current_officer)
+):
+    try:
+        contents = await file.read()
+        file_size = len(contents)
+        
+        MAX_SIZE = 50 * 1024 * 1024
+        if file_size > MAX_SIZE:
+            raise HTTPException(status_code=400, detail=f"File too large. Maximum size is 50MB")
+        
+        file_ext = file.filename.split('.')[-1].lower()
+        allowed_video = ['mp4', 'mov', 'avi']
+        allowed_audio = ['wav', 'mp3', 'm4a']
+        
+        if file_ext in allowed_video:
+            media_type = 'video'
+        elif file_ext in allowed_audio:
+            media_type = 'audio'
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Only MP4, MOV, AVI, WAV, MP3, M4A are allowed")
+        
+        import random
+        probability_score = round(random.uniform(15, 85), 2)
+        
+        if probability_score < 40:
+            confidence_level = "High"
+            risk_level = "Low"
+        elif probability_score < 70:
+            confidence_level = "Medium"
+            risk_level = "Medium"
+        else:
+            confidence_level = "Low"
+            risk_level = "High"
+        
+        spectral_data = [round(random.uniform(0.3, 0.9), 2) for _ in range(20)]
+        
+        analysis_details = {
+            "file_size": file_size,
+            "duration_estimate": "N/A",
+            "frame_consistency": "Pending ML integration",
+            "audio_artifacts": "Pending ML integration"
+        }
+        
+        forensic_report = ForensicReport(
+            officer_id=officer_id,
+            file_name=file.filename,
+            media_type=media_type,
+            probability_score=probability_score,
+            confidence_level=confidence_level,
+            analysis_details=analysis_details
+        )
+        
+        doc = forensic_report.model_dump()
+        doc['created_at'] = doc['created_at'].isoformat()
+        await db.forensic_reports.insert_one(doc)
+        
+        return ForensicAnalysisResponse(
+            report_id=forensic_report.id,
+            probability_score=probability_score,
+            confidence_level=confidence_level,
+            risk_level=risk_level,
+            spectral_data=spectral_data,
+            analysis_summary=f"Preliminary analysis complete. {risk_level} risk indicators detected.",
+            message="Mock analysis complete. Production ML models pending integration."
+        )
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Forensic analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@api_router.get("/forensic/reports", response_model=List[ForensicReport])
+async def get_forensic_reports(officer_id: str = Depends(get_current_officer)):
+    reports = await db.forensic_reports.find({"officer_id": officer_id}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    
+    for report in reports:
+        if isinstance(report.get('created_at'), str):
+            report['created_at'] = datetime.fromisoformat(report['created_at'])
+    
+    return reports
+
+
+@api_router.post("/fraud/create", response_model=FraudRequest)
+async def create_fraud_request(
+    fraud_data: FraudRequestCreate,
+    officer_id: str = Depends(get_current_officer)
+):
+    fraud_request = FraudRequest(
+        officer_id=officer_id,
+        **fraud_data.model_dump()
+    )
+    
+    doc = fraud_request.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.fraud_requests.insert_one(doc)
+    
+    return fraud_request
+
+
+@api_router.get("/fraud/list", response_model=List[FraudRequest])
+async def list_fraud_requests(officer_id: str = Depends(get_current_officer)):
+    requests = await db.fraud_requests.find({"officer_id": officer_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    for req in requests:
+        if isinstance(req.get('created_at'), str):
+            req['created_at'] = datetime.fromisoformat(req['created_at'])
+    
+    return requests
+
+
+@api_router.get("/fraud/{fraud_id}", response_model=FraudRequest)
+async def get_fraud_request(fraud_id: str, officer_id: str = Depends(get_current_officer)):
+    fraud_req = await db.fraud_requests.find_one({"id": fraud_id, "officer_id": officer_id}, {"_id": 0})
+    if not fraud_req:
+        raise HTTPException(status_code=404, detail="Fraud request not found")
+    
+    if isinstance(fraud_req.get('created_at'), str):
+        fraud_req['created_at'] = datetime.fromisoformat(fraud_req['created_at'])
+    
+    return FraudRequest(**fraud_req)
+
+
 app.include_router(api_router)
 
 app.add_middleware(
