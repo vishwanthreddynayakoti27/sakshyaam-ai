@@ -12,11 +12,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
-from google.cloud import vision
-from google.oauth2 import service_account
 import base64
-import io
-from PIL import Image
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
