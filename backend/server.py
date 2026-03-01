@@ -312,7 +312,20 @@ async def process_ocr(
             ]
         }
         
-        vision_response = requests.post(vision_api_url, json=request_body)
+        vision_response = requests.post(vision_api_url, json=request_body, timeout=30)
+        
+        if vision_response.status_code == 400:
+            error_data = vision_response.json()
+            error_msg = error_data.get('error', {}).get('message', 'Invalid API key')
+            logger.warning(f"Vision API key invalid: {error_msg}")
+            return OCRResponse(
+                original_text="",
+                detected_language="",
+                translated_text="",
+                legal_text="",
+                confidence_score=0.0,
+                message="Google Vision API key is invalid. Please verify: 1) API key is correct, 2) Vision API is enabled in Google Cloud Console, 3) Billing is enabled for your project. Contact support for assistance."
+            )
         
         if vision_response.status_code != 200:
             error_msg = vision_response.json().get('error', {}).get('message', 'Vision API error')
@@ -323,7 +336,7 @@ async def process_ocr(
                 translated_text="",
                 legal_text="",
                 confidence_score=0.0,
-                message=f"Vision API Error: {error_msg}. Please verify your API key is valid and Vision API is enabled in Google Cloud Console."
+                message=f"Vision API Error: {error_msg}"
             )
         
         result = vision_response.json()
@@ -379,9 +392,26 @@ async def process_ocr(
             message="OCR processing successful. Translation API can be enabled by adding billing to your Google Cloud project."
         )
         
+    except requests.exceptions.RequestException as e:
+        logger.error(f"OCR request error: {str(e)}")
+        return OCRResponse(
+            original_text="",
+            detected_language="",
+            translated_text="",
+            legal_text="",
+            confidence_score=0.0,
+            message="Network error connecting to Vision API. Please check your internet connection."
+        )
     except Exception as e:
         logger.error(f"OCR processing error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"OCR processing failed: {str(e)}")
+        return OCRResponse(
+            original_text="",
+            detected_language="",
+            translated_text="",
+            legal_text="",
+            confidence_score=0.0,
+            message=f"OCR processing failed: {str(e)}"
+        )
 
 
 @api_router.post("/translate/process")
