@@ -295,18 +295,43 @@ async def process_ocr(
                 message="Google Vision API key not configured. Please add GOOGLE_VISION_API_KEY to backend .env file."
             )
         
-        image_client = vision.ImageAnnotatorClient(
-            client_options={"api_key": GOOGLE_VISION_API_KEY}
-        )
+        import requests
+        encoded_image = base64.b64encode(contents).decode('utf-8')
         
-        image = vision.Image(content=contents)
-        response = image_client.text_detection(image=image)
+        vision_api_url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_VISION_API_KEY}"
         
-        if response.error.message:
-            raise HTTPException(status_code=500, detail=f"Vision API Error: {response.error.message}")
+        request_body = {
+            "requests": [
+                {
+                    "image": {
+                        "content": encoded_image
+                    },
+                    "features": [
+                        {
+                            "type": "TEXT_DETECTION"
+                        }
+                    ]
+                }
+            ]
+        }
         
-        texts = response.text_annotations
-        if not texts:
+        vision_response = requests.post(vision_api_url, json=request_body)
+        
+        if vision_response.status_code != 200:
+            error_msg = vision_response.json().get('error', {}).get('message', 'Vision API error')
+            logger.error(f"Vision API error: {error_msg}")
+            return OCRResponse(
+                original_text="",
+                detected_language="",
+                translated_text="",
+                legal_text="",
+                confidence_score=0.0,
+                message=f"Vision API Error: {error_msg}. Please verify your API key is valid and Vision API is enabled in Google Cloud Console."
+            )
+        
+        result = vision_response.json()
+        
+        if 'responses' not in result or not result['responses']:
             return OCRResponse(
                 original_text="",
                 detected_language="Unknown",
@@ -316,8 +341,20 @@ async def process_ocr(
                 message="No text detected in the image"
             )
         
-        detected_text = texts[0].description
-        detected_language = response.text_annotations[0].locale if hasattr(response.text_annotations[0], 'locale') else "Unknown"
+        text_annotations = result['responses'][0].get('textAnnotations', [])
+        
+        if not text_annotations:
+            return OCRResponse(
+                original_text="",
+                detected_language="Unknown",
+                translated_text="No text detected in the image",
+                legal_text="",
+                confidence_score=0.0,
+                message="No text detected in the image"
+            )
+        
+        detected_text = text_annotations[0].get('description', '')
+        detected_language = text_annotations[0].get('locale', 'Unknown')
         
         translated_text = detected_text
         legal_text = format_to_legal_text(detected_text)
