@@ -8,6 +8,8 @@ import LanguageIntelligence from './pages/LanguageIntelligence';
 import FIRDraftAssistant from './pages/FIRDraftAssistant';
 import BNSIntelligence from './pages/BNSIntelligence';
 import CDRAnalyzer from './pages/CDRAnalyzer';
+import MediaForensic from './pages/MediaForensic';
+import FraudRecovery from './pages/FraudRecovery';
 import Profile from './pages/Profile';
 import './App.css';
 
@@ -37,6 +39,8 @@ function App() {
           <Route path="/fir-draft" element={<ProtectedRoute><FIRDraftAssistant /></ProtectedRoute>} />
           <Route path="/bns-intelligence" element={<ProtectedRoute><BNSIntelligence /></ProtectedRoute>} />
           <Route path="/cdr-analyzer" element={<ProtectedRoute><CDRAnalyzer /></ProtectedRoute>} />
+          <Route path="/media-forensic" element={<ProtectedRoute><MediaForensic /></ProtectedRoute>} />
+          <Route path="/fraud-recovery" element={<ProtectedRoute><FraudRecovery /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
