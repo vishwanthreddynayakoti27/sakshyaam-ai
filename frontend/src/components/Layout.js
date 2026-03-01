@@ -41,6 +41,8 @@ const Layout = ({ children }) => {
     { icon: FileText, label: 'FIR Draft Assistant', path: '/fir-draft' },
     { icon: Scale, label: 'BNS Intelligence', path: '/bns-intelligence' },
     { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
+    { icon: Shield, label: 'Media Forensic', path: '/media-forensic' },
+    { icon: DollarSign, label: 'Fraud Recovery', path: '/fraud-recovery' },
   ];
 
   return (
