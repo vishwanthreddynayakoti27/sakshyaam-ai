@@ -40,6 +40,22 @@ const Dashboard = () => {
       path: '/cdr-analyzer',
       image: 'https://images.unsplash.com/photo-1746470427686-4c3551f3d689?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85',
       highlight: false
+    },
+    {
+      icon: Shield,
+      title: 'Media Forensic Validator',
+      description: 'Preliminary deepfake detection for audio/video evidence',
+      path: '/media-forensic',
+      image: 'https://images.unsplash.com/photo-1746470427657-eb0b0115455f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85',
+      highlight: false
+    },
+    {
+      icon: DollarSign,
+      title: 'Fraud Recovery Assistant',
+      description: 'Generate bank lien/freezing request letters',
+      path: '/fraud-recovery',
+      image: 'https://images.unsplash.com/photo-1746470427617-91e8dd28298d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHw0fHxibHVlJTIwZGF0YSUyMG5ldHdvcmslMjBhYnN0cmFjdHxlbnwwfHx8fDE3NzIzODQzMzF8MA&ixlib=rb-4.1.0&q=85',
+      highlight: false
     }
   ];
 
