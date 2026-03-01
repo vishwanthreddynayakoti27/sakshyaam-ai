@@ -504,6 +504,99 @@ def format_to_legal_text(text: str) -> str:
     return text
 
 
+def analyze_complaint_errors(text: str) -> dict:
+    """Analyze complaint text for common errors"""
+    errors = []
+    
+    first_person_count = text.lower().count(" i ") + text.lower().count("my ") + text.lower().count("me ")
+    third_person_count = text.lower().count("the complainant")
+    
+    if first_person_count > 0 and third_person_count > 0:
+        errors.append("Mixed narrative voice detected (both first and third person)")
+    
+    complainant_count = text.lower().count("the complainant")
+    if complainant_count > 5:
+        errors.append(f"Overuse of 'the complainant' ({complainant_count} times) - consider using pronouns")
+    
+    sentences = text.split('.')
+    verb_issues = 0
+    for sentence in sentences:
+        if 'the complainant' in sentence.lower():
+            if ' request ' in sentence or ' inform ' in sentence or ' state ' in sentence:
+                verb_issues += 1
+    
+    if verb_issues > 0:
+        errors.append(f"Potential verb agreement issues detected ({verb_issues} instances)")
+    
+    return {
+        "has_errors": len(errors) > 0,
+        "error_count": len(errors),
+        "errors": errors,
+        "first_person_count": first_person_count,
+        "third_person_count": third_person_count
+    }
+
+
+def convert_to_third_person_fir(text: str) -> str:
+    """Convert first-person complaint to formal third-person FIR"""
+    lines = text.split('\n')
+    converted_lines = []
+    complainant_name = None
+    
+    for line in lines:
+        if not line.strip():
+            converted_lines.append(line)
+            continue
+        
+        converted_line = line
+        
+        if converted_line.lower().startswith('i,'):
+            parts = converted_line.split(',', 2)
+            if len(parts) >= 2:
+                complainant_name = parts[1].strip()
+                if len(parts) == 3:
+                    converted_line = f"The complainant, {complainant_name},{parts[2]}"
+                else:
+                    converted_line = f"The complainant, {complainant_name}"
+        
+        converted_line = converted_line.replace(" I ", " the complainant ")
+        converted_line = converted_line.replace(" my ", " the complainant's ")
+        converted_line = converted_line.replace(" me ", " the complainant ")
+        converted_line = converted_line.replace(" mine ", " the complainant's ")
+        converted_line = converted_line.replace(" myself ", " the complainant ")
+        
+        if complainant_name and "the complainant" in converted_line.lower():
+            count = converted_line.lower().count("the complainant")
+            if count > 2:
+                parts = converted_line.split("the complainant")
+                result = parts[0] + "the complainant"
+                for i, part in enumerate(parts[1:], 1):
+                    if i == 1:
+                        result += part
+                    elif i == 2:
+                        result += "he/she" + part
+                    else:
+                        result += "the said person" + part
+                converted_line = result
+        
+        if converted_line.strip() and not converted_line.strip().startswith('It is'):
+            if converted_line[0].isupper():
+                converted_line = "It is submitted that " + converted_line[0].lower() + converted_line[1:]
+        
+        converted_lines.append(converted_line)
+    
+    result = '\n'.join(converted_lines)
+    
+    result = result.replace(" want to ", " wants to ")
+    result = result.replace(" wish to ", " wishes to ")
+    result = result.replace(" request ", " requests ")
+    result = result.replace(" state ", " states ")
+    result = result.replace(" inform ", " informs ")
+    result = result.replace(" report ", " reports ")
+    
+    return result
+
+
 @api_router.post("/fir/create", response_model=FIRDraft)
 async def create_fir_draft(
     complaint_text: str = Form(...),
