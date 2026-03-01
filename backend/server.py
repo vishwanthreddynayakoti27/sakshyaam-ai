@@ -192,6 +192,32 @@ class FraudRequestCreate(BaseModel):
     investigating_officer: str
     fir_number: Optional[str] = ""
 
+class ErrorAnalysisResponse(BaseModel):
+    has_errors: bool
+    error_count: int
+    errors: List[str]
+    first_person_count: int
+    third_person_count: int
+
+class RemandReport(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    officer_id: str
+    fir_id: str
+    accused_name: str
+    charges: str
+    remand_duration: str
+    remand_type: str
+    report_text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RemandReportCreate(BaseModel):
+    fir_id: str
+    accused_name: str
+    charges: str
+    remand_duration: str
+    remand_type: str
+
 class OCRResponse(BaseModel):
     original_text: str
     detected_language: str
