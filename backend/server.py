@@ -142,6 +142,56 @@ class CDRRecord(BaseModel):
     cell_tower: str
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class ForensicReport(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    officer_id: str
+    file_name: str
+    media_type: str
+    probability_score: float
+    confidence_level: str
+    analysis_details: dict
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ForensicAnalysisResponse(BaseModel):
+    report_id: str
+    probability_score: float
+    confidence_level: str
+    risk_level: str
+    spectral_data: List[float]
+    analysis_summary: str
+    message: str
+
+class FraudRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    officer_id: str
+    victim_name: str
+    complainant_contact: str
+    transaction_id: str
+    bank_name: str
+    account_number: Optional[str] = ""
+    ifsc_code: Optional[str] = ""
+    amount: float
+    transaction_date: str
+    police_station: str
+    investigating_officer: str
+    fir_number: Optional[str] = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class FraudRequestCreate(BaseModel):
+    victim_name: str
+    complainant_contact: str
+    transaction_id: str
+    bank_name: str
+    account_number: Optional[str] = ""
+    ifsc_code: Optional[str] = ""
+    amount: float
+    transaction_date: str
+    police_station: str
+    investigating_officer: str
+    fir_number: Optional[str] = ""
+
 class OCRResponse(BaseModel):
     original_text: str
     detected_language: str
