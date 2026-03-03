@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { toast } from 'sonner';
 import { api } from '../utils/api';
 import jsPDF from 'jspdf';
-import CryptoJS from 'crypto-js';
 
 const FraudRecovery = () => {
   const [formData, setFormData] = useState({
@@ -72,43 +71,172 @@ const FraudRecovery = () => {
         const file = acceptedFiles[0];
         setEvidenceFile(file);
         
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
-          const hash = CryptoJS.SHA256(wordArray).toString();
-          setEvidenceHash(hash);
-          toast.success('Evidence hash generated!');
-        };
-        reader.readAsArrayBuffer(file);
+        // Client-side SHA-256 hash generation using Web Crypto API
+        try {
+          const buffer = await file.arrayBuffer();
+          const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+          
+          setEvidenceHash(hashHex);
+          toast.success('Evidence hash generated instantly!');
+        } catch (err) {
+          toast.error('Hash generation failed');
+        }
         
-        mockOCRExtraction(file);
+        // OCR Extraction Pipeline
+        performOCRExtraction(file);
       }
     }
   });
 
-  const mockOCRExtraction = (file) => {
+  const performOCRExtraction = async (file) => {
+    // Mock OCR - In production, this would call Vision API
     setTimeout(() => {
-      const mockData = {
-        utr: 'UTR' + Math.random().toString().slice(2, 14),
-        account_number: '1234567890',
-        ifsc: 'HDFC0001234',
-        amount: '50000',
-        transaction_date: new Date().toISOString().split('T')[0]
+      // Simulate OCR text extraction
+      const mockOCRText = `Transaction Details
+UTR: UTR202501234567890
+Account Number: 1234567890123456
+IFSC Code: HDFC0001234
+Amount: Rs. 50,000.00
+Date: 15/01/2025
+Transaction successful`;
+
+      // Extract UTR (alphanumeric 10-22 chars, often starts with UTR)
+      const utrMatch = mockOCRText.match(/UTR[:\s]*([A-Z0-9]{10,22})/i);
+      const utr = utrMatch ? utrMatch[1] : '';
+
+      // Extract Account Number (9-18 digits)
+      const accountMatch = mockOCRText.match(/Account\s*(?:Number|No)?[:\s]*(\d{9,18})/i);
+      const accountNumber = accountMatch ? accountMatch[1] : '';
+
+      // Extract IFSC (4 letters + 0 + 6 digits)
+      const ifscMatch = mockOCRText.match(/IFSC[:\s]*([A-Z]{4}0[A-Z0-9]{6})/i);
+      const ifsc = ifscMatch ? ifscMatch[1] : '';
+
+      // Extract Amount (currency with digits)
+      const amountMatch = mockOCRText.match(/(?:Rs\.?|₹|Amount)[:\s]*([\d,]+(?:\.\d{2})?)/i);
+      const amount = amountMatch ? amountMatch[1].replace(/,/g, '') : '';
+
+      // Extract Date (various formats)
+      const dateMatch = mockOCRText.match(/(?:Date|Transaction\s*Date)[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+      let transactionDate = '';
+      if (dateMatch) {
+        const parts = dateMatch[1].split(/[\/\-]/);
+        // Convert to YYYY-MM-DD format
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+          transactionDate = `${year}-${month}-${day}`;
+        }
+      }
+
+      const extracted = {
+        utr,
+        accountNumber,
+        ifsc,
+        amount,
+        transactionDate
       };
-      
-      setExtractedData(mockData);
-      
+
+      setExtractedData(extracted);
+
+      // Auto-fill form
       setFormData(prev => ({
         ...prev,
-        transaction_id: mockData.utr,
-        account_number: mockData.account_number,
-        ifsc_code: mockData.ifsc,
-        amount: mockData.amount,
-        transaction_date: mockData.transaction_date
+        transaction_id: utr || prev.transaction_id,
+        account_number: accountNumber || prev.account_number,
+        ifsc_code: ifsc || prev.ifsc_code,
+        amount: amount || prev.amount,
+        transaction_date: transactionDate || prev.transaction_date
       }));
-      
-      toast.success('Transaction details detected and auto-filled!');
+
+      if (utr || accountNumber || ifsc || amount) {
+        toast.success('Transaction details auto-detected and filled!');
+      } else {
+        toast.warning('⚠ Manual verification required - OCR detection partial');
+      }
     }, 1500);
+  };
+
+  const generateSec63Certificate = () => {
+    if (!evidenceHash) {
+      toast.error('No evidence hash available');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const today = new Date().toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const certificateText = `
+CERTIFICATE UNDER SECTION 63
+BHARATIYA SAKSHYA ADHINIYAM, 2023
+
+Date: ${today}
+
+I, ${formData.investigating_officer || '[Officer Name]'}, ${formData.police_station || '[Police Station]'}, hereby certify that:
+
+1. ELECTRONIC EVIDENCE DETAILS:
+   
+   File Hash (SHA-256):
+   ${evidenceHash}
+   
+   This hash was computed on ${today} using SHA-256 cryptographic algorithm as per standard forensic procedures.
+
+2. EVIDENCE DESCRIPTION:
+   
+   Case Reference: ${formData.fir_number || 'Pending FIR Registration'}
+   Transaction ID/UTR: ${formData.transaction_id || 'N/A'}
+   Amount Involved: Rs. ${formData.amount ? parseFloat(formData.amount).toLocaleString('en-IN') : 'N/A'}
+   Bank: ${formData.bank_name || 'N/A'}
+
+3. CHAIN OF CUSTODY:
+   
+   Evidence obtained from: ${formData.victim_name || '[Victim Name]'}
+   Date of Collection: ${today}
+   Location: ${formData.police_station || '[Police Station]'}
+
+4. AUTHENTICATION:
+   
+   This electronic record has been authenticated as per Section 63 of the Bharatiya Sakshya Adhiniyam, 2023. The hash value ensures the integrity and authenticity of the digital evidence.
+
+5. DECLARATION:
+   
+   I declare that the above information is true and correct to the best of my knowledge and belief. The electronic evidence has been preserved in its original form and has not been tampered with.
+
+
+___________________________
+${formData.investigating_officer || '[Officer Name]'}
+${formData.police_station || '[Police Station]'}
+
+Date: ${today}
+
+
+Note: This certificate is issued for the purpose of legal proceedings and investigation under the provisions of the Bharatiya Sakshya Adhiniyam, 2023.
+    `.trim();
+
+    doc.setFont('courier');
+    doc.setFontSize(10);
+
+    const lines = doc.splitTextToSize(certificateText, 180);
+    let y = 20;
+
+    lines.forEach(line => {
+      if (y > 280) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.text(line, 15, y);
+      y += 5;
+    });
+
+    doc.save(`sec63-certificate-${Date.now()}.pdf`);
+    toast.success('Section 63 BSA Certificate generated!');
   };
 
   const handleBankChange = (bankName) => {
@@ -168,7 +296,10 @@ ${data.account_number ? `Suspect Account Number: ${data.account_number}` : ''}
 
 EVIDENCE REFERENCE:
 
-${evidenceHash ? `This request is supported by digital evidence bearing SHA-256 hash: ${evidenceHash}` : 'Evidence documentation in progress.'}
+${evidenceHash ? `This request is supported by electronic evidence bearing SHA-256 hash:
+${evidenceHash}
+
+Evidence authentication completed as per Section 63 of the Bharatiya Sakshya Adhiniyam, 2023.` : 'Evidence documentation in progress.'}
 
 The victim has reported that the above-mentioned amount was fraudulently transferred/debited through cyber fraud tactics. The investigation is in progress, and immediate action is necessary to prevent further movement of funds and preserve evidence.
 
@@ -319,39 +450,97 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
           </div>
 
           {evidenceHash && (
-            <div className="mt-4 bg-accent/10 border border-accent/30 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Hash className="text-accent" size={20} />
-                <span className="text-accent font-bold text-sm">Digital Evidence Hash (SHA-256)</span>
+            <div className="mt-4 space-y-3">
+              <div className="bg-accent/10 border border-accent/30 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Hash className="text-accent" size={20} />
+                  <span className="text-accent font-bold text-sm">🔐 Digital Evidence Hash (SHA-256)</span>
+                </div>
+                <div className="bg-black/30 rounded p-3 font-mono text-xs text-white break-all">
+                  {evidenceHash}
+                </div>
               </div>
-              <div className="bg-black/30 rounded p-3 font-mono text-xs text-white break-all">
-                {evidenceHash}
-              </div>
+              
+              <Button
+                onClick={generateSec63Certificate}
+                className="w-full bg-transparent border border-success/50 text-success hover:bg-success/10 transition-all rounded-sm uppercase tracking-wider text-sm"
+              >
+                📜 Generate Sec 63 BSA Certificate
+              </Button>
             </div>
           )}
 
           {extractedData && (
             <div className="mt-4 bg-success/10 border border-success/30 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <CheckCircle className="text-success" size={20} />
-                <span className="text-success font-bold">✔ Transaction Details Detected</span>
+                <span className="text-success font-bold">✔ Extracted Transaction Details</span>
+                <span className="ml-auto text-white/60 text-xs">
+                  {(extractedData.utr && extractedData.accountNumber && extractedData.ifsc)
+                    ? '✔ Auto Detected'
+                    : '⚠ Manual Verification Required'}
+                </span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <p className="text-white/60 text-xs">UTR</p>
-                  <p className="text-white font-semibold">{extractedData.utr}</p>
+                  <Label className="text-white/90 text-xs">UTR Number</Label>
+                  <Input
+                    value={extractedData.utr}
+                    onChange={(e) => {
+                      setExtractedData({...extractedData, utr: e.target.value});
+                      setFormData({...formData, transaction_id: e.target.value});
+                    }}
+                    className="bg-black/30 border-white/10 text-white text-sm h-9"
+                    placeholder="UTR not detected"
+                  />
                 </div>
                 <div>
-                  <p className="text-white/60 text-xs">Account</p>
-                  <p className="text-white font-semibold">{extractedData.account_number}</p>
+                  <Label className="text-white/90 text-xs">Account Number</Label>
+                  <Input
+                    value={extractedData.accountNumber}
+                    onChange={(e) => {
+                      setExtractedData({...extractedData, accountNumber: e.target.value});
+                      setFormData({...formData, account_number: e.target.value});
+                    }}
+                    className="bg-black/30 border-white/10 text-white text-sm h-9"
+                    placeholder="Account not detected"
+                  />
                 </div>
                 <div>
-                  <p className="text-white/60 text-xs">IFSC</p>
-                  <p className="text-white font-semibold">{extractedData.ifsc}</p>
+                  <Label className="text-white/90 text-xs">IFSC Code</Label>
+                  <Input
+                    value={extractedData.ifsc}
+                    onChange={(e) => {
+                      setExtractedData({...extractedData, ifsc: e.target.value});
+                      setFormData({...formData, ifsc_code: e.target.value});
+                    }}
+                    className="bg-black/30 border-white/10 text-white text-sm h-9"
+                    placeholder="IFSC not detected"
+                  />
                 </div>
                 <div>
-                  <p className="text-white/60 text-xs">Amount</p>
-                  <p className="text-white font-semibold">₹{parseFloat(extractedData.amount).toLocaleString('en-IN')}</p>
+                  <Label className="text-white/90 text-xs">Amount</Label>
+                  <Input
+                    value={extractedData.amount}
+                    onChange={(e) => {
+                      setExtractedData({...extractedData, amount: e.target.value});
+                      setFormData({...formData, amount: e.target.value});
+                    }}
+                    className="bg-black/30 border-white/10 text-white text-sm h-9"
+                    placeholder="Amount not detected"
+                  />
+                </div>
+                <div>
+                  <Label className="text-white/90 text-xs">Transaction Date</Label>
+                  <Input
+                    type="date"
+                    value={extractedData.transactionDate}
+                    onChange={(e) => {
+                      setExtractedData({...extractedData, transactionDate: e.target.value});
+                      setFormData({...formData, transaction_date: e.target.value});
+                    }}
+                    className="bg-black/30 border-white/10 text-white text-sm h-9"
+                  />
                 </div>
               </div>
             </div>

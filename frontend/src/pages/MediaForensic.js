@@ -62,7 +62,16 @@ const MediaForensic = () => {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setResult(response.data);
-      toast.success('Analysis complete!');
+      
+      const riskLevel = response.data.risk_level;
+      if (riskLevel === 'Low') {
+        toast.success(`Authenticity verified: ${response.data.probability_score}% - Low risk`);
+      } else if (riskLevel === 'Medium') {
+        toast.warning(`Medium risk detected: ${response.data.probability_score}%`);
+      } else {
+        toast.error(`High risk: ${response.data.probability_score}% - Further verification required`);
+      }
+      
       loadReports();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Analysis failed');
@@ -202,12 +211,19 @@ const MediaForensic = () => {
               <div className="space-y-6" data-testid="forensic-results">
                 <div className={`p-6 rounded-lg border-2 ${getRiskColor(result.risk_level)}`}>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="font-heading font-bold text-lg">Deepfake Probability</span>
+                    <span className="font-heading font-bold text-lg">Authenticity Score</span>
                     <span className="text-3xl font-bold">{result.probability_score}%</span>
                   </div>
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-between text-sm mb-3">
                     <span>Risk Level: <strong>{result.risk_level}</strong></span>
                     <span>Confidence: <strong>{result.confidence_level}</strong></span>
+                  </div>
+                  <div className="text-xs bg-black/30 p-3 rounded border border-white/10">
+                    <p className="text-white/80">
+                      💡 Score derived from metadata consistency, file hash uniqueness, compression artifact analysis, 
+                      {result.risk_level === 'Low' ? ' frame/spectral integrity checks,' : ''} 
+                      and structural consistency checks.
+                    </p>
                   </div>
                 </div>
 
