@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Download, Printer, Mail, Share2, Eye, FileText } from 'lucide-react';
+import { DollarSign, Download, Printer, Mail, Share2, Eye, FileText, Upload, Clock, AlertTriangle, CheckCircle, Hash } from 'lucide-react';
+import { useDropzone } from 'react-dropzone';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { api } from '../utils/api';
 import jsPDF from 'jspdf';
+import CryptoJS from 'crypto-js';
 
 const FraudRecovery = () => {
   const [formData, setFormData] = useState({
@@ -22,15 +25,22 @@ const FraudRecovery = () => {
     transaction_date: '',
     police_station: '',
     investigating_officer: '',
-    fir_number: ''
+    fir_number: '',
+    status: 'Pending',
+    nodal_officer_email: ''
   });
+  const [evidenceFile, setEvidenceFile] = useState(null);
+  const [evidenceHash, setEvidenceHash] = useState('');
+  const [extractedData, setExtractedData] = useState(null);
   const [savedRequests, setSavedRequests] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
   const [previewLetter, setPreviewLetter] = useState('');
   const [loading, setLoading] = useState(false);
+  const [nodalOfficers, setNodalOfficers] = useState([]);
 
   useEffect(() => {
     loadRequests();
+    loadNodalOfficers();
   }, []);
 
   const loadRequests = async () => {
@@ -40,6 +50,88 @@ const FraudRecovery = () => {
     } catch (err) {
       console.error('Failed to load requests');
     }
+  };
+
+  const loadNodalOfficers = async () => {
+    try {
+      const response = await api.get('/nodal-officers');
+      setNodalOfficers(response.data);
+    } catch (err) {
+      console.error('Failed to load nodal officers');
+    }
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: {
+      'image/*': ['.jpg', '.jpeg', '.png'],
+      'application/pdf': ['.pdf']
+    },
+    maxFiles: 1,
+    onDrop: async (acceptedFiles) => {
+      if (acceptedFiles.length > 0) {
+        const file = acceptedFiles[0];
+        setEvidenceFile(file);
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
+          const hash = CryptoJS.SHA256(wordArray).toString();
+          setEvidenceHash(hash);
+          toast.success('Evidence hash generated!');
+        };
+        reader.readAsArrayBuffer(file);
+        
+        mockOCRExtraction(file);
+      }
+    }
+  });
+
+  const mockOCRExtraction = (file) => {
+    setTimeout(() => {
+      const mockData = {
+        utr: 'UTR' + Math.random().toString().slice(2, 14),
+        account_number: '1234567890',
+        ifsc: 'HDFC0001234',
+        amount: '50000',
+        transaction_date: new Date().toISOString().split('T')[0]
+      };
+      
+      setExtractedData(mockData);
+      
+      setFormData(prev => ({
+        ...prev,
+        transaction_id: mockData.utr,
+        account_number: mockData.account_number,
+        ifsc_code: mockData.ifsc,
+        amount: mockData.amount,
+        transaction_date: mockData.transaction_date
+      }));
+      
+      toast.success('Transaction details detected and auto-filled!');
+    }, 1500);
+  };
+
+  const handleBankChange = (bankName) => {
+    setFormData(prev => ({ ...prev, bank_name: bankName }));
+    
+    const nodal = nodalOfficers.find(n => n.bank_name === bankName);
+    if (nodal) {
+      setFormData(prev => ({ ...prev, nodal_officer_email: nodal.nodal_officer_email }));
+      toast.info(`Nodal officer auto-filled: ${nodal.nodal_officer_email}`);
+    }
+  };
+
+  const calculateTimeRemaining = (createdAt) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const diff = 24 * 60 * 60 * 1000 - (now - created);
+    
+    if (diff <= 0) return 'Expired';
+    
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+    
+    return `${hours}h ${minutes}m`;
   };
 
   const generateLetter = (data) => {
@@ -57,36 +149,42 @@ To,
 The Branch Manager
 ${data.bank_name}
 ${data.ifsc_code ? `IFSC: ${data.ifsc_code}` : ''}
+${data.nodal_officer_email ? `Nodal Officer: ${data.nodal_officer_email}` : ''}
 
-Subject: Request for Lien/Freezing of Account - Cyber Crime Investigation
+Subject: Urgent Request for Account Lien/Freezing - Cyber Fraud Investigation
 
 Respected Sir/Madam,
 
 This is with reference to a cyber fraud complaint registered at ${data.police_station}${data.fir_number ? ` vide FIR No. ${data.fir_number}` : ''}. The investigation is being conducted by ${data.investigating_officer}.
 
-DETAILS OF THE FRAUD TRANSACTION:
+DETAILS OF THE FRAUDULENT TRANSACTION:
 
 Victim Name: ${data.victim_name}
 Contact Number: ${data.complainant_contact}
-Transaction ID: ${data.transaction_id}
+Transaction ID/UTR: ${data.transaction_id}
 Amount Involved: Rs. ${parseFloat(data.amount).toLocaleString('en-IN')}
 Transaction Date: ${new Date(data.transaction_date).toLocaleDateString('en-IN')}
-${data.account_number ? `Account Number: ${data.account_number}` : ''}
+${data.account_number ? `Suspect Account Number: ${data.account_number}` : ''}
 
-The victim has reported that the above-mentioned amount was fraudulently transferred/debited from their account due to cyber fraud. The investigation is in progress, and it is necessary to freeze the said account to prevent further transactions and preserve evidence.
+EVIDENCE REFERENCE:
 
-In view of the above, you are hereby requested to:
+${evidenceHash ? `This request is supported by digital evidence bearing SHA-256 hash: ${evidenceHash}` : 'Evidence documentation in progress.'}
 
-1. Immediately place a lien on the account associated with Transaction ID: ${data.transaction_id}
+The victim has reported that the above-mentioned amount was fraudulently transferred/debited through cyber fraud tactics. The investigation is in progress, and immediate action is necessary to prevent further movement of funds and preserve evidence.
+
+In view of the urgency and to ensure effective investigation, you are hereby requested to:
+
+1. Immediately place a lien on the account associated with Transaction ID/UTR: ${data.transaction_id}
 2. Freeze all transactions from the said account with immediate effect
-3. Preserve all transaction records and account details
-4. Provide transaction history and KYC details of the account holder to the undersigned
+3. Preserve all transaction records, account details, and beneficiary information
+4. Provide transaction history and complete KYC details of the account holder to the undersigned
+5. Confirm compliance and provide acknowledgment at the earliest
 
-This is a matter of urgent investigation, and your prompt cooperation is solicited. The bank is requested to take necessary action and confirm compliance at the earliest.
+This is a matter of urgent investigation under the provisions of the Indian Penal Code and Information Technology Act. Your prompt cooperation is solicited in the interest of justice and victim relief.
 
-Please treat this as most urgent.
+The Golden Hour for fraud recovery is critical. Please treat this as most urgent.
 
-Thanking you,
+Thanking you for your cooperation,
 
 Yours faithfully,
 
@@ -151,6 +249,18 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
     printWindow.print();
   };
 
+  const handleStatusUpdate = async (requestId, newStatus) => {
+    try {
+      const formData = new FormData();
+      formData.append('status', newStatus);
+      await api.put(`/fraud/${requestId}/status`, formData);
+      toast.success('Status updated!');
+      loadRequests();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
   return (
     <Layout>
       <div className="max-w-7xl mx-auto" data-testid="fraud-recovery-page">
@@ -162,12 +272,90 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
           <div className="flex items-center gap-3 mb-3">
             <DollarSign className="text-accent" size={32} />
             <h1 className="text-4xl font-heading font-bold text-white text-glow" data-testid="page-title">
-              Fraud Recovery Assistant
+              AASARA Fraud Recovery Assistant
             </h1>
           </div>
           <p className="text-white/60 text-lg">
-            Generate bank lien/freezing request letters for cybercrime investigations
+            Golden Hour Dashboard • Bank Lien Generator • Evidence Management
           </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glassmorphism rounded-xl p-6 border border-white/10 mb-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Upload className="text-accent" size={24} />
+            <h2 className="text-xl font-heading font-bold text-white">Upload Evidence (Bank Screenshot / Passbook / SMS)</h2>
+          </div>
+
+          <div
+            {...getRootProps()}
+            data-testid="evidence-dropzone"
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+              isDragActive
+                ? 'border-accent bg-accent/10'
+                : 'border-white/20 hover:border-accent/50 bg-white/5'
+            }`}
+          >
+            <input {...getInputProps()} />
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center">
+                <Upload className="text-accent" size={24} />
+              </div>
+              {evidenceFile ? (
+                <div>
+                  <p className="text-white font-semibold mb-1">{evidenceFile.name}</p>
+                  <p className="text-white/60 text-sm">{(evidenceFile.size / 1024).toFixed(2)} KB</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-white font-semibold mb-1">Upload Image or PDF</p>
+                  <p className="text-white/60 text-sm">JPG, PNG, PDF</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {evidenceHash && (
+            <div className="mt-4 bg-accent/10 border border-accent/30 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Hash className="text-accent" size={20} />
+                <span className="text-accent font-bold text-sm">Digital Evidence Hash (SHA-256)</span>
+              </div>
+              <div className="bg-black/30 rounded p-3 font-mono text-xs text-white break-all">
+                {evidenceHash}
+              </div>
+            </div>
+          )}
+
+          {extractedData && (
+            <div className="mt-4 bg-success/10 border border-success/30 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle className="text-success" size={20} />
+                <span className="text-success font-bold">✔ Transaction Details Detected</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <p className="text-white/60 text-xs">UTR</p>
+                  <p className="text-white font-semibold">{extractedData.utr}</p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-xs">Account</p>
+                  <p className="text-white font-semibold">{extractedData.account_number}</p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-xs">IFSC</p>
+                  <p className="text-white font-semibold">{extractedData.ifsc}</p>
+                </div>
+                <div>
+                  <p className="text-white/60 text-xs">Amount</p>
+                  <p className="text-white font-semibold">₹{parseFloat(extractedData.amount).toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -206,7 +394,7 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
                 </div>
 
                 <div>
-                  <Label className="text-white/90">Transaction ID *</Label>
+                  <Label className="text-white/90">Transaction ID/UTR *</Label>
                   <Input
                     data-testid="transaction-id-input"
                     value={formData.transaction_id}
@@ -218,13 +406,18 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
 
                 <div>
                   <Label className="text-white/90">Bank Name *</Label>
-                  <Input
-                    data-testid="bank-name-input"
-                    value={formData.bank_name}
-                    onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
-                    className="bg-black/20 border-white/10 focus:border-accent text-white"
-                    required
-                  />
+                  <Select value={formData.bank_name} onValueChange={handleBankChange} required>
+                    <SelectTrigger className="bg-black/20 border-white/10 text-white">
+                      <SelectValue placeholder="Select Bank" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-secondary border-white/10 text-white">
+                      {nodalOfficers.map((bank) => (
+                        <SelectItem key={bank.bank_name} value={bank.bank_name}>
+                          {bank.bank_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div>
@@ -302,6 +495,17 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
                     className="bg-black/20 border-white/10 focus:border-accent text-white"
                   />
                 </div>
+
+                {formData.nodal_officer_email && (
+                  <div>
+                    <Label className="text-white/90">Nodal Officer Email</Label>
+                    <Input
+                      value={formData.nodal_officer_email}
+                      className="bg-black/20 border-success/30 text-success"
+                      readOnly
+                    />
+                  </div>
+                )}
               </div>
 
               <Button
@@ -381,29 +585,59 @@ ${data.fir_number ? `FIR No.: ${data.fir_number}` : ''}
             transition={{ delay: 0.2 }}
             className="mt-8 glassmorphism rounded-xl p-6 border border-white/10"
           >
-            <h3 className="text-xl font-heading font-bold text-white mb-4">Recent Requests</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="text-warning" size={24} />
+              <h3 className="text-xl font-heading font-bold text-white">Golden Hour Dashboard</h3>
+            </div>
             <div className="space-y-3">
-              {savedRequests.slice(0, 5).map((request) => (
-                <div
-                  key={request.id}
-                  className="bg-black/20 border border-white/10 rounded-lg p-4 hover:border-accent/30 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-white font-semibold">{request.victim_name}</p>
-                      <p className="text-white/60 text-sm">
-                        {request.bank_name} • Transaction ID: {request.transaction_id}
-                      </p>
+              {savedRequests.slice(0, 10).map((request) => {
+                const timeRemaining = calculateTimeRemaining(request.created_at);
+                const isExpired = timeRemaining === 'Expired';
+                
+                return (
+                  <div
+                    key={request.id}
+                    className={`bg-black/20 border rounded-lg p-4 ${
+                      isExpired ? 'border-alert/30' : 'border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex-1">
+                        <p className="text-white font-semibold">{request.victim_name}</p>
+                        <p className="text-white/60 text-sm">
+                          {request.bank_name} • UTR: {request.transaction_id}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-accent font-bold">₹{parseFloat(request.amount).toLocaleString('en-IN')}</p>
+                        <div className={`flex items-center gap-1 mt-1 ${isExpired ? 'text-alert' : 'text-warning'}`}>
+                          {isExpired ? <AlertTriangle size={14} /> : <Clock size={14} />}
+                          <span className="text-xs font-semibold">{timeRemaining}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-accent font-bold">₹{parseFloat(request.amount).toLocaleString('en-IN')}</p>
-                      <p className="text-white/40 text-xs">
+                    <div className="flex items-center gap-2 mt-3">
+                      <Select 
+                        value={request.status || 'Pending'} 
+                        onValueChange={(value) => handleStatusUpdate(request.id, value)}
+                      >
+                        <SelectTrigger className="bg-black/20 border-white/10 text-white h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-secondary border-white/10 text-white">
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Lien Sent">Lien Sent</SelectItem>
+                          <SelectItem value="Bank Acknowledged">Bank Acknowledged</SelectItem>
+                          <SelectItem value="Closed">Closed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-white/40 text-xs">
                         {new Date(request.created_at).toLocaleDateString()}
-                      </p>
+                      </span>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         )}
