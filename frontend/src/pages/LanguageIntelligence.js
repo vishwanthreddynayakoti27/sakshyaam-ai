@@ -102,9 +102,9 @@ const LanguageIntelligence = () => {
                   selectedTab === 'document'
                     ? 'bg-accent text-black'
                     : 'bg-transparent border border-accent/50 text-accent'
-                } font-bold uppercase tracking-wider transition-all rounded-sm`}
+                } font-bold uppercase tracking-wider transition-all rounded-sm text-xs`}
               >
-                <Upload size={16} className="mr-2" />
+                <Upload size={14} className="mr-2" />
                 Document
               </Button>
               <Button
@@ -114,9 +114,9 @@ const LanguageIntelligence = () => {
                   selectedTab === 'audio'
                     ? 'bg-accent text-black'
                     : 'bg-transparent border border-accent/50 text-accent'
-                } font-bold uppercase tracking-wider transition-all rounded-sm`}
+                } font-bold uppercase tracking-wider transition-all rounded-sm text-xs`}
               >
-                <Mic size={16} className="mr-2" />
+                <Mic size={14} className="mr-2" />
                 Audio
               </Button>
             </div>

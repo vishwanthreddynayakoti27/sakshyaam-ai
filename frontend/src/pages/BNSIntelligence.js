@@ -5,10 +5,11 @@ import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
 import { bns } from '../utils/api';
 
-const BNSIntelligence = () => {
+const CriminalLawEngine = () => {
   const [analysisText, setAnalysisText] = useState('');
   const [sectionNumber, setSectionNumber] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
@@ -19,9 +20,9 @@ const BNSIntelligence = () => {
     { label: 'Assault', keyword: 'assault' },
     { label: 'Robbery', keyword: 'robbery' },
     { label: 'Theft', keyword: 'theft' },
-    { label: 'Cheating', keyword: 'cheating' },
-    { label: 'Kidnapping', keyword: 'kidnapping' },
-    { label: 'Murder', keyword: 'murder' }
+    { label: 'Arrest', keyword: 'arrest' },
+    { label: 'Search', keyword: 'search' },
+    { label: 'CCTV', keyword: 'cctv' },
   ];
 
   const handleAnalyze = async () => {
@@ -34,11 +35,12 @@ const BNSIntelligence = () => {
     try {
       const response = await bns.analyze(analysisText);
       setAnalysisResult(response);
-      if (response.suggested_sections.length === 0) {
-        toast.info('No matching sections found');
-      } else {
-        toast.success(`Found ${response.suggested_sections.length} matching sections`);
-      }
+      
+      const offenceCount = response.suggested_sections.filter(s => s.category === 'offence').length;
+      const procedureCount = response.suggested_sections.filter(s => s.category === 'procedure').length;
+      const evidenceCount = response.suggested_sections.filter(s => s.category === 'evidence').length;
+      
+      toast.success(`Found ${offenceCount} BNS, ${procedureCount} BNSS, ${evidenceCount} BSA sections`);
     } catch (err) {
       toast.error('Analysis failed');
     } finally {
@@ -69,19 +71,29 @@ const BNSIntelligence = () => {
     setAnalysisText(prev => prev + (prev ? ' ' : '') + keyword);
   };
 
+  const handleInsertToDraft = (section) => {
+    const sectionText = `${section.section_number} - ${section.title}`;
+    navigator.clipboard.writeText(sectionText);
+    toast.success('Section copied to clipboard!');
+  };
+
+  const offenceSections = analysisResult?.suggested_sections.filter(s => s.category === 'offence') || [];
+  const procedureSections = analysisResult?.suggested_sections.filter(s => s.category === 'procedure') || [];
+  const evidenceSections = analysisResult?.suggested_sections.filter(s => s.category === 'evidence') || [];
+
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto" data-testid="bns-intelligence-page">
+      <div className="max-w-7xl mx-auto" data-testid="criminal-law-engine-page">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
           <h1 className="text-4xl font-heading font-bold text-white text-glow mb-3" data-testid="page-title">
-            BNS Intelligence Assistant
+            Criminal Law Intelligence Engine
           </h1>
           <p className="text-white/60 text-lg">
-            AI-powered section suggestions & IPC mapping
+            Comprehensive analysis: BNS (Offence) • BNSS (Procedure) • BSA (Evidence)
           </p>
         </motion.div>
 
@@ -93,7 +105,9 @@ const BNSIntelligence = () => {
           >
             <div className="flex items-center gap-2 mb-4">
               <FileText className="text-accent" size={24} />
-              <h2 className="text-xl font-heading font-bold text-white" data-testid="fir-analyzer-title">FIR Analyzer</h2>
+              <h2 className="text-xl font-heading font-bold text-white" data-testid="fir-analyzer-title">
+                FIR/Complaint Analyzer
+              </h2>
             </div>
 
             <div className="mb-4">
@@ -116,7 +130,10 @@ const BNSIntelligence = () => {
               data-testid="analysis-textarea"
               value={analysisText}
               onChange={(e) => setAnalysisText(e.target.value)}
-              placeholder="Paste FIR text or complaint here...\n\nExample:\nThe accused assaulted the complainant with a wooden stick causing injuries. The accused also stole cash worth Rs. 5000 from the complainant's pocket."
+              placeholder="Paste FIR text or complaint here...
+
+Example:
+The accused assaulted the complainant, searched his premises without warrant, and seized digital devices. CCTV recording was obtained as evidence."
               className="bg-black/20 border-white/10 focus:border-accent text-white min-h-[250px] font-mono text-sm mb-4"
             />
 
@@ -126,7 +143,7 @@ const BNSIntelligence = () => {
               disabled={loading}
               className="w-full bg-accent text-black font-bold hover:bg-accent/80 shadow-[0_0_15px_rgba(0,242,255,0.4)] rounded-sm uppercase tracking-wider"
             >
-              {loading ? 'Analyzing...' : 'Analyze & Suggest Sections'}
+              {loading ? 'Analyzing...' : 'Analyze Legal Sections'}
             </Button>
           </motion.div>
 
@@ -137,7 +154,9 @@ const BNSIntelligence = () => {
           >
             <div className="flex items-center gap-2 mb-4">
               <Search className="text-accent" size={24} />
-              <h2 className="text-xl font-heading font-bold text-white" data-testid="section-mapper-title">BNS/IPC Section Mapper</h2>
+              <h2 className="text-xl font-heading font-bold text-white" data-testid="section-mapper-title">
+                Section Mapper
+              </h2>
             </div>
 
             <div className="space-y-4">
@@ -148,7 +167,7 @@ const BNSIntelligence = () => {
                     data-testid="section-search-input"
                     value={sectionNumber}
                     onChange={(e) => setSectionNumber(e.target.value)}
-                    placeholder="e.g., 103, BNS 303"
+                    placeholder="e.g., 103, BNS 303, BNSS 35"
                     className="bg-black/20 border-white/10 focus:border-accent text-white"
                   />
                   <Button
@@ -182,9 +201,9 @@ const BNSIntelligence = () => {
           >
             <div className="flex items-center gap-2 mb-6">
               <Zap className="text-accent" size={24} />
-              <h2 className="text-xl font-heading font-bold text-white">Suggested Sections</h2>
+              <h2 className="text-xl font-heading font-bold text-white">Analysis Results</h2>
               <span className="ml-auto text-success font-bold">
-                {analysisResult.suggested_sections.length} Match{analysisResult.suggested_sections.length > 1 ? 'es' : ''}
+                {analysisResult.suggested_sections.length} Section(s) Detected
               </span>
             </div>
 
@@ -202,25 +221,109 @@ const BNSIntelligence = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="suggested-sections">
-              {analysisResult.suggested_sections.map((section, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="bg-black/40 border border-white/10 rounded-lg p-4 hover:border-accent/50 transition-all"
-                  data-testid={`section-card-${section.section_number.toLowerCase().replace(/ /g, '-')}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-accent font-bold font-heading text-lg">{section.section_number}</span>
-                    <span className="text-white/40 text-xs">{section.ipc_equivalent}</span>
+            <Tabs defaultValue="bns" className="w-full">
+              <TabsList className="bg-black/40 border border-white/10 mb-6">
+                <TabsTrigger value="bns" className="data-[state=active]:bg-accent data-[state=active]:text-black">
+                  BNS (Offence) {offenceSections.length > 0 && `(${offenceSections.length})`}
+                </TabsTrigger>
+                <TabsTrigger value="bnss" className="data-[state=active]:bg-accent data-[state=active]:text-black">
+                  BNSS (Procedure) {procedureSections.length > 0 && `(${procedureSections.length})`}
+                </TabsTrigger>
+                <TabsTrigger value="bsa" className="data-[state=active]:bg-accent data-[state=active]:text-black">
+                  BSA (Evidence) {evidenceSections.length > 0 && `(${evidenceSections.length})`}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="bns" className="space-y-4">
+                {offenceSections.length === 0 ? (
+                  <p className="text-white/60 text-center py-8">No offence sections detected</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {offenceSections.map((section, index) => (
+                      <div
+                        key={index}
+                        className="bg-black/40 border border-white/10 rounded-lg p-4 hover:border-accent/50 transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-accent font-bold font-heading text-lg">{section.section_number}</span>
+                          {section.ipc_equivalent && (
+                            <span className="text-white/40 text-xs">{section.ipc_equivalent}</span>
+                          )}
+                        </div>
+                        <h3 className="text-white font-semibold mb-2">{section.title}</h3>
+                        <p className="text-white/60 text-sm mb-3">{section.description}</p>
+                        <Button
+                          onClick={() => handleInsertToDraft(section)}
+                          className="w-full bg-transparent border border-accent/50 text-accent hover:bg-accent/10 text-xs"
+                        >
+                          Insert into Draft
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                  <h3 className="text-white font-semibold mb-2">{section.title}</h3>
-                  <p className="text-white/60 text-sm">{section.description}</p>
-                </motion.div>
-              ))}
-            </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="bnss" className="space-y-4">
+                {procedureSections.length === 0 ? (
+                  <p className="text-white/60 text-center py-8">No procedure sections detected</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {procedureSections.map((section, index) => (
+                      <div
+                        key={index}
+                        className="bg-black/40 border border-white/10 rounded-lg p-4 hover:border-accent/50 transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-accent font-bold font-heading text-lg">{section.section_number}</span>
+                          {section.crpc_equivalent && (
+                            <span className="text-white/40 text-xs">{section.crpc_equivalent}</span>
+                          )}
+                        </div>
+                        <h3 className="text-white font-semibold mb-2">{section.title}</h3>
+                        <p className="text-white/60 text-sm mb-3">{section.description}</p>
+                        <Button
+                          onClick={() => handleInsertToDraft(section)}
+                          className="w-full bg-transparent border border-accent/50 text-accent hover:bg-accent/10 text-xs"
+                        >
+                          Insert into Draft
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="bsa" className="space-y-4">
+                {evidenceSections.length === 0 ? (
+                  <p className="text-white/60 text-center py-8">No evidence sections detected</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {evidenceSections.map((section, index) => (
+                      <div
+                        key={index}
+                        className="bg-black/40 border border-white/10 rounded-lg p-4 hover:border-accent/50 transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-accent font-bold font-heading text-lg">{section.section_number}</span>
+                          {section.evidence_act_equivalent && (
+                            <span className="text-white/40 text-xs">{section.evidence_act_equivalent}</span>
+                          )}
+                        </div>
+                        <h3 className="text-white font-semibold mb-2">{section.title}</h3>
+                        <p className="text-white/60 text-sm mb-3">{section.description}</p>
+                        <Button
+                          onClick={() => handleInsertToDraft(section)}
+                          className="w-full bg-transparent border border-accent/50 text-accent hover:bg-accent/10 text-xs"
+                        >
+                          Insert into Draft
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </motion.div>
         )}
       </div>
@@ -228,4 +331,4 @@ const BNSIntelligence = () => {
   );
 };
 
-export default BNSIntelligence;
+export default CriminalLawEngine;
