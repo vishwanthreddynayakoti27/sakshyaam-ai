@@ -5,15 +5,17 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
+import math
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 import base64
-import requests
+import io
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -23,7 +25,57 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
-GOOGLE_VISION_API_KEY = os.environ.get('GOOGLE_VISION_API_KEY', '')
+GOOGLE_VISION_CREDENTIALS = os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
+GOOGLE_TRANSLATE_CREDENTIALS = os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')
+GOOGLE_SPEECH_CREDENTIALS = os.environ.get('GOOGLE_SPEECH_CREDENTIALS', '')
+GOOGLE_NLP_CREDENTIALS = os.environ.get('GOOGLE_NLP_CREDENTIALS', '')
+
+# Initialize Google Cloud clients
+vision_client = None
+translate_client = None
+speech_client = None
+nlp_client = None
+
+try:
+    if GOOGLE_VISION_CREDENTIALS and os.path.exists(GOOGLE_VISION_CREDENTIALS):
+        from google.cloud import vision
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(GOOGLE_VISION_CREDENTIALS)
+        vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+        logging.info("Google Vision client initialized with service account")
+except Exception as e:
+    logging.warning(f"Could not initialize Vision client: {e}")
+
+try:
+    if GOOGLE_TRANSLATE_CREDENTIALS and os.path.exists(GOOGLE_TRANSLATE_CREDENTIALS):
+        from google.cloud import translate_v2 as translate
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(GOOGLE_TRANSLATE_CREDENTIALS)
+        translate_client = translate.Client(credentials=credentials)
+        logging.info("Google Translate client initialized with service account")
+except Exception as e:
+    logging.warning(f"Could not initialize Translate client: {e}")
+
+try:
+    if GOOGLE_SPEECH_CREDENTIALS and os.path.exists(GOOGLE_SPEECH_CREDENTIALS):
+        from google.cloud import speech
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(GOOGLE_SPEECH_CREDENTIALS)
+        speech_client = speech.SpeechClient(credentials=credentials)
+        logging.info("Google Speech client initialized with service account")
+except Exception as e:
+    logging.warning(f"Could not initialize Speech client: {e}")
+
+# Load police stations data
+POLICE_STATIONS = []
+try:
+    stations_file = ROOT_DIR / 'data' / 'telangana_police_stations.json'
+    if stations_file.exists():
+        with open(stations_file, 'r') as f:
+            POLICE_STATIONS = json.load(f)
+        logging.info(f"Loaded {len(POLICE_STATIONS)} police stations")
+except Exception as e:
+    logging.warning(f"Could not load police stations: {e}")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -100,6 +152,7 @@ class BNSSection(BaseModel):
     section_number: str
     title: str
     description: str
+    punishment: str = ""
     ipc_equivalent: str = ""
     crpc_equivalent: str = ""
     evidence_act_equivalent: str = ""
@@ -112,6 +165,7 @@ class BNSAnalysisRequest(BaseModel):
 class BNSAnalysisResponse(BaseModel):
     suggested_sections: List[BNSSection]
     matched_keywords: List[str]
+    remand_note: Optional[str] = None
 
 class Reminder(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -136,13 +190,12 @@ class CDRRecord(BaseModel):
     officer_id: str
     case_id: str
     phone_number: str
-    name: str
-    call_type: str
-    datetime: str
-    duration: str
-    imei: str
-    location: str
-    cell_tower: str
+    called_number: str = ""
+    datetime_str: str = ""
+    duration: str = ""
+    imei: str = ""
+    tower_id: str = ""
+    location: str = ""
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ForensicReport(BaseModel):
@@ -231,6 +284,18 @@ class OCRResponse(BaseModel):
     confidence_score: float
     message: str
 
+class JurisdictionRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+class PoliceStationResponse(BaseModel):
+    name: str
+    district: str
+    latitude: float
+    longitude: float
+    distance_km: float
+    phone: str = ""
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -256,9 +321,536 @@ async def get_current_officer(credentials: HTTPAuthorizationCredentials = Depend
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two points using Haversine formula"""
+    R = 6371  # Earth's radius in km
+    
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+
+def find_nearest_station(latitude: float, longitude: float) -> dict:
+    """Find nearest police station using Haversine formula"""
+    if not POLICE_STATIONS:
+        return None
+    
+    nearest = None
+    min_distance = float('inf')
+    
+    for station in POLICE_STATIONS:
+        distance = haversine_distance(
+            latitude, longitude,
+            station['latitude'], station['longitude']
+        )
+        if distance < min_distance:
+            min_distance = distance
+            nearest = {**station, 'distance_km': round(distance, 2)}
+    
+    return nearest
+
+
+# Comprehensive BNS/BNSS/BSA Database with keywords and punishments
+BNS_SECTIONS_DATABASE = [
+    {
+        "section_number": "BNS 103",
+        "title": "Murder",
+        "description": "Whoever commits murder shall be punished with death or imprisonment for life, and shall also be liable to fine",
+        "punishment": "Death or imprisonment for life, and fine",
+        "ipc_equivalent": "IPC 302",
+        "keywords": ["murder", "killed", "death", "homicide", "slain", "shot dead", "stabbed to death"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 105",
+        "title": "Culpable Homicide not amounting to Murder",
+        "description": "Causing death by doing an act with intention or knowledge that it is likely to cause death",
+        "punishment": "Imprisonment for life, or imprisonment up to 10 years, and fine",
+        "ipc_equivalent": "IPC 304",
+        "keywords": ["culpable homicide", "death caused", "rash driving death"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 115",
+        "title": "Voluntarily Causing Hurt",
+        "description": "Whoever voluntarily causes hurt to any person shall be punished",
+        "punishment": "Imprisonment up to 1 year, or fine up to Rs. 10,000, or both",
+        "ipc_equivalent": "IPC 323",
+        "keywords": ["hurt", "assault", "beat", "injury", "attacked", "hit", "slapped", "punched"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 117",
+        "title": "Voluntarily Causing Grievous Hurt",
+        "description": "Whoever voluntarily causes grievous hurt shall be punished",
+        "punishment": "Imprisonment up to 7 years, and fine",
+        "ipc_equivalent": "IPC 325",
+        "keywords": ["grievous hurt", "serious injury", "fracture", "permanent", "disfiguration"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 121",
+        "title": "Voluntarily Causing Hurt by Dangerous Weapons",
+        "description": "Causing hurt using dangerous weapons or means",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 324",
+        "keywords": ["weapon", "knife", "gun", "dangerous", "blade", "iron rod", "stick"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 137",
+        "title": "Kidnapping",
+        "description": "Kidnapping from lawful guardianship",
+        "punishment": "Imprisonment up to 7 years, and fine",
+        "ipc_equivalent": "IPC 363",
+        "keywords": ["kidnapping", "abducted", "taken away", "missing child", "child taken"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 140",
+        "title": "Kidnapping for Ransom",
+        "description": "Kidnapping or abducting for ransom",
+        "punishment": "Death, or imprisonment for life, and fine",
+        "ipc_equivalent": "IPC 364A",
+        "keywords": ["ransom", "kidnap for money", "demand money", "extortion kidnap"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 63",
+        "title": "Sexual Harassment",
+        "description": "Sexual harassment and punishment for sexual harassment",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 354A",
+        "keywords": ["sexual harassment", "molestation", "inappropriate touch", "eve teasing"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 64",
+        "title": "Rape",
+        "description": "Sexual assault without consent",
+        "punishment": "Rigorous imprisonment not less than 10 years, may extend to life, and fine",
+        "ipc_equivalent": "IPC 376",
+        "keywords": ["rape", "sexual assault", "forced", "without consent"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 303",
+        "title": "Theft",
+        "description": "Whoever commits theft shall be punished",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 379",
+        "keywords": ["theft", "stolen", "stole", "took", "property", "snatched", "pickpocket", "mobile stolen"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 305",
+        "title": "Theft in Dwelling House",
+        "description": "Theft in a dwelling house or means of transportation",
+        "punishment": "Imprisonment up to 7 years, and fine",
+        "ipc_equivalent": "IPC 380",
+        "keywords": ["house theft", "burglary", "home robbery", "break in"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 308",
+        "title": "Extortion",
+        "description": "Whoever commits extortion shall be punished",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 384",
+        "keywords": ["extortion", "blackmail", "threat for money", "demanding money"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 309",
+        "title": "Robbery",
+        "description": "Robbery with violence or threat",
+        "punishment": "Rigorous imprisonment up to 10 years, and fine",
+        "ipc_equivalent": "IPC 392",
+        "keywords": ["robbery", "robbed", "violence", "force", "looted", "snatching", "chain snatching"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 310",
+        "title": "Dacoity",
+        "description": "Robbery by five or more persons",
+        "punishment": "Rigorous imprisonment up to 10 years, and fine",
+        "ipc_equivalent": "IPC 395",
+        "keywords": ["dacoity", "gang robbery", "armed robbery", "group attack"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 318",
+        "title": "Cheating",
+        "description": "Whoever cheats and thereby dishonestly induces the person deceived to deliver any property",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 420",
+        "keywords": ["cheating", "fraud", "deceived", "dishonest", "scam", "fake", "promised job", "money taken", "online fraud", "cyber fraud", "loan fraud"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 319",
+        "title": "Cheating by Personation",
+        "description": "Cheating by pretending to be another person",
+        "punishment": "Imprisonment up to 5 years, or fine, or both",
+        "ipc_equivalent": "IPC 419",
+        "keywords": ["impersonation", "identity theft", "fake identity", "pretending"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 329",
+        "title": "Criminal Breach of Trust",
+        "description": "Dishonest misappropriation of property entrusted",
+        "punishment": "Imprisonment up to 3 years, or fine, or both",
+        "ipc_equivalent": "IPC 406",
+        "keywords": ["breach of trust", "misappropriation", "embezzlement", "company fraud", "trust violated"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 336",
+        "title": "Forgery",
+        "description": "Making false documents with intent to cause damage or injury",
+        "punishment": "Imprisonment up to 2 years, or fine, or both",
+        "ipc_equivalent": "IPC 463",
+        "keywords": ["forgery", "forged", "fake document", "fabricated", "false signature"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 340",
+        "title": "Forgery for Purpose of Cheating",
+        "description": "Forgery with intent to cheat",
+        "punishment": "Imprisonment up to 7 years, and fine",
+        "ipc_equivalent": "IPC 468",
+        "keywords": ["forgery cheating", "fake certificate", "forged document fraud"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 351",
+        "title": "Criminal Intimidation",
+        "description": "Threatening injury to person, reputation or property",
+        "punishment": "Imprisonment up to 2 years, or fine, or both",
+        "ipc_equivalent": "IPC 506",
+        "keywords": ["threat", "intimidation", "threatening", "scared", "life threat", "death threat"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNS 352",
+        "title": "Intentional Insult",
+        "description": "Intentional insult with intent to provoke breach of peace",
+        "punishment": "Imprisonment up to 1 year, or fine, or both",
+        "ipc_equivalent": "IPC 504",
+        "keywords": ["insult", "abuse", "provoke", "humiliate", "verbal abuse", "caste abuse"],
+        "category": "offence"
+    },
+    {
+        "section_number": "BNSS 35",
+        "title": "Arrest Without Warrant",
+        "description": "When police may arrest without warrant in cognizable offences",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 41",
+        "keywords": ["arrest", "arrested", "custody", "apprehend", "detained"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 37",
+        "title": "Arrest by Private Person",
+        "description": "Private person may arrest in certain circumstances",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 43",
+        "keywords": ["citizen arrest", "private arrest", "caught red handed"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 47",
+        "title": "Search of Arrested Person",
+        "description": "Search of person arrested",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 51",
+        "keywords": ["search", "body search", "frisk"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 105",
+        "title": "Power to Summon",
+        "description": "Power to summon persons",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 61",
+        "keywords": ["summon", "summons", "appear", "court notice"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 173",
+        "title": "Police Report to Magistrate",
+        "description": "Report of police officer on completion of investigation (Chargesheet)",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 173",
+        "keywords": ["chargesheet", "final report", "investigation complete", "prosecution"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 176",
+        "title": "FIR Registration",
+        "description": "Information in cognizable cases - First Information Report",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 154",
+        "keywords": ["fir", "first information", "complaint", "report filed"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 180",
+        "title": "Investigation Procedure",
+        "description": "Procedure for investigation",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 157",
+        "keywords": ["investigation", "inquiry", "examine", "probe"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 185",
+        "title": "Examination of Witnesses",
+        "description": "Police officer examination of witnesses",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 161",
+        "keywords": ["witness", "statement", "testimony", "deposition"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 187",
+        "title": "Search Warrant",
+        "description": "Power to issue search warrant",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 93",
+        "keywords": ["search warrant", "seizure", "premises", "raid"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 187(3)",
+        "title": "Digital Evidence Seizure",
+        "description": "Seizure of digital devices and electronic records",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 91 (extended)",
+        "keywords": ["digital seizure", "phone seizure", "computer seizure", "electronic device"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 193",
+        "title": "Seizure of Property",
+        "description": "Seizure of property which may be required as evidence",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 102",
+        "keywords": ["seizure", "seize", "evidence property", "confiscate"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 480",
+        "title": "Bail Provisions",
+        "description": "Provisions relating to bail in bailable offences",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 436-439",
+        "keywords": ["bail", "release", "surety", "bond"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BNSS 483",
+        "title": "Anticipatory Bail",
+        "description": "Direction for grant of bail to person apprehending arrest",
+        "punishment": "",
+        "crpc_equivalent": "CrPC 438",
+        "keywords": ["anticipatory bail", "pre-arrest bail"],
+        "category": "procedure"
+    },
+    {
+        "section_number": "BSA 63",
+        "title": "Admissibility of Electronic Records",
+        "description": "Electronic records including digital evidence are admissible with proper certification",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 65B",
+        "keywords": ["digital evidence", "electronic record", "cctv", "recording", "computer", "email", "whatsapp", "screenshot"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 64",
+        "title": "Certificate for Electronic Evidence",
+        "description": "Certificate required for electronic evidence from person in charge of device",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 65B(4)",
+        "keywords": ["certificate", "authentication", "electronic certificate", "65b certificate"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 136",
+        "title": "Authentication of Electronic Records",
+        "description": "Hash value and digital signature authentication for electronic records",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 47A",
+        "keywords": ["hash value", "digital signature", "authentication", "verify", "sha256"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 23",
+        "title": "Admissions",
+        "description": "Statement suggesting inference as to any fact in issue or relevant fact",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 17-21",
+        "keywords": ["admission", "confess", "admit", "acknowledge"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 24",
+        "title": "Oral Admissions",
+        "description": "Oral admissions as to contents of documents",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 22",
+        "keywords": ["oral admission", "verbal statement", "spoken confession"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 39",
+        "title": "Dying Declaration",
+        "description": "Statement by person who is dead - relevant when it relates to cause of death",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 32",
+        "keywords": ["dying declaration", "death bed", "last words", "mrityupurva vakya"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 45",
+        "title": "Expert Opinion",
+        "description": "Opinions of experts are relevant facts",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 45",
+        "keywords": ["expert", "forensic", "specialist", "opinion", "doctor", "medical opinion"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 47",
+        "title": "Opinion on Digital Signature",
+        "description": "Expert opinion on electronic signature",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 47A",
+        "keywords": ["digital signature expert", "electronic signature opinion"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 57",
+        "title": "Primary Evidence",
+        "description": "Document itself produced for inspection of court",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 62",
+        "keywords": ["original document", "primary evidence", "original copy"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 58",
+        "title": "Secondary Evidence",
+        "description": "Copies and certified copies when original not available",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 63",
+        "keywords": ["copy", "secondary evidence", "duplicate", "photocopy", "certified copy"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 118",
+        "title": "Witness Competency",
+        "description": "Who may testify as witness",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 118",
+        "keywords": ["witness", "competent witness", "testify"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "BSA 145",
+        "title": "Cross Examination",
+        "description": "Cross examination of witnesses",
+        "punishment": "",
+        "evidence_act_equivalent": "Evidence Act 145-146",
+        "keywords": ["cross examination", "question witness", "contradict"],
+        "category": "evidence"
+    },
+    {
+        "section_number": "IT Act 66",
+        "title": "Computer Related Offences",
+        "description": "Hacking, data theft, and computer system damage",
+        "punishment": "Imprisonment up to 3 years, or fine up to Rs. 5 lakhs, or both",
+        "ipc_equivalent": "",
+        "keywords": ["hacking", "computer crime", "data theft", "system damage", "unauthorized access"],
+        "category": "offence"
+    },
+    {
+        "section_number": "IT Act 66C",
+        "title": "Identity Theft",
+        "description": "Fraudulent use of electronic signature, password or unique identification",
+        "punishment": "Imprisonment up to 3 years, and fine up to Rs. 1 lakh",
+        "ipc_equivalent": "",
+        "keywords": ["identity theft", "password theft", "otp fraud", "sim swap"],
+        "category": "offence"
+    },
+    {
+        "section_number": "IT Act 66D",
+        "title": "Cheating by Personation using Computer Resource",
+        "description": "Cheating by personation using computer resources",
+        "punishment": "Imprisonment up to 3 years, and fine up to Rs. 1 lakh",
+        "ipc_equivalent": "",
+        "keywords": ["online impersonation", "fake profile", "social media fraud"],
+        "category": "offence"
+    }
+]
+
+
+def generate_remand_note(sections: List[dict], case_facts: str) -> str:
+    """Generate a remand note based on detected sections"""
+    if not sections:
+        return ""
+    
+    section_list = ", ".join([s["section_number"] for s in sections])
+    section_details = "\n".join([f"- {s['section_number']}: {s['title']}" for s in sections])
+    
+    remand_note = f"""REMAND NOTE
+
+The accused has committed offences punishable under the following sections of the Bharatiya Nyaya Sanhita (BNS) / Bharatiya Nagarik Suraksha Sanhita (BNSS) / Bharatiya Sakshya Adhiniyam (BSA):
+
+{section_details}
+
+BRIEF FACTS:
+{case_facts[:500]}...
+
+GROUNDS FOR REMAND:
+
+1. The accused has committed a cognizable offence under {section_list}.
+
+2. Custodial interrogation is necessary to:
+   a) Recover evidence and stolen property (if any)
+   b) Identify co-conspirators and accomplices
+   c) Establish the complete chain of events
+   d) Prevent tampering with evidence
+
+3. The investigation is at a crucial stage and release of the accused would prejudice the investigation.
+
+4. There is reasonable apprehension that if released, the accused may:
+   a) Flee from justice
+   b) Tamper with evidence
+   c) Influence witnesses
+   d) Commit similar offences
+
+Therefore, it is prayed that the accused be remanded to police/judicial custody for the purpose of investigation.
+
+Date: {datetime.now().strftime("%d/%m/%Y")}
+Place: _______________
+
+Investigating Officer
+_______________
+"""
+    return remand_note
+
+
 @api_router.get("/")
 async def root():
-    return {"message": "NYAYA PRAHARI API - Investigation & FIR Preparation Assistant"}
+    return {"message": "SAAKSHYAM AI - Investigation Command Console"}
 
 
 @api_router.post("/auth/signup", response_model=LoginResponse)
@@ -360,99 +952,138 @@ async def process_ocr(
     file: UploadFile = File(...),
     officer_id: str = Depends(get_current_officer)
 ):
+    """Process document using Google Vision API with Service Account authentication"""
     try:
         contents = await file.read()
+        file_ext = file.filename.split('.')[-1].lower() if file.filename else ''
         
-        if not GOOGLE_VISION_API_KEY:
+        detected_text = ""
+        detected_language = "Unknown"
+        
+        # Handle PDF files
+        if file_ext == 'pdf':
+            try:
+                from PyPDF2 import PdfReader
+                pdf_reader = PdfReader(io.BytesIO(contents))
+                for page in pdf_reader.pages:
+                    detected_text += page.extract_text() or ""
+                detected_language = "en"
+            except Exception as e:
+                logger.error(f"PDF extraction error: {e}")
+                return OCRResponse(
+                    original_text="",
+                    detected_language="",
+                    translated_text="",
+                    legal_text="",
+                    confidence_score=0.0,
+                    message=f"Failed to extract text from PDF: {str(e)}"
+                )
+        
+        # Handle DOCX files
+        elif file_ext == 'docx':
+            try:
+                from docx import Document
+                doc = Document(io.BytesIO(contents))
+                detected_text = "\n".join([para.text for para in doc.paragraphs])
+                detected_language = "en"
+            except Exception as e:
+                logger.error(f"DOCX extraction error: {e}")
+                return OCRResponse(
+                    original_text="",
+                    detected_language="",
+                    translated_text="",
+                    legal_text="",
+                    confidence_score=0.0,
+                    message=f"Failed to extract text from DOCX: {str(e)}"
+                )
+        
+        # Handle Image files with Google Vision
+        elif file_ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+            if vision_client:
+                try:
+                    from google.cloud import vision
+                    image = vision.Image(content=contents)
+                    response = vision_client.text_detection(image=image)
+                    
+                    if response.error.message:
+                        logger.error(f"Vision API error: {response.error.message}")
+                        return OCRResponse(
+                            original_text="",
+                            detected_language="",
+                            translated_text="",
+                            legal_text="",
+                            confidence_score=0.0,
+                            message=f"Vision API error: {response.error.message}"
+                        )
+                    
+                    texts = response.text_annotations
+                    if texts:
+                        detected_text = texts[0].description
+                        detected_language = texts[0].locale if texts[0].locale else "Unknown"
+                    else:
+                        return OCRResponse(
+                            original_text="",
+                            detected_language="Unknown",
+                            translated_text="",
+                            legal_text="",
+                            confidence_score=0.0,
+                            message="Unable to detect readable text in the document"
+                        )
+                except Exception as e:
+                    logger.error(f"Vision API processing error: {e}")
+                    return OCRResponse(
+                        original_text="",
+                        detected_language="",
+                        translated_text="",
+                        legal_text="",
+                        confidence_score=0.0,
+                        message=f"OCR processing failed: {str(e)}"
+                    )
+            else:
+                return OCRResponse(
+                    original_text="",
+                    detected_language="",
+                    translated_text="",
+                    legal_text="",
+                    confidence_score=0.0,
+                    message="Google Vision API not configured. Please check service account credentials."
+                )
+        else:
             return OCRResponse(
                 original_text="",
                 detected_language="",
                 translated_text="",
                 legal_text="",
                 confidence_score=0.0,
-                message="Google Vision API key not configured. Please add GOOGLE_VISION_API_KEY to backend .env file."
+                message=f"Unsupported file format: {file_ext}. Supported: JPG, PNG, PDF, DOCX"
             )
         
-        import requests
-        encoded_image = base64.b64encode(contents).decode('utf-8')
-        
-        vision_api_url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_VISION_API_KEY}"
-        
-        request_body = {
-            "requests": [
-                {
-                    "image": {
-                        "content": encoded_image
-                    },
-                    "features": [
-                        {
-                            "type": "TEXT_DETECTION"
-                        }
-                    ]
-                }
-            ]
-        }
-        
-        vision_response = requests.post(vision_api_url, json=request_body, timeout=30)
-        
-        if vision_response.status_code == 400:
-            error_data = vision_response.json()
-            error_msg = error_data.get('error', {}).get('message', 'Invalid API key')
-            logger.warning(f"Vision API key invalid: {error_msg}")
-            return OCRResponse(
-                original_text="",
-                detected_language="",
-                translated_text="",
-                legal_text="",
-                confidence_score=0.0,
-                message="Google Vision API key is invalid. Please verify: 1) API key is correct, 2) Vision API is enabled in Google Cloud Console, 3) Billing is enabled for your project. Contact support for assistance."
-            )
-        
-        if vision_response.status_code != 200:
-            error_msg = vision_response.json().get('error', {}).get('message', 'Vision API error')
-            logger.error(f"Vision API error: {error_msg}")
-            return OCRResponse(
-                original_text="",
-                detected_language="",
-                translated_text="",
-                legal_text="",
-                confidence_score=0.0,
-                message=f"Vision API Error: {error_msg}"
-            )
-        
-        result = vision_response.json()
-        
-        if 'responses' not in result or not result['responses']:
+        if not detected_text.strip():
             return OCRResponse(
                 original_text="",
                 detected_language="Unknown",
-                translated_text="No text detected in the image",
+                translated_text="",
                 legal_text="",
                 confidence_score=0.0,
-                message="No text detected in the image"
+                message="Unable to detect readable text in the document"
             )
         
-        text_annotations = result['responses'][0].get('textAnnotations', [])
-        
-        if not text_annotations:
-            return OCRResponse(
-                original_text="",
-                detected_language="Unknown",
-                translated_text="No text detected in the image",
-                legal_text="",
-                confidence_score=0.0,
-                message="No text detected in the image"
-            )
-        
-        detected_text = text_annotations[0].get('description', '')
-        detected_language = text_annotations[0].get('locale', 'Unknown')
-        
+        # Translate if not English
         translated_text = detected_text
-        legal_text = format_to_legal_text(detected_text)
+        if translate_client and detected_language not in ['en', 'Unknown']:
+            try:
+                result = translate_client.translate(detected_text, target_language='en')
+                translated_text = result['translatedText']
+            except Exception as e:
+                logger.warning(f"Translation failed: {e}")
         
+        # Generate legal text
+        legal_text = format_to_legal_text(translated_text)
+        
+        # Save to database
         doc_process = DocumentProcess(
             officer_id=officer_id,
-            document_type="image",
+            document_type=file_ext,
             original_text=detected_text,
             detected_language=detected_language,
             translated_text=translated_text,
@@ -470,19 +1101,9 @@ async def process_ocr(
             translated_text=translated_text,
             legal_text=legal_text,
             confidence_score=0.95,
-            message="OCR processing successful. Translation API can be enabled by adding billing to your Google Cloud project."
+            message="Document processed successfully"
         )
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"OCR request error: {str(e)}")
-        return OCRResponse(
-            original_text="",
-            detected_language="",
-            translated_text="",
-            legal_text="",
-            confidence_score=0.0,
-            message="Network error connecting to Vision API. Please check your internet connection."
-        )
     except Exception as e:
         logger.error(f"OCR processing error: {str(e)}")
         return OCRResponse(
@@ -498,14 +1119,29 @@ async def process_ocr(
 @api_router.post("/translate/process")
 async def process_translation(
     text: str = Form(...),
+    target_language: str = Form(default="en"),
     officer_id: str = Depends(get_current_officer)
 ):
+    """Translate text using Google Translate API"""
+    translated_text = text
+    detected_language = "Unknown"
+    
+    if translate_client:
+        try:
+            result = translate_client.translate(text, target_language=target_language)
+            translated_text = result['translatedText']
+            detected_language = result.get('detectedSourceLanguage', 'Unknown')
+        except Exception as e:
+            logger.warning(f"Translation failed: {e}")
+    
+    legal_text = format_to_legal_text(translated_text)
+    
     return {
         "original_text": text,
-        "detected_language": "Telugu/Hindi",
-        "translated_text": text,
-        "legal_text": format_to_legal_text(text),
-        "message": "Translation API ready to activate. Enable billing in Google Cloud Console to use Google Translation API."
+        "detected_language": detected_language,
+        "translated_text": translated_text,
+        "legal_text": legal_text,
+        "message": "Translation complete" if translate_client else "Translation API not configured"
     }
 
 
@@ -514,24 +1150,63 @@ async def process_speech(
     file: UploadFile = File(...),
     officer_id: str = Depends(get_current_officer)
 ):
+    """Process audio using Google Speech-to-Text API"""
     try:
         contents = await file.read()
-        file_size = len(contents)
+        file_ext = file.filename.split('.')[-1].lower() if file.filename else 'wav'
         
-        mock_transcribed_text = "This is a mock transcription. Actual speech-to-text requires Google Speech-to-Text API billing."
+        transcribed_text = ""
+        detected_language = "Unknown"
         
-        detected_language = "Telugu/Hindi (Mock)"
+        if speech_client:
+            try:
+                from google.cloud import speech
+                
+                # Determine encoding based on file type
+                if file_ext == 'mp3':
+                    encoding = speech.RecognitionConfig.AudioEncoding.MP3
+                elif file_ext == 'm4a':
+                    encoding = speech.RecognitionConfig.AudioEncoding.MP3
+                else:
+                    encoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
+                
+                audio = speech.RecognitionAudio(content=contents)
+                config = speech.RecognitionConfig(
+                    encoding=encoding,
+                    language_code="te-IN",  # Telugu
+                    alternative_language_codes=["hi-IN", "en-IN"],  # Hindi and English
+                    enable_automatic_punctuation=True,
+                )
+                
+                response = speech_client.recognize(config=config, audio=audio)
+                
+                for result in response.results:
+                    transcribed_text += result.alternatives[0].transcript + " "
+                    detected_language = result.language_code if hasattr(result, 'language_code') else "te"
+                
+            except Exception as e:
+                logger.error(f"Speech-to-Text error: {e}")
+                transcribed_text = f"Speech-to-Text processing failed: {str(e)}"
+        else:
+            transcribed_text = "Speech-to-Text API not configured. Please check service account credentials."
         
-        translated_text = mock_transcribed_text
+        # Translate if not English
+        translated_text = transcribed_text
+        if translate_client and transcribed_text and detected_language not in ['en', 'en-IN']:
+            try:
+                result = translate_client.translate(transcribed_text, target_language='en')
+                translated_text = result['translatedText']
+            except Exception as e:
+                logger.warning(f"Translation failed: {e}")
         
-        grammar_corrected = mock_transcribed_text
+        # Apply grammar normalization and legal formatting
+        legal_text = convert_to_third_person_fir(translated_text)
         
-        legal_text = convert_to_third_person_fir(grammar_corrected)
-        
+        # Save to database
         doc_process = DocumentProcess(
             officer_id=officer_id,
             document_type="audio",
-            original_text=mock_transcribed_text,
+            original_text=transcribed_text,
             detected_language=detected_language,
             translated_text=translated_text,
             legal_text=legal_text,
@@ -543,20 +1218,20 @@ async def process_speech(
         await db.documents.insert_one(doc_dict)
         
         return {
-            "transcribed_text": mock_transcribed_text,
+            "transcribed_text": transcribed_text,
             "detected_language": detected_language,
             "translated_text": translated_text,
-            "grammar_corrected_text": grammar_corrected,
+            "grammar_corrected_text": translated_text,
             "legal_text": legal_text,
-            "translation_confidence": "Medium",
+            "translation_confidence": "High" if translate_client else "N/A",
             "grammar_confidence": "High",
             "legal_formatting_confidence": "High",
             "overall_accuracy_estimate": "85%",
-            "message": "Speech-to-Text API ready to activate. Enable billing in Google Cloud Console for actual transcription. This is a 95% accuracy multi-stage pipeline: Speech→Text→Translation→Grammar→Legal formatting.",
+            "message": "Speech processing complete",
             "processing_stages": [
-                "Stage 1: Speech-to-Text (Literal)",
+                "Stage 1: Speech-to-Text (Google Speech API)",
                 "Stage 2: Language Detection",
-                "Stage 3: Direct Translation",
+                "Stage 3: Translation to English",
                 "Stage 4: Grammar Normalization",
                 "Stage 5: Legal Tone Rewriter"
             ]
@@ -730,140 +1405,84 @@ async def get_fir_draft(fir_id: str, officer_id: str = Depends(get_current_offic
 
 @api_router.post("/bns/analyze", response_model=BNSAnalysisResponse)
 async def analyze_bns(request: BNSAnalysisRequest, officer_id: str = Depends(get_current_officer)):
+    """Analyze case facts and suggest applicable BNS/BNSS/BSA sections with remand note"""
     text_lower = request.text.lower()
-    
-    bns_sections_data = [
-        {
-            "section_number": "BNS 103",
-            "title": "Murder",
-            "description": "Whoever commits murder shall be punished with death or imprisonment for life",
-            "ipc_equivalent": "IPC 302",
-            "keywords": ["murder", "killed", "death", "homicide"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNS 115",
-            "title": "Voluntarily Causing Hurt",
-            "description": "Causing hurt voluntarily",
-            "ipc_equivalent": "IPC 323",
-            "keywords": ["hurt", "assault", "beat", "injury", "attacked"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNS 303",
-            "title": "Theft",
-            "description": "Whoever commits theft shall be punished",
-            "ipc_equivalent": "IPC 379",
-            "keywords": ["theft", "stolen", "stole", "took", "property"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNS 309",
-            "title": "Robbery",
-            "description": "Robbery with violence or threat",
-            "ipc_equivalent": "IPC 392",
-            "keywords": ["robbery", "robbed", "violence", "force"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNS 318",
-            "title": "Cheating",
-            "description": "Cheating and fraudulently inducing delivery of property",
-            "ipc_equivalent": "IPC 420",
-            "keywords": ["cheating", "fraud", "deceived", "dishonest"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNS 137",
-            "title": "Kidnapping",
-            "description": "Kidnapping from lawful guardianship",
-            "ipc_equivalent": "IPC 363",
-            "keywords": ["kidnapping", "abducted", "taken", "missing"],
-            "category": "offence"
-        },
-        {
-            "section_number": "BNSS 35",
-            "title": "Arrest Without Warrant",
-            "description": "Police officer may arrest without warrant in cognizable offences",
-            "crpc_equivalent": "CrPC 41",
-            "keywords": ["arrest", "arrested", "custody", "apprehend"],
-            "category": "procedure"
-        },
-        {
-            "section_number": "BNSS 187",
-            "title": "Power to Issue Search Warrant",
-            "description": "Authority for search and seizure",
-            "crpc_equivalent": "CrPC 93",
-            "keywords": ["search", "warrant", "seizure", "premises", "raid"],
-            "category": "procedure"
-        },
-        {
-            "section_number": "BNSS 173",
-            "title": "Police to Report Arrest",
-            "description": "Intimation of arrest to nominated person",
-            "crpc_equivalent": "CrPC 50A",
-            "keywords": ["remand", "custody", "detention", "judicial"],
-            "category": "procedure"
-        },
-        {
-            "section_number": "BSA 63",
-            "title": "Electronic Records as Evidence",
-            "description": "Admissibility of electronic/digital records",
-            "evidence_act_equivalent": "Evidence Act 65B",
-            "keywords": ["digital", "electronic", "cctv", "recording", "device", "computer"],
-            "category": "evidence"
-        },
-        {
-            "section_number": "BSA 136",
-            "title": "Authentication of Electronic Records",
-            "description": "Hash value and digital signature authentication",
-            "evidence_act_equivalent": "Evidence Act 47A",
-            "keywords": ["hash", "digital signature", "authentication", "certificate"],
-            "category": "evidence"
-        },
-        {
-            "section_number": "BSA 23",
-            "title": "Admissions in Civil Cases",
-            "description": "Documentary evidence admissibility",
-            "evidence_act_equivalent": "Evidence Act 22",
-            "keywords": ["document", "evidence", "proof", "exhibit"],
-            "category": "evidence"
-        }
-    ]
     
     suggested_sections = []
     matched_keywords = []
     
-    for section_data in bns_sections_data:
+    for section_data in BNS_SECTIONS_DATABASE:
         for keyword in section_data["keywords"]:
             if keyword in text_lower:
-                suggested_sections.append(BNSSection(**section_data))
-                matched_keywords.append(keyword)
+                if not any(s.section_number == section_data["section_number"] for s in suggested_sections):
+                    suggested_sections.append(BNSSection(**section_data))
+                    matched_keywords.append(keyword)
                 break
+    
+    # Generate remand note if offence sections found
+    remand_note = None
+    offence_sections = [s for s in suggested_sections if s.category == "offence"]
+    if offence_sections:
+        remand_note = generate_remand_note(
+            [s.model_dump() for s in offence_sections],
+            request.text
+        )
     
     return BNSAnalysisResponse(
         suggested_sections=suggested_sections,
-        matched_keywords=list(set(matched_keywords))
+        matched_keywords=list(set(matched_keywords)),
+        remand_note=remand_note
     )
 
 
 @api_router.post("/bns/search")
 async def search_bns_section(section_number: str = Form(...), officer_id: str = Depends(get_current_officer)):
-    bns_mapping = {
-        "103": {"bns": "BNS 103", "ipc": "IPC 302", "title": "Murder"},
-        "115": {"bns": "BNS 115", "ipc": "IPC 323", "title": "Voluntarily Causing Hurt"},
-        "303": {"bns": "BNS 303", "ipc": "IPC 379", "title": "Theft"},
-        "309": {"bns": "BNS 309", "ipc": "IPC 392", "title": "Robbery"},
-        "318": {"bns": "BNS 318", "ipc": "IPC 420", "title": "Cheating"},
-        "137": {"bns": "BNS 137", "ipc": "IPC 363", "title": "Kidnapping"}
+    """Search for a specific BNS/IPC section"""
+    search_term = section_number.lower().replace(" ", "")
+    
+    for section in BNS_SECTIONS_DATABASE:
+        section_num = section["section_number"].lower().replace(" ", "")
+        ipc_eq = section.get("ipc_equivalent", "").lower().replace(" ", "")
+        crpc_eq = section.get("crpc_equivalent", "").lower().replace(" ", "")
+        ea_eq = section.get("evidence_act_equivalent", "").lower().replace(" ", "")
+        
+        if (search_term in section_num or search_term in ipc_eq or 
+            search_term in crpc_eq or search_term in ea_eq):
+            return {
+                "found": True,
+                "section": section
+            }
+    
+    return {"found": False, "message": "Section not found", "section": section_number}
+
+
+@api_router.post("/jurisdiction/find")
+async def find_jurisdiction(request: JurisdictionRequest, officer_id: str = Depends(get_current_officer)):
+    """Find nearest police station using Haversine formula"""
+    nearest = find_nearest_station(request.latitude, request.longitude)
+    
+    if not nearest:
+        raise HTTPException(status_code=404, detail="No police stations found in database")
+    
+    return {
+        "nearest_station": nearest,
+        "all_nearby": sorted(
+            [
+                {**station, "distance_km": round(haversine_distance(
+                    request.latitude, request.longitude,
+                    station['latitude'], station['longitude']
+                ), 2)}
+                for station in POLICE_STATIONS
+            ],
+            key=lambda x: x['distance_km']
+        )[:10]  # Return 10 nearest stations
     }
-    
-    section_num = section_number.replace("BNS", "").replace("bns", "").strip()
-    
-    if section_num in bns_mapping:
-        return bns_mapping[section_num]
-    
-    return {"message": "Section not found", "section": section_number}
+
+
+@api_router.get("/jurisdiction/stations")
+async def get_all_stations(officer_id: str = Depends(get_current_officer)):
+    """Get all police stations"""
+    return {"stations": POLICE_STATIONS, "count": len(POLICE_STATIONS)}
 
 
 @api_router.post("/reminders/create", response_model=Reminder)
@@ -897,20 +1516,190 @@ async def list_reminders(officer_id: str = Depends(get_current_officer)):
     return reminders
 
 
+# CDR Column Mapping for dynamic detection
+CDR_COLUMN_MAPPINGS = {
+    'phone_number': ['PhoneNumber', 'MSISDN', 'Calling_Number', 'Caller', 'A_Number', 'Mobile_Number', 'Phone', 'CallerNumber', 'From'],
+    'called_number': ['CalledNumber', 'Called_Number', 'B_Number', 'To', 'Destination', 'DialedNumber'],
+    'datetime': ['DateTime', 'Start_Time', 'Call_Time', 'Timestamp', 'Call_Date', 'Date', 'Time', 'CallDateTime'],
+    'duration': ['Duration', 'Call_Duration', 'Talk_Time', 'Seconds', 'CallDuration', 'TalkTime'],
+    'imei': ['IMEI', 'IMEI_Number', 'DeviceID', 'Device_IMEI'],
+    'tower_id': ['CellTower', 'Cell_ID', 'Tower_ID', 'CGI', 'LAC', 'CellId', 'Tower'],
+    'location': ['Location', 'Address', 'Place', 'Area', 'SiteName']
+}
+
+
+def map_cdr_columns(headers: List[str]) -> Dict[str, str]:
+    """Map actual column names to standardized names"""
+    column_map = {}
+    headers_lower = {h.lower().replace(' ', '_'): h for h in headers}
+    
+    for std_name, possible_names in CDR_COLUMN_MAPPINGS.items():
+        for possible in possible_names:
+            possible_lower = possible.lower().replace(' ', '_')
+            if possible_lower in headers_lower:
+                column_map[std_name] = headers_lower[possible_lower]
+                break
+    
+    return column_map
+
+
 @api_router.post("/cdr/upload")
 async def upload_cdr(
     file: UploadFile = File(...),
     case_id: str = Form(...),
     officer_id: str = Depends(get_current_officer)
 ):
-    contents = await file.read()
-    
-    return {
-        "message": "CDR upload successful. File parsing ready.",
-        "case_id": case_id,
-        "filename": file.filename,
-        "size": len(contents)
-    }
+    """Upload and parse CDR with dynamic column detection"""
+    try:
+        contents = await file.read()
+        file_ext = file.filename.split('.')[-1].lower() if file.filename else ''
+        
+        records = []
+        analysis = {
+            "total_records": 0,
+            "most_called_numbers": [],
+            "common_locations": [],
+            "call_frequency": {},
+            "date_range": {"start": None, "end": None},
+            "duplicate_numbers": []
+        }
+        
+        if file_ext in ['xlsx', 'xls']:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(contents), data_only=True)
+            ws = wb.active
+            
+            # Get headers from first row
+            headers = [cell.value for cell in ws[1] if cell.value]
+            column_map = map_cdr_columns(headers)
+            
+            # Process rows
+            phone_counts = {}
+            location_counts = {}
+            dates = []
+            
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not any(row):
+                    continue
+                
+                row_dict = dict(zip(headers, row))
+                
+                record = {
+                    "phone_number": str(row_dict.get(column_map.get('phone_number', ''), '') or ''),
+                    "called_number": str(row_dict.get(column_map.get('called_number', ''), '') or ''),
+                    "datetime_str": str(row_dict.get(column_map.get('datetime', ''), '') or ''),
+                    "duration": str(row_dict.get(column_map.get('duration', ''), '') or ''),
+                    "imei": str(row_dict.get(column_map.get('imei', ''), '') or ''),
+                    "tower_id": str(row_dict.get(column_map.get('tower_id', ''), '') or ''),
+                    "location": str(row_dict.get(column_map.get('location', ''), '') or '')
+                }
+                
+                records.append(record)
+                
+                # Track analytics
+                for num in [record['phone_number'], record['called_number']]:
+                    if num:
+                        phone_counts[num] = phone_counts.get(num, 0) + 1
+                
+                if record['location']:
+                    location_counts[record['location']] = location_counts.get(record['location'], 0) + 1
+                
+                if record['datetime_str']:
+                    dates.append(record['datetime_str'])
+            
+            # Compute analysis
+            analysis["total_records"] = len(records)
+            analysis["most_called_numbers"] = sorted(phone_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            analysis["common_locations"] = sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            analysis["duplicate_numbers"] = [(k, v) for k, v in phone_counts.items() if v > 3][:10]
+            if dates:
+                analysis["date_range"] = {"start": min(dates), "end": max(dates)}
+            
+            # Save to database in batches
+            if records:
+                batch_size = 500
+                for i in range(0, len(records), batch_size):
+                    batch = records[i:i+batch_size]
+                    docs = [
+                        {
+                            "id": str(uuid.uuid4()),
+                            "officer_id": officer_id,
+                            "case_id": case_id,
+                            **record,
+                            "uploaded_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        for record in batch
+                    ]
+                    await db.cdr_records.insert_many(docs)
+            
+            return {
+                "message": "CDR uploaded and analyzed successfully",
+                "case_id": case_id,
+                "filename": file.filename,
+                "records_processed": len(records),
+                "columns_detected": list(column_map.keys()),
+                "analysis": analysis
+            }
+        
+        elif file_ext == 'csv':
+            import csv
+            content_str = contents.decode('utf-8')
+            reader = csv.DictReader(io.StringIO(content_str))
+            headers = reader.fieldnames or []
+            column_map = map_cdr_columns(headers)
+            
+            phone_counts = {}
+            location_counts = {}
+            dates = []
+            
+            for row in reader:
+                record = {
+                    "phone_number": row.get(column_map.get('phone_number', ''), ''),
+                    "called_number": row.get(column_map.get('called_number', ''), ''),
+                    "datetime_str": row.get(column_map.get('datetime', ''), ''),
+                    "duration": row.get(column_map.get('duration', ''), ''),
+                    "imei": row.get(column_map.get('imei', ''), ''),
+                    "tower_id": row.get(column_map.get('tower_id', ''), ''),
+                    "location": row.get(column_map.get('location', ''), '')
+                }
+                records.append(record)
+                
+                for num in [record['phone_number'], record['called_number']]:
+                    if num:
+                        phone_counts[num] = phone_counts.get(num, 0) + 1
+                
+                if record['location']:
+                    location_counts[record['location']] = location_counts.get(record['location'], 0) + 1
+                
+                if record['datetime_str']:
+                    dates.append(record['datetime_str'])
+            
+            analysis["total_records"] = len(records)
+            analysis["most_called_numbers"] = sorted(phone_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            analysis["common_locations"] = sorted(location_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            analysis["duplicate_numbers"] = [(k, v) for k, v in phone_counts.items() if v > 3][:10]
+            if dates:
+                analysis["date_range"] = {"start": min(dates), "end": max(dates)}
+            
+            return {
+                "message": "CDR uploaded and analyzed successfully",
+                "case_id": case_id,
+                "filename": file.filename,
+                "records_processed": len(records),
+                "columns_detected": list(column_map.keys()),
+                "analysis": analysis
+            }
+        
+        else:
+            return {
+                "message": f"Unsupported file format: {file_ext}. Supported: XLSX, XLS, CSV",
+                "case_id": case_id,
+                "filename": file.filename
+            }
+            
+    except Exception as e:
+        logger.error(f"CDR upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"CDR processing failed: {str(e)}")
 
 
 @api_router.get("/cdr/records")
@@ -918,7 +1707,7 @@ async def get_cdr_records(
     case_id: str,
     officer_id: str = Depends(get_current_officer)
 ):
-    records = await db.cdr_records.find({"officer_id": officer_id, "case_id": case_id}, {"_id": 0}).to_list(1000)
+    records = await db.cdr_records.find({"officer_id": officer_id, "case_id": case_id}, {"_id": 0}).to_list(5000)
     return {"records": records, "count": len(records)}
 
 
@@ -933,7 +1722,7 @@ async def analyze_media_forensic(
         
         MAX_SIZE = 50 * 1024 * 1024
         if file_size > MAX_SIZE:
-            raise HTTPException(status_code=400, detail=f"File too large. Maximum size is 50MB")
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 50MB")
         
         file_ext = file.filename.split('.')[-1].lower()
         allowed_video = ['mp4', 'mov', 'avi']

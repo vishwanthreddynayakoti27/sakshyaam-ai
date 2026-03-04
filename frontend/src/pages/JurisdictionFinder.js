@@ -1,71 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { MapPin, Navigation, FileText, Download, Search, Building2, Phone, Mail } from 'lucide-react';
+import { MapPin, Navigation, FileText, Download, Search, Building2, Phone, Mail, Loader } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
+import { api } from '../utils/api';
 import jsPDF from 'jspdf';
-
-const SAMPLE_STATIONS = [
-  {
-    id: 1,
-    name: 'Cyberabad PS - Gachibowli',
-    address: 'Gachibowli, Hyderabad, Telangana 500032',
-    phone: '040-2785-5500',
-    email: 'sho-gachibowli@tspolice.gov.in',
-    lat: 17.4401,
-    lng: 78.3489,
-    jurisdiction: ['Gachibowli', 'Nanakramguda', 'Financial District', 'DLF Cyber City']
-  },
-  {
-    id: 2,
-    name: 'Madhapur PS',
-    address: 'Madhapur, Hyderabad, Telangana 500081',
-    phone: '040-2311-2345',
-    email: 'sho-madhapur@tspolice.gov.in',
-    lat: 17.4486,
-    lng: 78.3908,
-    jurisdiction: ['Madhapur', 'HITEC City', 'Kondapur', 'Kavuri Hills']
-  },
-  {
-    id: 3,
-    name: 'Banjara Hills PS',
-    address: 'Road No. 12, Banjara Hills, Hyderabad 500034',
-    phone: '040-2339-8765',
-    email: 'sho-banjarahills@tspolice.gov.in',
-    lat: 17.4156,
-    lng: 78.4347,
-    jurisdiction: ['Banjara Hills', 'Jubilee Hills', 'Film Nagar', 'Yousufguda']
-  },
-  {
-    id: 4,
-    name: 'Begumpet PS',
-    address: 'Begumpet, Hyderabad, Telangana 500016',
-    phone: '040-2776-5432',
-    email: 'sho-begumpet@tspolice.gov.in',
-    lat: 17.4432,
-    lng: 78.4675,
-    jurisdiction: ['Begumpet', 'Somajiguda', 'Raj Bhavan Road', 'Greenlands']
-  },
-  {
-    id: 5,
-    name: 'Kukatpally PS',
-    address: 'KPHB Colony, Kukatpally, Hyderabad 500072',
-    phone: '040-2305-6789',
-    email: 'sho-kukatpally@tspolice.gov.in',
-    lat: 17.4849,
-    lng: 78.4138,
-    jurisdiction: ['Kukatpally', 'KPHB', 'Moosapet', 'Allwyn Colony']
-  }
-];
 
 const JurisdictionFinder = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [nearestStation, setNearestStation] = useState(null);
+  const [nearbyStations, setNearbyStations] = useState([]);
+  const [allStations, setAllStations] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [showZeroFIR, setShowZeroFIR] = useState(false);
+  const [officerStation, setOfficerStation] = useState('');
   const [zeroFIRData, setZeroFIRData] = useState({
     complainantName: '',
     complainantAddress: '',
@@ -77,6 +29,21 @@ const JurisdictionFinder = () => {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
+  const stationMarkersRef = useRef([]);
+
+  useEffect(() => {
+    const loadStations = async () => {
+      try {
+        const response = await api.get('/jurisdiction/stations');
+        if (response.stations) {
+          setAllStations(response.stations);
+        }
+      } catch (err) {
+        console.error('Failed to load stations:', err);
+      }
+    };
+    loadStations();
+  }, []);
 
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -99,24 +66,15 @@ const JurisdictionFinder = () => {
 
     const initMap = () => {
       try {
-        const map = window.L.map(mapRef.current).setView([17.4401, 78.4000], 12);
+        const map = window.L.map(mapRef.current).setView([17.5, 78.5], 8);
         
         window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        SAMPLE_STATIONS.forEach(station => {
-          const marker = window.L.marker([station.lat, station.lng], {
-            icon: window.L.divIcon({
-              className: 'custom-marker',
-              html: `<div style="background: #00f2ff; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff;"></div>`,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8]
-            })
-          }).addTo(map);
-          
-          marker.bindPopup(`<b>${station.name}</b><br>${station.address}`);
-        });
+        if (allStations.length > 0) {
+          addStationMarkers(map, allStations);
+        }
 
         map.on('click', (e) => {
           onMapClick(e.latlng.lat, e.latlng.lng, map);
@@ -128,8 +86,9 @@ const JurisdictionFinder = () => {
       }
     };
 
-    const onMapClick = (lat, lng, map) => {
+    const onMapClick = async (lat, lng, map) => {
       setSelectedLocation({ lat, lng });
+      setLoading(true);
 
       if (markerRef.current && map) {
         try {
@@ -146,21 +105,23 @@ const JurisdictionFinder = () => {
         })
       }).addTo(map);
 
-      let nearest = null;
-      let minDistance = Infinity;
+      try {
+        const response = await api.post('/jurisdiction/find', {
+          latitude: lat,
+          longitude: lng
+        });
 
-      SAMPLE_STATIONS.forEach(station => {
-        const distance = Math.sqrt(
-          Math.pow(station.lat - lat, 2) + Math.pow(station.lng - lng, 2)
-        );
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearest = station;
+        if (response.nearest_station) {
+          setNearestStation(response.nearest_station);
+          setNearbyStations(response.all_nearby || []);
+          toast.success(`Nearest: ${response.nearest_station.name} (${response.nearest_station.distance_km} km)`);
         }
-      });
-
-      setNearestStation(nearest);
-      toast.success(`Nearest station: ${nearest?.name}`);
+      } catch (err) {
+        toast.error('Failed to find jurisdiction');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadLeaflet();
@@ -175,25 +136,53 @@ const JurisdictionFinder = () => {
     };
   }, []);
 
-  const handleSearch = () => {
+  useEffect(() => {
+    if (mapInstanceRef.current && allStations.length > 0) {
+      addStationMarkers(mapInstanceRef.current, allStations);
+    }
+  }, [allStations]);
+
+  const addStationMarkers = (map, stations) => {
+    stationMarkersRef.current.forEach(marker => {
+      try { map.removeLayer(marker); } catch (e) {}
+    });
+    stationMarkersRef.current = [];
+
+    stations.forEach(station => {
+      const marker = window.L.marker([station.latitude, station.longitude], {
+        icon: window.L.divIcon({
+          className: 'station-marker',
+          html: `<div style="background: #00f2ff; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; opacity: 0.8;"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        })
+      }).addTo(map);
+      
+      marker.bindPopup(`<b>${station.name}</b><br>${station.district}<br>${station.phone || ''}`);
+      stationMarkersRef.current.push(marker);
+    });
+  };
+
+  const handleSearch = async () => {
     if (!searchQuery.trim()) {
       toast.error('Please enter a location to search');
       return;
     }
 
-    const matchedStation = SAMPLE_STATIONS.find(s => 
-      s.jurisdiction.some(j => j.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      s.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchedStation = allStations.find(s => 
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.district.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     if (matchedStation) {
       setNearestStation(matchedStation);
+      setNearbyStations([matchedStation]);
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.setView([matchedStation.lat, matchedStation.lng], 14);
+        mapInstanceRef.current.setView([matchedStation.latitude, matchedStation.longitude], 14);
       }
       toast.success(`Found: ${matchedStation.name}`);
     } else {
-      toast.warning('Location not found in database. Try clicking on the map.');
+      toast.warning('Station not found. Try clicking on the map.');
     }
   };
 
@@ -208,7 +197,7 @@ const JurisdictionFinder = () => {
     
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('ZERO FIR APPLICATION', 105, 20, { align: 'center' });
+    doc.text('ZERO FIR TRANSFER LETTER', 105, 20, { align: 'center' });
     doc.text('(Under Section 173 BNSS)', 105, 28, { align: 'center' });
     
     doc.setFontSize(10);
@@ -222,18 +211,18 @@ const JurisdictionFinder = () => {
     y += 6;
     doc.text('The Station House Officer', 20, y);
     y += 6;
-    doc.text(nearestStation?.name || '[Police Station Name]', 20, y);
+    doc.text(nearestStation?.name || '[Jurisdictional Police Station]', 20, y);
     y += 6;
-    doc.text(nearestStation?.address || '[Address]', 20, y);
+    doc.text(`District: ${nearestStation?.district || '[District]'}`, 20, y);
     y += 15;
     
-    doc.text('Subject: Request for Registration of Zero FIR', 20, y);
+    doc.text('Subject: Transfer of Zero FIR for Registration and Investigation', 20, y);
     y += 10;
     
     doc.text('Respected Sir/Madam,', 20, y);
     y += 10;
     
-    const intro = `I, ${zeroFIRData.complainantName}, residing at ${zeroFIRData.complainantAddress || '[Address]'}, contact number ${zeroFIRData.complainantPhone || '[Phone]'}, hereby request the registration of a Zero FIR for the following incident:`;
+    const intro = `A complaint was received at this station from ${zeroFIRData.complainantName}, residing at ${zeroFIRData.complainantAddress || '[Address]'}, contact: ${zeroFIRData.complainantPhone || '[Phone]'}, regarding an incident that occurred within your jurisdiction.`;
     const introLines = doc.splitTextToSize(intro, 170);
     doc.text(introLines, 20, y);
     y += introLines.length * 6 + 5;
@@ -245,7 +234,7 @@ const JurisdictionFinder = () => {
     
     doc.text(`Date of Incident: ${zeroFIRData.incidentDate || '[Date]'}`, 25, y);
     y += 6;
-    doc.text(`Location: ${zeroFIRData.incidentLocation || '[Location]'}`, 25, y);
+    doc.text(`Location: ${zeroFIRData.incidentLocation || '[Location - Within Your Jurisdiction]'}`, 25, y);
     y += 10;
     
     doc.setFont('helvetica', 'bold');
@@ -257,21 +246,19 @@ const JurisdictionFinder = () => {
     doc.text(factsLines, 25, y);
     y += factsLines.length * 6 + 10;
     
-    const closing = 'I understand that this Zero FIR will be transferred to the jurisdictional police station for further investigation. I request you to kindly register the same and take necessary action.';
+    const closing = 'The complaint is hereby forwarded for registration of FIR and investigation as per the provisions of BNSS. The complainant has been informed about this transfer.';
     const closingLines = doc.splitTextToSize(closing, 170);
     doc.text(closingLines, 20, y);
     y += closingLines.length * 6 + 15;
     
-    doc.text('Thanking you,', 20, y);
-    y += 10;
-    doc.text('Yours faithfully,', 20, y);
-    y += 15;
-    doc.text(`${zeroFIRData.complainantName}`, 20, y);
+    doc.text('Station House Officer', 20, y);
     y += 6;
-    doc.text(`Contact: ${zeroFIRData.complainantPhone || '[Phone]'}`, 20, y);
+    doc.text(officerStation || '[Your Police Station]', 20, y);
+    y += 6;
+    doc.text(`Date: ${today}`, 20, y);
     
-    doc.save('Zero_FIR_Application.pdf');
-    toast.success('Zero FIR application generated!');
+    doc.save('Zero_FIR_Transfer_Letter.pdf');
+    toast.success('Zero FIR Transfer Letter generated!');
   };
 
   return (
@@ -289,7 +276,7 @@ const JurisdictionFinder = () => {
             </h1>
           </div>
           <p className="text-white/60 text-lg">
-            Find police station jurisdiction and generate Zero FIR applications
+            Find police station jurisdiction using Haversine formula ({allStations.length} stations loaded)
           </p>
         </motion.div>
 
@@ -302,7 +289,7 @@ const JurisdictionFinder = () => {
           >
             <div className="flex gap-4 mb-4">
               <Input
-                placeholder="Search location (e.g., Madhapur, HITEC City)"
+                placeholder="Search station or district (e.g., Madhapur, Warangal)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -326,8 +313,22 @@ const JurisdictionFinder = () => {
             />
 
             <p className="text-white/50 text-sm mt-3 text-center">
-              Click on the map to drop a pin and find the nearest police station
+              Click anywhere on the map to find the nearest police station (Haversine distance)
             </p>
+
+            {nearbyStations.length > 1 && (
+              <div className="mt-4">
+                <h3 className="text-white font-semibold mb-2">Nearby Stations:</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                  {nearbyStations.slice(1, 7).map((station, i) => (
+                    <div key={i} className="p-2 bg-white/5 rounded border border-white/10 text-xs">
+                      <p className="text-white/90 font-semibold truncate">{station.name}</p>
+                      <p className="text-accent">{station.distance_km} km</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
 
           <motion.div
@@ -339,37 +340,29 @@ const JurisdictionFinder = () => {
             <h2 className="text-xl font-heading font-bold text-white mb-4 flex items-center gap-2">
               <Building2 size={20} className="text-accent" />
               Nearest Station
+              {loading && <Loader size={16} className="animate-spin text-accent" />}
             </h2>
 
             {nearestStation ? (
               <div className="space-y-4" data-testid="station-details">
                 <div className="p-4 bg-accent/10 border border-accent/30 rounded-lg">
                   <h3 className="text-white font-bold text-lg mb-2">{nearestStation.name}</h3>
-                  <p className="text-white/70 text-sm mb-3">{nearestStation.address}</p>
+                  <p className="text-accent font-semibold">{nearestStation.district} District</p>
+                  {nearestStation.distance_km && (
+                    <p className="text-success text-sm mt-1">Distance: {nearestStation.distance_km} km</p>
+                  )}
                   
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-white/80 text-sm">
-                      <Phone size={14} className="text-accent" />
-                      <span>{nearestStation.phone}</span>
+                  <div className="space-y-2 mt-3">
+                    {nearestStation.phone && (
+                      <div className="flex items-center gap-2 text-white/80 text-sm">
+                        <Phone size={14} className="text-accent" />
+                        <span>{nearestStation.phone}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 text-white/60 text-xs">
+                      <MapPin size={12} />
+                      <span>Lat: {nearestStation.latitude?.toFixed(4)}, Lng: {nearestStation.longitude?.toFixed(4)}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-white/80 text-sm">
-                      <Mail size={14} className="text-accent" />
-                      <span className="truncate">{nearestStation.email}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-white/60 text-sm mb-2">Jurisdiction Areas:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {nearestStation.jurisdiction.map((area, i) => (
-                      <span
-                        key={i}
-                        className="px-2 py-1 bg-white/10 border border-white/20 rounded text-white/80 text-xs"
-                      >
-                        {area}
-                      </span>
-                    ))}
                   </div>
                 </div>
 
@@ -379,7 +372,7 @@ const JurisdictionFinder = () => {
                   className="w-full bg-success text-black font-bold hover:bg-success/80"
                 >
                   <FileText size={18} className="mr-2" />
-                  Generate Zero FIR Application
+                  Generate Zero FIR Transfer Letter
                 </Button>
               </div>
             ) : (
@@ -402,10 +395,23 @@ const JurisdictionFinder = () => {
           >
             <h2 className="text-xl font-heading font-bold text-white mb-4 flex items-center gap-2">
               <FileText size={20} className="text-success" />
-              Zero FIR Application Generator
+              Zero FIR Transfer Letter Generator
             </h2>
 
+            <div className="mb-4 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+              <p className="text-warning text-sm">
+                This generates a Zero FIR transfer letter when the incident occurred in a different jurisdiction.
+                The FIR will be registered at your station and transferred to the jurisdictional station for investigation.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                placeholder="Your Police Station Name"
+                value={officerStation}
+                onChange={(e) => setOfficerStation(e.target.value)}
+                className="bg-white/5 border-white/20 text-white"
+              />
               <Input
                 placeholder="Complainant Name *"
                 value={zeroFIRData.complainantName}
@@ -423,7 +429,7 @@ const JurisdictionFinder = () => {
                 placeholder="Complainant Address"
                 value={zeroFIRData.complainantAddress}
                 onChange={(e) => setZeroFIRData(prev => ({ ...prev, complainantAddress: e.target.value }))}
-                className="bg-white/5 border-white/20 text-white md:col-span-2"
+                className="bg-white/5 border-white/20 text-white"
               />
               <Input
                 placeholder="Incident Date"
@@ -432,7 +438,7 @@ const JurisdictionFinder = () => {
                 className="bg-white/5 border-white/20 text-white"
               />
               <Input
-                placeholder="Incident Location"
+                placeholder="Incident Location (in jurisdictional area)"
                 value={zeroFIRData.incidentLocation}
                 onChange={(e) => setZeroFIRData(prev => ({ ...prev, incidentLocation: e.target.value }))}
                 className="bg-white/5 border-white/20 text-white"
@@ -452,7 +458,7 @@ const JurisdictionFinder = () => {
               className="mt-4 bg-success text-black font-bold hover:bg-success/80"
             >
               <Download size={18} className="mr-2" />
-              Download Zero FIR Application PDF
+              Download Zero FIR Transfer Letter PDF
             </Button>
           </motion.div>
         )}
