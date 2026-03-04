@@ -64,10 +64,10 @@ const Login = ({ setIsAuthenticated }) => {
               <Shield className="w-16 h-16 text-accent" strokeWidth={1.5} />
             </motion.div>
             <h1 className="text-4xl font-heading font-bold text-white text-glow mb-2" data-testid="login-title">
-              NYAYA PRAHARI
+              SAAKSHYAM AI
             </h1>
             <p className="text-sm text-white/60 text-center" data-testid="login-subtitle">
-              Investigation & FIR Preparation Assistant
+              Cyber Investigation Command Console
             </p>
           </div>
 

@@ -98,78 +98,82 @@ const JurisdictionFinder = () => {
     };
 
     const initMap = () => {
-      const map = window.L.map(mapRef.current).setView([17.4401, 78.4000], 12);
-      
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+      try {
+        const map = window.L.map(mapRef.current).setView([17.4401, 78.4000], 12);
+        
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        SAMPLE_STATIONS.forEach(station => {
+          const marker = window.L.marker([station.lat, station.lng], {
+            icon: window.L.divIcon({
+              className: 'custom-marker',
+              html: `<div style="background: #00f2ff; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff;"></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            })
+          }).addTo(map);
+          
+          marker.bindPopup(`<b>${station.name}</b><br>${station.address}`);
+        });
+
+        map.on('click', (e) => {
+          onMapClick(e.latlng.lat, e.latlng.lng, map);
+        });
+
+        mapInstanceRef.current = map;
+      } catch (err) {
+        console.error('Map init error:', err);
+      }
+    };
+
+    const onMapClick = (lat, lng, map) => {
+      setSelectedLocation({ lat, lng });
+
+      if (markerRef.current && map) {
+        try {
+          map.removeLayer(markerRef.current);
+        } catch (e) {}
+      }
+
+      markerRef.current = window.L.marker([lat, lng], {
+        icon: window.L.divIcon({
+          className: 'selected-marker',
+          html: `<div style="background: #ff4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(255,68,68,0.5);"></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        })
       }).addTo(map);
 
+      let nearest = null;
+      let minDistance = Infinity;
+
       SAMPLE_STATIONS.forEach(station => {
-        const marker = window.L.marker([station.lat, station.lng], {
-          icon: window.L.divIcon({
-            className: 'custom-marker',
-            html: `<div style="background: #00f2ff; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff;"></div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-          })
-        }).addTo(map);
-        
-        marker.bindPopup(`<b>${station.name}</b><br>${station.address}`);
+        const distance = Math.sqrt(
+          Math.pow(station.lat - lat, 2) + Math.pow(station.lng - lng, 2)
+        );
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearest = station;
+        }
       });
 
-      map.on('click', (e) => {
-        handleMapClick(e.latlng.lat, e.latlng.lng, map);
-      });
-
-      mapInstanceRef.current = map;
+      setNearestStation(nearest);
+      toast.success(`Nearest station: ${nearest?.name}`);
     };
 
     loadLeaflet();
 
     return () => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch (e) {}
         mapInstanceRef.current = null;
       }
     };
   }, []);
-
-  const handleMapClick = (lat, lng, map) => {
-    setSelectedLocation({ lat, lng });
-
-    if (markerRef.current) {
-      map.removeLayer(markerRef.current);
-    }
-
-    markerRef.current = window.L.marker([lat, lng], {
-      icon: window.L.divIcon({
-        className: 'selected-marker',
-        html: `<div style="background: #ff4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(255,68,68,0.5);"></div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
-      })
-    }).addTo(map);
-
-    findNearestStation(lat, lng);
-  };
-
-  const findNearestStation = (lat, lng) => {
-    let nearest = null;
-    let minDistance = Infinity;
-
-    SAMPLE_STATIONS.forEach(station => {
-      const distance = Math.sqrt(
-        Math.pow(station.lat - lat, 2) + Math.pow(station.lng - lng, 2)
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearest = station;
-      }
-    });
-
-    setNearestStation(nearest);
-    toast.success(`Nearest station: ${nearest?.name}`);
-  };
 
   const handleSearch = () => {
     if (!searchQuery.trim()) {
