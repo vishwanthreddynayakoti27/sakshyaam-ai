@@ -9,121 +9,140 @@
 Build a comprehensive investigation and FIR preparation tool for law enforcement officers with modules for:
 - Language processing (OCR, translation, legal text conversion)
 - FIR drafting with third-person conversion and error analysis
-- Legal section lookup (BNS, BNSS, BSA)
+- Legal section lookup (BNS, BNSS, BSA) with case fact analysis
 - Media forensic validation
 - Fraud recovery assistance
+- CDR analysis with dynamic column mapping
 - Court summons tracking
-- Jurisdiction finding with Zero FIR generation
+- Jurisdiction finding with Haversine distance and Zero FIR generation
 - Audio case diary with integrity hashing
 
 ## Tech Stack
-- **Frontend**: React, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF
+- **Frontend**: React, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js
 - **Backend**: FastAPI, Pydantic, Motor (MongoDB async)
 - **Database**: MongoDB
-- **Integrations**: Google Cloud Vision (OCR), Google Translate API (pending), Google Speech-to-Text API (pending), Google NLP API (pending)
+- **APIs**: 
+  - Google Cloud Vision (OCR - configured with service account)
+  - Google Cloud Translate (configured)
+  - Google Cloud Speech-to-Text (configured)
 - **Maps**: Leaflet.js with OpenStreetMap
 
-## Core Features
+## Core Features (All Completed)
 
-### 1. Dashboard (Completed)
+### 1. Dashboard
 - 2x4 grid layout with 9 module cards
 - Dark tactical cyber theme
 - NEW badges on recently added modules
 - HERO badge on Language Intelligence
 
-### 2. Language Intelligence (Completed - Phase 1)
-- OCR document processing via Google Vision API
-- Audio upload interface (Speech-to-Text pending integration)
+### 2. Language Intelligence 
+- OCR document processing via Google Vision API (service account auth)
+- Supports JPG, PNG, PDF, DOCX
+- Audio upload interface (Speech-to-Text configured)
 - 5-stage processing pipeline: Speech→Text→Translation→Grammar→Legal
 
-### 3. FIR Draft Assistant (Completed)
+### 3. FIR Draft Assistant
 - First-to-third person conversion
-- Error analysis (mixed narrative detection, overuse detection)
+- Error analysis (mixed narrative, overuse detection)
 - Remand report generation
 
-### 4. Legal Intelligence Engine (Completed)
-- 3-tab interface: BNS, BNSS, BSA
-- Keyword-based section analysis
-- Old law equivalents (IPC→BNS, CrPC→BNSS, Evidence Act→BSA)
-- Direct section lookup by number
+### 4. Legal Intelligence Engine (Enhanced)
+- 4-tab interface: All Laws, BNS, BNSS, BSA
+- Case fact analysis with keyword detection
+- 50+ sections in database with punishments
+- IPC/CrPC/Evidence Act mappings
+- **Auto-generated Remand Note** when offence sections detected
+- Copy and PDF download for remand notes
 
-### 5. Media Forensic Validator (Completed)
+### 5. Media Forensic Validator
 - Deterministic authenticity scoring
-- Multi-factor analysis (metadata, hash, compression, etc.)
-- Support for video (MP4, MOV, AVI) and audio (WAV, MP3, M4A)
+- Multi-factor analysis
+- Video (MP4, MOV, AVI) and audio (WAV, MP3, M4A) support
 
-### 6. Fraud Recovery Assistant (Completed)
-- Evidence upload with client-side SHA-256 hashing
+### 6. Fraud Recovery Assistant
+- Evidence upload with SHA-256 hashing
 - OCR extraction for transaction details
 - Bank lien request letter generation
 - BSA Section 63 certificate generation
 
-### 7. CDR Analyzer (Placeholder)
-- CDR file upload interface
-- Visualization pending
+### 7. CDR Analyzer (Enhanced)
+- **Dynamic column detection** - accepts any Excel/CSV format
+- Automatic header mapping (Phone, DateTime, Duration, Tower, etc.)
+- Batch processing for 5000+ records
+- Analysis: Most called numbers, common locations, date range
 
-### 8. Smart Summons Tracker (NEW - Completed)
+### 8. Smart Summons Tracker
 - OCR-based summons document parsing
-- Form with case number, court, hearing date/time
 - Status tracking (Pending, Attended, Missed, Rescheduled)
 - Urgency indicators for upcoming hearings
 - PDF report generation
 
-### 9. Jurisdiction Finder (NEW - Completed)
-- Leaflet.js interactive map (Hyderabad area)
-- 5 sample police stations with jurisdiction areas
-- Pin drop to find nearest station
-- Search by location name
-- Zero FIR application PDF generator
+### 9. Jurisdiction Finder (Enhanced)
+- Leaflet.js interactive map with 100 Telangana police stations
+- **Haversine formula** for accurate distance calculation
+- Search by station name or district
+- Click on map to find nearest station
+- **Zero FIR Transfer Letter** PDF generator
 
-### 10. Case Diary - Mobile Sync (NEW - Completed)
+### 10. Case Diary - Mobile Sync
 - Audio file upload (MP3, WAV, M4A, max 50MB)
 - Client-side SHA-256 integrity hashing
 - Case number, date, location, description fields
 - Synced entries list with playback controls
 
-## Authentication
-- JWT-based authentication
-- Officer registration with ID, name, department, rank, district
-- Protected routes for all modules
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/signup` - Officer registration
+- `POST /api/auth/login` - Login
+- `GET /api/auth/profile` - Get profile
+
+### Documents & OCR
+- `POST /api/ocr/process` - OCR with Vision API
+- `POST /api/translate/process` - Translation
+- `POST /api/speech/process` - Speech-to-Text
+
+### FIR Management
+- `POST /api/fir/create` - Create FIR draft
+- `GET /api/fir/list` - List drafts
+- `GET /api/fir/{id}` - Get draft
+- `POST /api/fir/analyze-errors` - Analyze errors
+
+### Legal Intelligence
+- `POST /api/bns/analyze` - Analyze case facts (returns sections + remand note)
+- `POST /api/bns/search` - Search by section number
+
+### Jurisdiction
+- `GET /api/jurisdiction/stations` - Get all 100 stations
+- `POST /api/jurisdiction/find` - Find nearest station with Haversine
+
+### CDR
+- `POST /api/cdr/upload` - Upload and analyze CDR
+- `GET /api/cdr/records` - Get records
+
+### Forensic
+- `POST /api/forensic/analyze` - Analyze media
+- `GET /api/forensic/reports` - Get reports
+
+### Fraud
+- `POST /api/fraud/create` - Create fraud request
+- `GET /api/fraud/list` - List requests
+- `PUT /api/fraud/{id}/status` - Update status
+
+### Reminders & Remand
+- `POST /api/reminders/create` - Create reminder
+- `GET /api/reminders/list` - List reminders
+- `POST /api/remand/create` - Create remand report
+- `GET /api/remand/list` - List reports
 
 ## Database Schema
-- `officers`: {officer_id, name, email, password_hash, department, rank, district, subscription_plan}
-- `fir_drafts`: {officer_id, complaint_text, fir_draft, created_at}
+- `officers`: {officer_id, name, email, password_hash, department, rank, district}
+- `fir_drafts`: {officer_id, complaint_text, fir_draft}
 - `documents`: {officer_id, document_type, original_text, translated_text, legal_text}
 - `forensic_reports`: {officer_id, file_name, probability_score, analysis_details}
-- `fraud_requests`: {officer_id, victim_name, transaction_id, amount, bank_name, status}
-- `remand_reports`: {officer_id, fir_id, accused_name, charges, remand_type}
-
-## API Endpoints
-- `/api/auth/signup`, `/api/auth/login`, `/api/auth/profile`
-- `/api/ocr/process` - Document OCR
-- `/api/fir/create`, `/api/fir/list`, `/api/fir/{id}`
-- `/api/fir/analyze-errors`
-- `/api/bns/analyze`, `/api/bns/search`
-- `/api/forensic/analyze`, `/api/forensic/reports`
-- `/api/fraud/create`, `/api/fraud/list`, `/api/fraud/{id}`
-- `/api/remand/create`, `/api/remand/list`
-
-## Pending/Future Tasks
-
-### Phase 2: API Integration (P1)
-- [ ] Integrate Google Translation API for real-time translation
-- [ ] Integrate Google Speech-to-Text API for audio transcription
-- [ ] Integrate Google NLP API for auto-summary and entity extraction
-- [ ] Add TTS (Text-to-Speech) verification for FIR drafts
-
-### Phase 3: Backend Enhancements (P2)
-- [ ] Create backend endpoints for summons CRUD operations
-- [ ] Create backend endpoints for case diary entries
-- [ ] Implement jurisdiction lookup API
-
-### Future Enhancements
-- [ ] CDR visualization with charts and timelines
-- [ ] Multi-officer collaboration
-- [ ] Push notifications for summons reminders
-- [ ] Advanced NLP case correlation
-- [ ] Export features for all modules
+- `fraud_requests`: {officer_id, victim_name, transaction_id, amount, bank_name}
+- `cdr_records`: {officer_id, case_id, phone_number, called_number, datetime_str, tower_id}
+- `remand_reports`: {officer_id, fir_id, accused_name, charges, report_text}
 
 ## Test Credentials
 - Officer ID: TEST002
@@ -133,6 +152,16 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - Preview URL: https://nyaya-prahari.preview.emergentagent.com
 - Backend: FastAPI on port 8001
 - Frontend: React on port 3000
+
+## Google Cloud Configuration
+Credential files stored at:
+- `/app/backend/credentials/google-vision.json`
+- `/app/backend/credentials/google-translate.json`
+- `/app/backend/credentials/google-speech.json`
+- `/app/backend/credentials/google-nlp.json`
+
+## Data Files
+- `/app/backend/data/telangana_police_stations.json` - 100 stations
 
 ---
 Last Updated: December 2025

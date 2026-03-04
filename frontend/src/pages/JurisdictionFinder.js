@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { MapPin, Navigation, FileText, Download, Search, Building2, Phone, Mail, Loader } from 'lucide-react';
+import { MapPin, Navigation, FileText, Download, Search, Building2, Phone, Loader } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -16,6 +16,7 @@ const JurisdictionFinder = () => {
   const [nearbyStations, setNearbyStations] = useState([]);
   const [allStations, setAllStations] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [showZeroFIR, setShowZeroFIR] = useState(false);
   const [officerStation, setOfficerStation] = useState('');
   const [zeroFIRData, setZeroFIRData] = useState({
@@ -30,12 +31,17 @@ const JurisdictionFinder = () => {
   const mapInstanceRef = useRef(null);
   const markerRef = useRef(null);
   const stationMarkersRef = useRef([]);
+  const isInitializedRef = useRef(false);
 
+  // Load stations from API
   useEffect(() => {
     const loadStations = async () => {
       try {
         const response = await api.get('/jurisdiction/stations');
-        if (response.stations) {
+        console.log('Stations response:', response);
+        if (response.data && response.data.stations) {
+          setAllStations(response.data.stations);
+        } else if (response.stations) {
           setAllStations(response.stations);
         }
       } catch (err) {
@@ -45,10 +51,57 @@ const JurisdictionFinder = () => {
     loadStations();
   }, []);
 
-  useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+  // Handle map click
+  const handleMapClick = useCallback(async (lat, lng) => {
+    setSelectedLocation({ lat, lng });
+    setLoading(true);
 
-    const loadLeaflet = async () => {
+    // Remove existing click marker
+    if (markerRef.current && mapInstanceRef.current) {
+      try {
+        mapInstanceRef.current.removeLayer(markerRef.current);
+      } catch (e) {
+        console.log('Could not remove marker');
+      }
+    }
+
+    // Add new marker
+    if (mapInstanceRef.current && window.L) {
+      markerRef.current = window.L.marker([lat, lng], {
+        icon: window.L.divIcon({
+          className: 'selected-marker',
+          html: `<div style="background: #ff4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(255,68,68,0.5);"></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        })
+      }).addTo(mapInstanceRef.current);
+    }
+
+    try {
+      const response = await api.post('/jurisdiction/find', {
+        latitude: lat,
+        longitude: lng
+      });
+
+      const data = response.data || response;
+      if (data.nearest_station) {
+        setNearestStation(data.nearest_station);
+        setNearbyStations(data.all_nearby || []);
+        toast.success(`Nearest: ${data.nearest_station.name} (${data.nearest_station.distance_km} km)`);
+      }
+    } catch (err) {
+      toast.error('Failed to find jurisdiction');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Initialize map
+  useEffect(() => {
+    if (!mapRef.current || isInitializedRef.current) return;
+
+    const loadLeaflet = () => {
       if (typeof window !== 'undefined' && !window.L) {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
@@ -57,7 +110,9 @@ const JurisdictionFinder = () => {
 
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.onload = () => initMap();
+        script.onload = () => {
+          setTimeout(initMap, 100);
+        };
         document.head.appendChild(script);
       } else if (window.L) {
         initMap();
@@ -65,62 +120,32 @@ const JurisdictionFinder = () => {
     };
 
     const initMap = () => {
+      if (!mapRef.current || isInitializedRef.current) return;
+      
       try {
-        const map = window.L.map(mapRef.current).setView([17.5, 78.5], 8);
+        // Check if container already has a map
+        if (mapRef.current._leaflet_id) {
+          return;
+        }
+
+        const map = window.L.map(mapRef.current, {
+          center: [17.5, 78.5],
+          zoom: 8
+        });
         
         window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        if (allStations.length > 0) {
-          addStationMarkers(map, allStations);
-        }
-
         map.on('click', (e) => {
-          onMapClick(e.latlng.lat, e.latlng.lng, map);
+          handleMapClick(e.latlng.lat, e.latlng.lng);
         });
 
         mapInstanceRef.current = map;
+        isInitializedRef.current = true;
+        setMapReady(true);
       } catch (err) {
         console.error('Map init error:', err);
-      }
-    };
-
-    const onMapClick = async (lat, lng, map) => {
-      setSelectedLocation({ lat, lng });
-      setLoading(true);
-
-      if (markerRef.current && map) {
-        try {
-          map.removeLayer(markerRef.current);
-        } catch (e) {}
-      }
-
-      markerRef.current = window.L.marker([lat, lng], {
-        icon: window.L.divIcon({
-          className: 'selected-marker',
-          html: `<div style="background: #ff4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(255,68,68,0.5);"></div>`,
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
-        })
-      }).addTo(map);
-
-      try {
-        const response = await api.post('/jurisdiction/find', {
-          latitude: lat,
-          longitude: lng
-        });
-
-        if (response.nearest_station) {
-          setNearestStation(response.nearest_station);
-          setNearbyStations(response.all_nearby || []);
-          toast.success(`Nearest: ${response.nearest_station.name} (${response.nearest_station.distance_km} km)`);
-        }
-      } catch (err) {
-        toast.error('Failed to find jurisdiction');
-        console.error(err);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -130,42 +155,51 @@ const JurisdictionFinder = () => {
       if (mapInstanceRef.current) {
         try {
           mapInstanceRef.current.remove();
-        } catch (e) {}
+        } catch (e) {
+          console.log('Map cleanup error');
+        }
         mapInstanceRef.current = null;
+        isInitializedRef.current = false;
       }
     };
-  }, []);
+  }, [handleMapClick]);
 
+  // Add station markers when stations load or map becomes ready
   useEffect(() => {
-    if (mapInstanceRef.current && allStations.length > 0) {
-      addStationMarkers(mapInstanceRef.current, allStations);
-    }
-  }, [allStations]);
+    if (!mapReady || !mapInstanceRef.current || allStations.length === 0) return;
 
-  const addStationMarkers = (map, stations) => {
+    // Clear existing station markers
     stationMarkersRef.current.forEach(marker => {
-      try { map.removeLayer(marker); } catch (e) {}
+      try { 
+        mapInstanceRef.current.removeLayer(marker); 
+      } catch (e) {}
     });
     stationMarkersRef.current = [];
 
-    stations.forEach(station => {
+    // Add new markers
+    allStations.forEach(station => {
       const marker = window.L.marker([station.latitude, station.longitude], {
         icon: window.L.divIcon({
           className: 'station-marker',
-          html: `<div style="background: #00f2ff; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; opacity: 0.8;"></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7]
+          html: `<div style="background: #00f2ff; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #fff; opacity: 0.7;"></div>`,
+          iconSize: [10, 10],
+          iconAnchor: [5, 5]
         })
-      }).addTo(map);
+      }).addTo(mapInstanceRef.current);
       
       marker.bindPopup(`<b>${station.name}</b><br>${station.district}<br>${station.phone || ''}`);
       stationMarkersRef.current.push(marker);
     });
-  };
+  }, [mapReady, allStations]);
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     if (!searchQuery.trim()) {
       toast.error('Please enter a location to search');
+      return;
+    }
+
+    if (allStations.length === 0) {
+      toast.error('Stations not loaded yet. Please wait.');
       return;
     }
 
@@ -175,7 +209,7 @@ const JurisdictionFinder = () => {
     );
 
     if (matchedStation) {
-      setNearestStation(matchedStation);
+      setNearestStation({...matchedStation, distance_km: 0});
       setNearbyStations([matchedStation]);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.setView([matchedStation.latitude, matchedStation.longitude], 14);
@@ -348,7 +382,7 @@ const JurisdictionFinder = () => {
                 <div className="p-4 bg-accent/10 border border-accent/30 rounded-lg">
                   <h3 className="text-white font-bold text-lg mb-2">{nearestStation.name}</h3>
                   <p className="text-accent font-semibold">{nearestStation.district} District</p>
-                  {nearestStation.distance_km && (
+                  {nearestStation.distance_km !== undefined && (
                     <p className="text-success text-sm mt-1">Distance: {nearestStation.distance_km} km</p>
                   )}
                   
