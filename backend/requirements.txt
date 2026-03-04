@@ -31,6 +31,7 @@ google-api-python-client==2.190.0
 google-auth==2.49.0.dev0
 google-auth-httplib2==0.3.0
 google-cloud-core==2.5.0
+google-cloud-language==2.19.0
 google-cloud-speech==2.37.0
 google-cloud-translate==3.24.0
 google-cloud-vision==3.12.1

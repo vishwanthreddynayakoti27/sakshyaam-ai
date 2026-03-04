@@ -12,9 +12,12 @@ import {
   Menu,
   X,
   Shield,
-  DollarSign
+  DollarSign,
+  MapPin,
+  Calendar,
+  Mic,
+  Activity
 } from 'lucide-react';
-import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 
 const Layout = ({ children }) => {
@@ -41,10 +44,13 @@ const Layout = ({ children }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Languages, label: 'Language Intelligence', path: '/language-intelligence' },
     { icon: FileText, label: 'FIR Draft Assistant', path: '/fir-draft' },
-    { icon: Scale, label: 'BNS Intelligence', path: '/bns-intelligence' },
-    { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
+    { icon: Scale, label: 'Legal Intelligence', path: '/legal-intelligence' },
     { icon: Shield, label: 'Media Forensic', path: '/media-forensic' },
     { icon: DollarSign, label: 'Fraud Recovery', path: '/fraud-recovery' },
+    { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
+    { icon: Calendar, label: 'Smart Summons', path: '/smart-summons', isNew: true },
+    { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder', isNew: true },
+    { icon: Mic, label: 'Case Diary', path: '/case-diary', isNew: true },
   ];
 
   return (
@@ -56,25 +62,28 @@ const Layout = ({ children }) => {
         data-testid="sidebar"
       >
         <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-white/10 flex items-center justify-between">
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-accent/20 rounded border border-accent flex items-center justify-center">
-                  <span className="text-accent font-bold font-heading text-xl">NP</span>
+                  <Activity className="text-accent" size={20} />
                 </div>
-                <span className="text-white font-heading font-bold text-lg">NYAYA PRAHARI</span>
+                <div>
+                  <span className="text-white font-heading font-bold text-sm block">SAAKSHYAM AI</span>
+                  <span className="text-accent/80 text-[10px] font-semibold tracking-wider">COMMAND CONSOLE</span>
+                </div>
               </motion.div>
             )}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-white/60 hover:text-white transition"
+              className="text-white/60 hover:text-white transition p-2"
               data-testid="sidebar-toggle-button"
             >
               {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
 
-          <nav className="flex-1 p-4 space-y-2">
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -83,39 +92,46 @@ const Layout = ({ children }) => {
                   key={item.path}
                   to={item.path}
                   data-testid={`nav-link-${item.label.toLowerCase().replace(/ /g, '-')}`}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-md transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
                     isActive
                       ? 'bg-accent/20 text-accent border border-accent/30'
-                      : 'text-white/70 hover:bg-white/5 hover:text-white'
+                      : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
                   }`}
                 >
-                  <Icon size={20} strokeWidth={1.5} />
-                  {sidebarOpen && <span className="font-medium">{item.label}</span>}
+                  <Icon size={18} strokeWidth={1.5} />
+                  {sidebarOpen && (
+                    <span className="font-medium text-sm flex-1">{item.label}</span>
+                  )}
+                  {sidebarOpen && item.isNew && (
+                    <span className="px-1.5 py-0.5 bg-success/20 text-success text-[9px] font-bold rounded">
+                      NEW
+                    </span>
+                  )}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="p-4 border-t border-white/10 space-y-2">
+          <div className="p-3 border-t border-white/10 space-y-1">
             <Link
               to="/profile"
               data-testid="nav-link-profile"
-              className={`flex items-center gap-3 px-4 py-3 rounded-md transition-all ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
                 location.pathname === '/profile'
                   ? 'bg-accent/20 text-accent border border-accent/30'
-                  : 'text-white/70 hover:bg-white/5 hover:text-white'
+                  : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
               }`}
             >
-              <User size={20} strokeWidth={1.5} />
-              {sidebarOpen && <span className="font-medium">Profile</span>}
+              <User size={18} strokeWidth={1.5} />
+              {sidebarOpen && <span className="font-medium text-sm">Profile</span>}
             </Link>
             <button
               onClick={handleLogout}
               data-testid="logout-button"
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-alert/80 hover:bg-alert/10 hover:text-alert transition-all"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-alert/80 hover:bg-alert/10 hover:text-alert transition-all"
             >
-              <LogOut size={20} strokeWidth={1.5} />
-              {sidebarOpen && <span className="font-medium">Logout</span>}
+              <LogOut size={18} strokeWidth={1.5} />
+              {sidebarOpen && <span className="font-medium text-sm">Logout</span>}
             </button>
           </div>
         </div>
@@ -126,22 +142,22 @@ const Layout = ({ children }) => {
           sidebarOpen ? 'ml-64' : 'ml-20'
         }`}
       >
-        <header className="bg-black/20 backdrop-blur-md border-b border-white/10 px-8 py-4" data-testid="header">
+        <header className="bg-black/20 backdrop-blur-md border-b border-white/10 px-6 py-3" data-testid="header">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-heading font-bold text-white">Investigation Command Center</h2>
-              <p className="text-sm text-white/50">Pre-CCTNS Intelligence & FIR Preparation System</p>
+              <h2 className="text-lg font-heading font-bold text-white">Cyber Investigation Command Center</h2>
+              <p className="text-xs text-white/50">Pre-CCTNS Intelligence & FIR Preparation System</p>
             </div>
             {officer && (
               <div className="text-right">
-                <p className="text-white font-semibold" data-testid="header-officer-name">{officer.name}</p>
-                <p className="text-sm text-white/60">{officer.rank} • {officer.district}</p>
+                <p className="text-white font-semibold text-sm" data-testid="header-officer-name">{officer.name}</p>
+                <p className="text-xs text-white/60">{officer.rank} • {officer.district}</p>
               </div>
             )}
           </div>
         </header>
 
-        <main className="p-8" data-testid="main-content">{children}</main>
+        <main className="p-6" data-testid="main-content">{children}</main>
       </div>
     </div>
   );
