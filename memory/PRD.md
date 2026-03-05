@@ -18,35 +18,40 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - Audio case diary with integrity hashing
 
 ## Tech Stack
-- **Frontend**: React, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js
-- **Backend**: FastAPI, Pydantic, Motor (MongoDB async)
+- **Frontend**: React, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js, react-dropzone
+- **Backend**: FastAPI, Pydantic, Motor (MongoDB async), PyPDF2, python-docx
 - **Database**: MongoDB
 - **APIs**: 
   - Google Cloud Vision (OCR - configured with service account)
-  - Google Cloud Translate (configured)
+  - Google Cloud Translate (configured with language detection)
   - Google Cloud Speech-to-Text (configured)
 - **Maps**: Leaflet.js with OpenStreetMap
 
-## Core Features (All Completed)
+## Core Features
 
-### 1. Dashboard
+### 1. Dashboard ✅
 - 2x4 grid layout with 9 module cards
 - Dark tactical cyber theme
 - NEW badges on recently added modules
 - HERO badge on Language Intelligence
 
-### 2. Language Intelligence 
-- OCR document processing via Google Vision API (service account auth)
-- Supports JPG, PNG, PDF, DOCX
-- Audio upload interface (Speech-to-Text configured)
-- 5-stage processing pipeline: Speech→Text→Translation→Grammar→Legal
+### 2. Language Intelligence ✅ (UPGRADED Dec 2025)
+- **Document Tab**: Supports PNG, JPG, PDF, DOCX
+  - Images: Google Vision OCR
+  - PDF: PyPDF2 text extraction with language detection
+  - DOCX: python-docx text extraction with language detection
+- **Audio Tab**: Supports MP3, WAV, M4A
+  - Google Speech-to-Text API
+  - 5-stage pipeline: Speech→Text→Translation→Grammar→Legal
+- Three-panel output: Original Text, Translated English, Legal English
+- Copy and Download functionality
 
-### 3. FIR Draft Assistant
+### 3. FIR Draft Assistant ✅
 - First-to-third person conversion
 - Error analysis (mixed narrative, overuse detection)
 - Remand report generation
 
-### 4. Legal Intelligence Engine (Enhanced)
+### 4. Legal Intelligence Engine ✅ (Enhanced)
 - 4-tab interface: All Laws, BNS, BNSS, BSA
 - Case fact analysis with keyword detection
 - 50+ sections in database with punishments
@@ -54,37 +59,37 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - **Auto-generated Remand Note** when offence sections detected
 - Copy and PDF download for remand notes
 
-### 5. Media Forensic Validator
+### 5. Media Forensic Validator ✅
 - Deterministic authenticity scoring
 - Multi-factor analysis
 - Video (MP4, MOV, AVI) and audio (WAV, MP3, M4A) support
 
-### 6. Fraud Recovery Assistant
+### 6. Fraud Recovery Assistant ✅
 - Evidence upload with SHA-256 hashing
 - OCR extraction for transaction details
 - Bank lien request letter generation
 - BSA Section 63 certificate generation
 
-### 7. CDR Analyzer (Enhanced)
+### 7. CDR Analyzer ✅ (Enhanced)
 - **Dynamic column detection** - accepts any Excel/CSV format
 - Automatic header mapping (Phone, DateTime, Duration, Tower, etc.)
 - Batch processing for 5000+ records
 - Analysis: Most called numbers, common locations, date range
 
-### 8. Smart Summons Tracker
+### 8. Smart Summons Tracker ✅
 - OCR-based summons document parsing
 - Status tracking (Pending, Attended, Missed, Rescheduled)
 - Urgency indicators for upcoming hearings
 - PDF report generation
 
-### 9. Jurisdiction Finder (Enhanced)
-- Leaflet.js interactive map with 100 Telangana police stations
+### 9. Jurisdiction Finder ✅ (UPGRADED Dec 2025)
+- Leaflet.js interactive map with **306 Telangana police stations across 40 districts**
 - **Haversine formula** for accurate distance calculation
 - Search by station name or district
-- Click on map to find nearest station
+- Click on map to find nearest station with 6 nearby stations list
 - **Zero FIR Transfer Letter** PDF generator
 
-### 10. Case Diary - Mobile Sync
+### 10. Case Diary - Mobile Sync ✅
 - Audio file upload (MP3, WAV, M4A, max 50MB)
 - Client-side SHA-256 integrity hashing
 - Case number, date, location, description fields
@@ -98,9 +103,9 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - `GET /api/auth/profile` - Get profile
 
 ### Documents & OCR
-- `POST /api/ocr/process` - OCR with Vision API
+- `POST /api/ocr/process` - OCR with Vision API (PNG, JPG, PDF, DOCX)
 - `POST /api/translate/process` - Translation
-- `POST /api/speech/process` - Speech-to-Text
+- `POST /api/speech/process` - Speech-to-Text (MP3, WAV, M4A)
 
 ### FIR Management
 - `POST /api/fir/create` - Create FIR draft
@@ -113,7 +118,7 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - `POST /api/bns/search` - Search by section number
 
 ### Jurisdiction
-- `GET /api/jurisdiction/stations` - Get all 100 stations
+- `GET /api/jurisdiction/stations` - Get all 306 stations
 - `POST /api/jurisdiction/find` - Find nearest station with Haversine
 
 ### CDR
@@ -145,8 +150,8 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - `remand_reports`: {officer_id, fir_id, accused_name, charges, report_text}
 
 ## Test Credentials
-- Officer ID: TEST002
-- Password: test1234
+- Officer ID: OFF12345
+- Password: test123
 
 ## Deployment
 - Preview URL: https://nyaya-prahari.preview.emergentagent.com
@@ -161,7 +166,7 @@ Credential files stored at:
 - `/app/backend/credentials/google-nlp.json`
 
 ## Data Files
-- `/app/backend/data/telangana_police_stations.json` - 100 stations
+- `/app/backend/data/telangana_police_stations.json` - 306 stations across 40 districts
 
 ---
 Last Updated: December 2025

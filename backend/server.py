@@ -967,7 +967,15 @@ async def process_ocr(
                 pdf_reader = PdfReader(io.BytesIO(contents))
                 for page in pdf_reader.pages:
                     detected_text += page.extract_text() or ""
-                detected_language = "en"
+                # Use translate API for language detection if available
+                if translate_client and detected_text.strip():
+                    try:
+                        detection = translate_client.detect_language(detected_text[:500])
+                        detected_language = detection.get('language', 'en')
+                    except:
+                        detected_language = "en"
+                else:
+                    detected_language = "en"
             except Exception as e:
                 logger.error(f"PDF extraction error: {e}")
                 return OCRResponse(
@@ -985,7 +993,15 @@ async def process_ocr(
                 from docx import Document
                 doc = Document(io.BytesIO(contents))
                 detected_text = "\n".join([para.text for para in doc.paragraphs])
-                detected_language = "en"
+                # Use translate API for language detection if available
+                if translate_client and detected_text.strip():
+                    try:
+                        detection = translate_client.detect_language(detected_text[:500])
+                        detected_language = detection.get('language', 'en')
+                    except:
+                        detected_language = "en"
+                else:
+                    detected_language = "en"
             except Exception as e:
                 logger.error(f"DOCX extraction error: {e}")
                 return OCRResponse(
