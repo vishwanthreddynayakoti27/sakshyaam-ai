@@ -1525,12 +1525,12 @@ async def list_reminders(officer_id: str = Depends(get_current_officer)):
 
 # CDR Column Mapping for dynamic detection
 CDR_COLUMN_MAPPINGS = {
-    'phone_number': ['PhoneNumber', 'MSISDN', 'Calling_Number', 'Caller', 'A_Number', 'Mobile_Number', 'Phone', 'CallerNumber', 'From'],
-    'called_number': ['CalledNumber', 'Called_Number', 'B_Number', 'To', 'Destination', 'DialedNumber'],
+    'phone_number': ['PhoneNumber', 'MSISDN', 'Calling_Number', 'Caller', 'A_Number', 'Mobile_Number', 'Phone', 'CallerNumber', 'From', 'Caller_Number'],
+    'called_number': ['CalledNumber', 'Called_Number', 'B_Number', 'To', 'Destination', 'DialedNumber', 'Receiver_Number', 'ReceiverNumber'],
     'datetime': ['DateTime', 'Start_Time', 'Call_Time', 'Timestamp', 'Call_Date', 'Date', 'Time', 'CallDateTime'],
-    'duration': ['Duration', 'Call_Duration', 'Talk_Time', 'Seconds', 'CallDuration', 'TalkTime'],
+    'duration': ['Duration', 'Call_Duration', 'Talk_Time', 'Seconds', 'CallDuration', 'TalkTime', 'Duration_Seconds'],
     'imei': ['IMEI', 'IMEI_Number', 'DeviceID', 'Device_IMEI'],
-    'tower_id': ['CellTower', 'Cell_ID', 'Tower_ID', 'CGI', 'LAC', 'CellId', 'Tower'],
+    'tower_id': ['CellTower', 'Cell_ID', 'Tower_ID', 'CGI', 'LAC', 'CellId', 'Tower', 'Cell_Tower_ID'],
     'location': ['Location', 'Address', 'Place', 'Area', 'SiteName']
 }
 
