@@ -41,6 +41,17 @@ export const ocr = {
   },
 };
 
+export const speech = {
+  processAudio: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/speech/process', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+};
+
 export const fir = {
   create: async (complaint_text) => {
     const formData = new FormData();

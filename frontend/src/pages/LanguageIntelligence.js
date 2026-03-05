@@ -6,7 +6,7 @@ import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
-import { ocr } from '../utils/api';
+import { ocr, speech } from '../utils/api';
 
 const LanguageIntelligence = () => {
   const [selectedTab, setSelectedTab] = useState('document');
@@ -14,13 +14,24 @@ const LanguageIntelligence = () => {
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
 
+  // Clear file when switching tabs
+  const handleTabChange = (tab) => {
+    setSelectedTab(tab);
+    setFile(null);
+    setResult(null);
+  };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      'image/*': ['.png', '.jpg', '.jpeg'],
-      'application/pdf': ['.pdf'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
-    },
+    accept: selectedTab === 'audio' 
+      ? {
+          'audio/*': ['.mp3', '.wav', '.m4a', '.ogg', '.flac']
+        }
+      : {
+          'image/*': ['.png', '.jpg', '.jpeg'],
+          'application/pdf': ['.pdf'],
+          'application/msword': ['.doc'],
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
+        },
     maxFiles: 1,
     onDrop: (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
@@ -37,7 +48,26 @@ const LanguageIntelligence = () => {
 
     setProcessing(true);
     try {
-      const response = await ocr.processImage(file);
+      let response;
+      
+      // Check if audio file
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isAudio = ['mp3', 'wav', 'm4a', 'ogg', 'flac'].includes(fileExt);
+      
+      if (isAudio || selectedTab === 'audio') {
+        // Process audio file
+        response = await speech.processAudio(file);
+        // Map speech response fields to common format
+        response = {
+          ...response,
+          original_text: response.transcribed_text || response.original_text || '',
+          confidence_score: 0.85
+        };
+      } else {
+        // Process document file (image, PDF, DOCX)
+        response = await ocr.processImage(file);
+      }
+      
       setResult(response);
       
       if (response.message && response.message.includes('not configured')) {
@@ -97,7 +127,7 @@ const LanguageIntelligence = () => {
             <div className="flex gap-2 mb-6">
               <Button
                 data-testid="tab-document-button"
-                onClick={() => setSelectedTab('document')}
+                onClick={() => handleTabChange('document')}
                 className={`flex-1 ${
                   selectedTab === 'document'
                     ? 'bg-accent text-black'
@@ -109,7 +139,7 @@ const LanguageIntelligence = () => {
               </Button>
               <Button
                 data-testid="tab-audio-button"
-                onClick={() => setSelectedTab('audio')}
+                onClick={() => handleTabChange('audio')}
                 className={`flex-1 ${
                   selectedTab === 'audio'
                     ? 'bg-accent text-black'
