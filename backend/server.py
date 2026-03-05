@@ -490,7 +490,7 @@ BNS_SECTIONS_DATABASE = [
         "description": "Whoever cheats and thereby dishonestly induces the person deceived to deliver any property",
         "punishment": "Imprisonment up to 3 years, or fine, or both",
         "ipc_equivalent": "IPC 420",
-        "keywords": ["cheating", "fraud", "deceived", "dishonest", "scam", "fake", "promised job", "money taken", "online fraud", "cyber fraud", "loan fraud"],
+        "keywords": ["cheating", "cheated", "cheat", "fraud", "fraudulent", "deceived", "deceive", "dishonest", "scam", "scammed", "fake", "promised job", "job fraud", "money taken", "took money", "online fraud", "cyber fraud", "loan fraud", "false promise", "duped"],
         "category": "offence"
     },
     {
@@ -1413,7 +1413,14 @@ async def analyze_bns(request: BNSAnalysisRequest, officer_id: str = Depends(get
     
     for section_data in BNS_SECTIONS_DATABASE:
         for keyword in section_data["keywords"]:
-            if keyword in text_lower:
+            # Check for exact match or partial match (keyword as substring)
+            keyword_lower = keyword.lower()
+            # Also check word stems (e.g., "cheated" contains "cheat")
+            keyword_stem = keyword_lower.rstrip('ing').rstrip('ed').rstrip('s')
+            
+            if (keyword_lower in text_lower or 
+                keyword_stem in text_lower or
+                any(keyword_stem in word for word in text_lower.split())):
                 if not any(s.section_number == section_data["section_number"] for s in suggested_sections):
                     suggested_sections.append(BNSSection(**section_data))
                     matched_keywords.append(keyword)

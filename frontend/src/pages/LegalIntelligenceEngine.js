@@ -35,9 +35,10 @@ const LegalIntelligenceEngine = () => {
     
     try {
       const response = await api.post('/bns/analyze', { text: searchText });
+      const data = response.data || response;
       
-      if (response.suggested_sections) {
-        let filteredSections = response.suggested_sections;
+      if (data.suggested_sections) {
+        let filteredSections = data.suggested_sections;
         
         if (activeTab !== 'all') {
           const categoryMap = {
@@ -45,7 +46,7 @@ const LegalIntelligenceEngine = () => {
             'bnss': 'procedure',
             'bsa': 'evidence'
           };
-          filteredSections = response.suggested_sections.filter(
+          filteredSections = data.suggested_sections.filter(
             s => s.category === categoryMap[activeTab] || 
                  s.section_number.toLowerCase().startsWith(activeTab)
           );
@@ -53,12 +54,12 @@ const LegalIntelligenceEngine = () => {
 
         setResults({
           sections: filteredSections,
-          keywords: response.matched_keywords || [],
+          keywords: data.matched_keywords || [],
           lawType: activeTab.toUpperCase()
         });
 
-        if (response.remand_note) {
-          setRemandNote(response.remand_note);
+        if (data.remand_note) {
+          setRemandNote(data.remand_note);
         }
 
         if (filteredSections.length > 0) {
@@ -82,16 +83,19 @@ const LegalIntelligenceEngine = () => {
     }
 
     try {
-      const response = await api.post('/bns/search', new URLSearchParams({ section_number: sectionSearch }));
+      const formData = new FormData();
+      formData.append('section_number', sectionSearch);
+      const response = await api.post('/bns/search', formData);
+      const data = response.data || response;
       
-      if (response.found && response.section) {
+      if (data.found && data.section) {
         setResults({
-          sections: [response.section],
+          sections: [data.section],
           keywords: [],
           lawType: 'SEARCH',
           isDirectSearch: true
         });
-        toast.success(`Found: ${response.section.section_number}`);
+        toast.success(`Found: ${data.section.section_number}`);
       } else {
         toast.error('Section not found');
       }
