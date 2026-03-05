@@ -12,7 +12,6 @@ import MediaForensic from './pages/MediaForensic';
 import FraudRecovery from './pages/FraudRecovery';
 import SmartSummons from './pages/SmartSummons';
 import JurisdictionFinder from './pages/JurisdictionFinder';
-import CaseDiary from './pages/CaseDiary';
 import Profile from './pages/Profile';
 import './App.css';
 
@@ -47,7 +46,6 @@ function App() {
           <Route path="/fraud-recovery" element={<ProtectedRoute><FraudRecovery /></ProtectedRoute>} />
           <Route path="/smart-summons" element={<ProtectedRoute><SmartSummons /></ProtectedRoute>} />
           <Route path="/jurisdiction-finder" element={<ProtectedRoute><JurisdictionFinder /></ProtectedRoute>} />
-          <Route path="/case-diary" element={<ProtectedRoute><CaseDiary /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

@@ -12,7 +12,6 @@ import {
   DollarSign,
   MapPin,
   Calendar,
-  Mic,
   Activity
 } from 'lucide-react';
 import Layout from '../components/Layout';
@@ -43,7 +42,7 @@ const Dashboard = () => {
     {
       icon: Scale,
       title: 'Legal Intelligence Engine',
-      description: 'BNS, BNSS & BSA Analysis with IPC/CrPC mappings',
+      description: 'BNS, BNSS & BSA Analysis with Case Peer-Reviewer & BSA 63 Certifier',
       path: '/legal-intelligence',
       color: 'from-amber-500/20 to-orange-600/20',
       borderColor: 'border-amber-500/30',
@@ -94,16 +93,6 @@ const Dashboard = () => {
       color: 'from-teal-500/20 to-cyan-600/20',
       borderColor: 'border-teal-500/30',
       iconColor: 'text-teal-400',
-      isNew: true
-    },
-    {
-      icon: Mic,
-      title: 'Case Diary - Mobile Sync',
-      description: 'Secure audio diary upload with SHA-256 integrity hash',
-      path: '/case-diary',
-      color: 'from-rose-500/20 to-red-600/20',
-      borderColor: 'border-rose-500/30',
-      iconColor: 'text-rose-400',
       isNew: true
     }
   ];
@@ -214,7 +203,7 @@ const Dashboard = () => {
             className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4"
           >
             <div className="p-4 bg-white/5 rounded-xl border border-white/10 text-center">
-              <p className="text-2xl font-bold text-accent">9</p>
+              <p className="text-2xl font-bold text-accent">8</p>
               <p className="text-white/60 text-xs">Active Modules</p>
             </div>
             <div className="p-4 bg-white/5 rounded-xl border border-white/10 text-center">

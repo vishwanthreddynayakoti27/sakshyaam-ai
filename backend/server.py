@@ -972,7 +972,7 @@ async def process_ocr(
                     try:
                         detection = translate_client.detect_language(detected_text[:500])
                         detected_language = detection.get('language', 'en')
-                    except:
+                    except Exception:
                         detected_language = "en"
                 else:
                     detected_language = "en"
@@ -998,7 +998,7 @@ async def process_ocr(
                     try:
                         detection = translate_client.detect_language(detected_text[:500])
                         detected_language = detection.get('language', 'en')
-                    except:
+                    except Exception:
                         detected_language = "en"
                 else:
                     detected_language = "en"
@@ -1456,6 +1456,125 @@ async def analyze_bns(request: BNSAnalysisRequest, officer_id: str = Depends(get
         matched_keywords=list(set(matched_keywords)),
         remand_note=remand_note
     )
+
+
+@api_router.post("/bns/peer-review")
+async def peer_review_fir(request: BNSAnalysisRequest, officer_id: str = Depends(get_current_officer)):
+    """AI-powered FIR draft peer reviewer - flags weak sections under BNS/BNSS"""
+    text = request.text
+    text_lower = text.lower()
+    
+    issues = []
+    suggestions = []
+    
+    # Check for old law references
+    old_law_patterns = [
+        ("ipc", "IPC", "BNS"),
+        ("section 420", "IPC 420", "BNS 318"),
+        ("section 379", "IPC 379", "BNS 303"),
+        ("section 302", "IPC 302", "BNS 103"),
+        ("section 323", "IPC 323", "BNS 115"),
+        ("crpc", "CrPC", "BNSS"),
+        ("cr.p.c", "CrPC", "BNSS"),
+        ("evidence act", "Evidence Act", "BSA"),
+    ]
+    
+    for pattern, old_name, new_name in old_law_patterns:
+        if pattern in text_lower:
+            issues.append({
+                "type": "warning",
+                "title": f"Old Law Reference: {old_name}",
+                "description": f"'{old_name}' should be updated to '{new_name}' for cases after July 2024.",
+                "severity": "medium"
+            })
+            suggestions.append(f"Replace {old_name} references with {new_name} equivalents")
+    
+    # Check for missing section references
+    section_keywords = ['section', 'bns', 'bnss', 'bsa', 'ipc']
+    has_section = any(kw in text_lower for kw in section_keywords)
+    if not has_section:
+        issues.append({
+            "type": "critical",
+            "title": "Missing Section Reference",
+            "description": "FIR draft does not cite any legal sections. Add applicable BNS/BNSS/BSA sections.",
+            "severity": "high"
+        })
+        suggestions.append("Use the Section Analyzer to identify applicable legal sections")
+    
+    # Check for first person narrative
+    first_person_indicators = ['i ', 'my ', 'me ', 'i\'m', 'i am', 'myself']
+    if any(fp in text_lower for fp in first_person_indicators):
+        issues.append({
+            "type": "warning",
+            "title": "First Person Narrative Detected",
+            "description": "FIR should be written in third person. Convert 'I/my/me' to 'complainant/victim'.",
+            "severity": "low"
+        })
+        suggestions.append("Convert narrative to third person for proper FIR format")
+    
+    # Check for incomplete offence descriptions
+    offence_keywords = {
+        'cheat': 'BNS 318 (Cheating)',
+        'fraud': 'BNS 318 (Cheating)',
+        'threat': 'BNS 351 (Criminal Intimidation)',
+        'assault': 'BNS 115 (Assault)',
+        'theft': 'BNS 303 (Theft)',
+        'murder': 'BNS 103 (Murder)',
+        'kidnap': 'BNS 137 (Kidnapping)',
+        'rape': 'BNS 63 (Rape)',
+        'forgery': 'BNS 336 (Forgery)',
+        'defamation': 'BNS 356 (Defamation)'
+    }
+    
+    for keyword, section in offence_keywords.items():
+        if keyword in text_lower:
+            section_num = section.split()[1]
+            if section_num.lower() not in text_lower and f"bns {section_num}" not in text_lower:
+                issues.append({
+                    "type": "suggestion",
+                    "title": f"Missing Section for '{keyword.title()}'",
+                    "description": f"Text mentions '{keyword}' but {section} is not cited.",
+                    "severity": "medium"
+                })
+    
+    # Use NLP for sentiment analysis if available
+    if nlp_client:
+        try:
+            from google.cloud.language_v1 import Document, types
+            document = types.Document(content=text, type_=types.Document.Type.PLAIN_TEXT)
+            sentiment = nlp_client.analyze_sentiment(request={'document': document})
+            
+            # Flag overly emotional language
+            if sentiment.document_sentiment.magnitude > 2.5:
+                issues.append({
+                    "type": "suggestion",
+                    "title": "Emotionally Charged Language",
+                    "description": "The draft contains highly emotional language. FIRs should be factual and neutral.",
+                    "severity": "low"
+                })
+                suggestions.append("Review the language for emotional content and make it more factual")
+        except Exception as e:
+            logger.warning(f"NLP analysis failed: {e}")
+    
+    # Determine overall legal strength
+    critical_count = sum(1 for i in issues if i["severity"] == "high")
+    medium_count = sum(1 for i in issues if i["severity"] == "medium")
+    
+    if critical_count > 0:
+        legal_strength = "Weak"
+    elif medium_count >= 2:
+        legal_strength = "Moderate"
+    elif len(issues) == 0:
+        legal_strength = "Strong"
+    else:
+        legal_strength = "Moderate"
+    
+    return {
+        "legal_strength": legal_strength,
+        "issues": issues,
+        "suggestions": list(set(suggestions)),
+        "total_issues": len(issues)
+    }
 
 
 @api_router.post("/bns/search")

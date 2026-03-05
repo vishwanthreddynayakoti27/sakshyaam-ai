@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Mic, File, Image as ImageIcon, Download, Copy, Send, AlertCircle, CheckCircle } from 'lucide-react';
+import { Upload, Mic, File, Image as ImageIcon, Download, Copy, Send, AlertCircle, CheckCircle, Volume2, VolumeX } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -13,12 +13,58 @@ const LanguageIntelligence = () => {
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speechRef = useRef(null);
 
   // Clear file when switching tabs
   const handleTabChange = (tab) => {
     setSelectedTab(tab);
     setFile(null);
     setResult(null);
+    handleStopSpeaking();
+  };
+
+  // Text-to-Speech using Web Speech API
+  const handleSpeak = (text) => {
+    if (!text) {
+      toast.error('No text to read');
+      return;
+    }
+
+    if ('speechSynthesis' in window) {
+      // Stop any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      
+      // Try to use a good English voice
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) 
+                         || voices.find(v => v.lang.startsWith('en'));
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      }
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+
+      speechRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+      toast.success('Reading text aloud...');
+    } else {
+      toast.error('Text-to-Speech not supported in this browser');
+    }
+  };
+
+  const handleStopSpeaking = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -267,6 +313,18 @@ const LanguageIntelligence = () => {
               <h2 className="text-xl font-heading font-bold text-white" data-testid="output-section-title">Output Results</h2>
               {result && (
                 <div className="flex gap-2">
+                  <Button
+                    data-testid="tts-button"
+                    onClick={() => isSpeaking ? handleStopSpeaking() : handleSpeak(result.legal_text)}
+                    className={`bg-transparent border transition-all rounded-sm p-2 ${
+                      isSpeaking 
+                        ? 'border-alert/50 text-alert hover:bg-alert/10' 
+                        : 'border-accent/50 text-accent hover:bg-accent/10'
+                    }`}
+                    title={isSpeaking ? 'Stop Reading' : 'Read Aloud'}
+                  >
+                    {isSpeaking ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                  </Button>
                   <Button
                     data-testid="copy-button"
                     onClick={() => handleCopy(result.legal_text)}

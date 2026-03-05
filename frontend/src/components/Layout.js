@@ -50,7 +50,6 @@ const Layout = ({ children }) => {
     { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
     { icon: Calendar, label: 'Smart Summons', path: '/smart-summons', isNew: true },
     { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder', isNew: true },
-    { icon: Mic, label: 'Case Diary', path: '/case-diary', isNew: true },
   ];
 
   return (
