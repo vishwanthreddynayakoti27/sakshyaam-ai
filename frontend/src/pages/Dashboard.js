@@ -12,7 +12,10 @@ import {
   DollarSign,
   MapPin,
   Calendar,
-  Activity
+  Activity,
+  FileStack,
+  FolderOpen,
+  Package
 } from 'lucide-react';
 import Layout from '../components/Layout';
 
@@ -49,9 +52,19 @@ const Dashboard = () => {
       iconColor: 'text-amber-400'
     },
     {
+      icon: FileStack,
+      title: 'Investigation Documents',
+      description: 'Generate police documents - Petition, CSR, Witness Statement & more',
+      path: '/investigation-documents',
+      color: 'from-indigo-500/20 to-violet-600/20',
+      borderColor: 'border-indigo-500/30',
+      iconColor: 'text-indigo-400',
+      isNew: true
+    },
+    {
       icon: Shield,
       title: 'Media Forensic Validator',
-      description: 'Preliminary deepfake detection for audio/video evidence',
+      description: 'Multi-layer deepfake detection for audio/video evidence',
       path: '/media-forensic',
       color: 'from-red-500/20 to-pink-600/20',
       borderColor: 'border-red-500/30',
@@ -60,7 +73,7 @@ const Dashboard = () => {
     {
       icon: DollarSign,
       title: 'Fraud Recovery Assistant',
-      description: 'Bank lien requests & BSA 63 certificate generation',
+      description: 'Bank freeze letters, UPI investigation & transaction analysis',
       path: '/fraud-recovery',
       color: 'from-green-500/20 to-emerald-600/20',
       borderColor: 'border-green-500/30',
@@ -69,7 +82,7 @@ const Dashboard = () => {
     {
       icon: Phone,
       title: 'CDR Analyzer',
-      description: 'Parse and analyze call detail records efficiently',
+      description: 'Parse CDR, contact frequency analysis & call timeline',
       path: '/cdr-analyzer',
       color: 'from-blue-500/20 to-cyan-600/20',
       borderColor: 'border-blue-500/30',
@@ -82,17 +95,45 @@ const Dashboard = () => {
       path: '/smart-summons',
       color: 'from-violet-500/20 to-purple-600/20',
       borderColor: 'border-violet-500/30',
-      iconColor: 'text-violet-400',
-      isNew: true
+      iconColor: 'text-violet-400'
     },
     {
       icon: MapPin,
       title: 'Jurisdiction Finder',
-      description: 'Map-based PS jurisdiction lookup & Zero FIR generator',
+      description: '700+ Telangana PS lookup with Zero FIR generator',
       path: '/jurisdiction-finder',
       color: 'from-teal-500/20 to-cyan-600/20',
       borderColor: 'border-teal-500/30',
-      iconColor: 'text-teal-400',
+      iconColor: 'text-teal-400'
+    },
+    {
+      icon: Activity,
+      title: 'SENTICEL Diary',
+      description: 'Social pulse monitoring & volatility alerts for cases',
+      path: '/senticel-diary',
+      color: 'from-rose-500/20 to-red-600/20',
+      borderColor: 'border-rose-500/30',
+      iconColor: 'text-rose-400',
+      isNew: true
+    },
+    {
+      icon: Package,
+      title: 'Evidence Manager',
+      description: 'Upload, hash & manage digital evidence with integrity verification',
+      path: '/evidence-manager',
+      color: 'from-orange-500/20 to-amber-600/20',
+      borderColor: 'border-orange-500/30',
+      iconColor: 'text-orange-400',
+      isNew: true
+    },
+    {
+      icon: FolderOpen,
+      title: 'Case File Manager',
+      description: 'Organize case documents, evidence & generate case file PDFs',
+      path: '/case-file-manager',
+      color: 'from-slate-500/20 to-gray-600/20',
+      borderColor: 'border-slate-500/30',
+      iconColor: 'text-slate-400',
       isNew: true
     }
   ];
@@ -203,7 +244,7 @@ const Dashboard = () => {
             className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4"
           >
             <div className="p-4 bg-white/5 rounded-xl border border-white/10 text-center">
-              <p className="text-2xl font-bold text-accent">8</p>
+              <p className="text-2xl font-bold text-accent">12</p>
               <p className="text-white/60 text-xs">Active Modules</p>
             </div>
             <div className="p-4 bg-white/5 rounded-xl border border-white/10 text-center">

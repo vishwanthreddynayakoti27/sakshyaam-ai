@@ -15,8 +15,10 @@ import {
   DollarSign,
   MapPin,
   Calendar,
-  Mic,
-  Activity
+  Activity,
+  FileStack,
+  Package,
+  FolderOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -45,11 +47,15 @@ const Layout = ({ children }) => {
     { icon: Languages, label: 'Language Intelligence', path: '/language-intelligence' },
     { icon: FileText, label: 'FIR Draft Assistant', path: '/fir-draft' },
     { icon: Scale, label: 'Legal Intelligence', path: '/legal-intelligence' },
+    { icon: FileStack, label: 'Investigation Docs', path: '/investigation-documents', isNew: true },
     { icon: Shield, label: 'Media Forensic', path: '/media-forensic' },
     { icon: DollarSign, label: 'Fraud Recovery', path: '/fraud-recovery' },
     { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
-    { icon: Calendar, label: 'Smart Summons', path: '/smart-summons', isNew: true },
-    { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder', isNew: true },
+    { icon: Calendar, label: 'Smart Summons', path: '/smart-summons' },
+    { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder' },
+    { icon: Activity, label: 'SENTICEL Diary', path: '/senticel-diary' },
+    { icon: Package, label: 'Evidence Manager', path: '/evidence-manager', isNew: true },
+    { icon: FolderOpen, label: 'Case File Manager', path: '/case-file-manager', isNew: true },
   ];
 
   return (

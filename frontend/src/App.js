@@ -7,11 +7,15 @@ import Dashboard from './pages/Dashboard';
 import LanguageIntelligence from './pages/LanguageIntelligence';
 import FIRDraftAssistant from './pages/FIRDraftAssistant';
 import LegalIntelligenceEngine from './pages/LegalIntelligenceEngine';
+import InvestigationDocuments from './pages/InvestigationDocuments';
 import CDRAnalyzer from './pages/CDRAnalyzer';
 import MediaForensic from './pages/MediaForensic';
 import FraudRecovery from './pages/FraudRecovery';
 import SmartSummons from './pages/SmartSummons';
 import JurisdictionFinder from './pages/JurisdictionFinder';
+import SenticelDiary from './pages/SenticelDiary';
+import EvidenceManager from './pages/EvidenceManager';
+import CaseFileManager from './pages/CaseFileManager';
 import Profile from './pages/Profile';
 import './App.css';
 
@@ -41,11 +45,15 @@ function App() {
           <Route path="/fir-draft" element={<ProtectedRoute><FIRDraftAssistant /></ProtectedRoute>} />
           <Route path="/legal-intelligence" element={<ProtectedRoute><LegalIntelligenceEngine /></ProtectedRoute>} />
           <Route path="/bns-intelligence" element={<Navigate to="/legal-intelligence" replace />} />
+          <Route path="/investigation-documents" element={<ProtectedRoute><InvestigationDocuments /></ProtectedRoute>} />
           <Route path="/cdr-analyzer" element={<ProtectedRoute><CDRAnalyzer /></ProtectedRoute>} />
           <Route path="/media-forensic" element={<ProtectedRoute><MediaForensic /></ProtectedRoute>} />
           <Route path="/fraud-recovery" element={<ProtectedRoute><FraudRecovery /></ProtectedRoute>} />
           <Route path="/smart-summons" element={<ProtectedRoute><SmartSummons /></ProtectedRoute>} />
           <Route path="/jurisdiction-finder" element={<ProtectedRoute><JurisdictionFinder /></ProtectedRoute>} />
+          <Route path="/senticel-diary" element={<ProtectedRoute><SenticelDiary /></ProtectedRoute>} />
+          <Route path="/evidence-manager" element={<ProtectedRoute><EvidenceManager /></ProtectedRoute>} />
+          <Route path="/case-file-manager" element={<ProtectedRoute><CaseFileManager /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

@@ -1577,6 +1577,161 @@ async def peer_review_fir(request: BNSAnalysisRequest, officer_id: str = Depends
     }
 
 
+# SENTICEL Diary - Social Pulse Integration & Volatility Alert
+class SenticelAnalysisRequest(BaseModel):
+    text: str
+    location: str
+    keywords: List[str] = []
+
+
+@api_router.post("/senticel/analyze")
+async def analyze_senticel(request: SenticelAnalysisRequest, officer_id: str = Depends(get_current_officer)):
+    """Analyze diary entry for social sentiment and volatility alerts using Google Cloud NLP"""
+    text = request.text
+    location = request.location
+    keywords = request.keywords
+    
+    sentiment_score = 0.0
+    sentiment_magnitude = 0.0
+    sentiment_label = "Neutral"
+    
+    # Use Google Cloud NLP for sentiment analysis if available
+    if nlp_client:
+        try:
+            from google.cloud.language_v1 import types
+            document = types.Document(content=text, type_=types.Document.Type.PLAIN_TEXT)
+            sentiment_response = nlp_client.analyze_sentiment(request={'document': document})
+            
+            sentiment_score = sentiment_response.document_sentiment.score  # -1 to 1
+            sentiment_magnitude = sentiment_response.document_sentiment.magnitude  # 0 to infinity
+            
+            if sentiment_score < -0.3:
+                sentiment_label = "Negative"
+            elif sentiment_score > 0.3:
+                sentiment_label = "Positive"
+            else:
+                sentiment_label = "Mixed" if sentiment_magnitude > 1 else "Neutral"
+                
+        except Exception as e:
+            logger.warning(f"NLP sentiment analysis failed: {e}")
+            # Fall back to keyword-based analysis
+            sentiment_score, sentiment_magnitude, sentiment_label = analyze_sentiment_locally(text)
+    else:
+        sentiment_score, sentiment_magnitude, sentiment_label = analyze_sentiment_locally(text)
+    
+    # Calculate risk level and social temperature
+    # Normalize sentiment_score from [-1, 1] to [0, 1] for risk calculation
+    normalized_score = (1 - sentiment_score) / 2  # -1 becomes 1 (high risk), 1 becomes 0 (low risk)
+    
+    # Incorporate magnitude (more emotional = more volatile)
+    volatility_factor = min(1.0, sentiment_magnitude / 5.0)
+    
+    # Calculate social temperature (0-100)
+    social_temperature = int((normalized_score * 0.6 + volatility_factor * 0.4) * 100)
+    
+    # Determine risk level
+    if social_temperature >= 70:
+        risk_level = "Volatile"
+    elif social_temperature >= 40:
+        risk_level = "Moderate"
+    else:
+        risk_level = "Safe"
+    
+    # Detect alerts based on keywords and text
+    alerts = detect_volatility_alerts(text, keywords)
+    
+    # Detect keyword spikes
+    keyword_spikes = detect_keyword_spikes(text, keywords)
+    
+    return {
+        "sentiment": {
+            "score": round(sentiment_score, 3),
+            "magnitude": round(sentiment_magnitude, 3),
+            "label": sentiment_label
+        },
+        "riskLevel": risk_level,
+        "socialTemperature": social_temperature,
+        "alerts": alerts,
+        "keywordSpikes": keyword_spikes,
+        "analyzedAt": datetime.now(timezone.utc).isoformat()
+    }
+
+
+def analyze_sentiment_locally(text: str) -> tuple:
+    """Fallback sentiment analysis using keyword matching"""
+    text_lower = text.lower()
+    
+    negative_words = ['angry', 'protest', 'violence', 'attack', 'threat', 'riot', 'mob', 'death', 
+                      'murder', 'assault', 'dangerous', 'tension', 'conflict', 'clash', 'strike']
+    positive_words = ['peaceful', 'calm', 'resolved', 'cooperation', 'safe', 'normal', 'stable', 'quiet']
+    
+    neg_count = sum(1 for word in negative_words if word in text_lower)
+    pos_count = sum(1 for word in positive_words if word in text_lower)
+    
+    if neg_count > pos_count:
+        score = -0.3 - (neg_count * 0.1)
+        label = "Negative"
+    elif pos_count > neg_count:
+        score = 0.3 + (pos_count * 0.1)
+        label = "Positive"
+    else:
+        score = 0.0
+        label = "Neutral"
+    
+    magnitude = neg_count + pos_count
+    
+    return (max(-1, min(1, score)), magnitude, label)
+
+
+def detect_volatility_alerts(text: str, keywords: List[str]) -> List[dict]:
+    """Detect volatility alerts based on text and keywords"""
+    alerts = []
+    text_lower = text.lower()
+    combined = text_lower + ' ' + ' '.join([k.lower() for k in keywords])
+    
+    alert_patterns = [
+        (['protest', 'rally', 'march', 'demonstration'], 'Protest Activity', 'high'),
+        (['rumor', 'rumour', 'viral', 'spreading', 'fake news'], 'Rumor Spreading', 'medium'),
+        (['crowd', 'gathering', 'mob', 'assembly'], 'Crowd Formation', 'medium'),
+        (['tension', 'clash', 'conflict', 'communal'], 'Community Tension', 'high'),
+        (['violence', 'riot', 'attack', 'assault'], 'Violence Risk', 'high'),
+        (['strike', 'bandh', 'shutdown'], 'Strike/Bandh', 'medium'),
+    ]
+    
+    for keywords_list, alert_type, severity in alert_patterns:
+        if any(kw in combined for kw in keywords_list):
+            alerts.append({"type": alert_type, "severity": severity})
+    
+    return alerts
+
+
+def detect_keyword_spikes(text: str, keywords: List[str]) -> List[dict]:
+    """Detect keyword spikes/trends"""
+    spikes = []
+    text_lower = text.lower()
+    combined = text_lower + ' ' + ' '.join([k.lower() for k in keywords])
+    
+    spike_patterns = [
+        (['angry', 'anger', 'furious', 'outrage'], 'Anger', 'rising'),
+        (['fear', 'panic', 'scared', 'worried'], 'Fear', 'rising'),
+        (['protest', 'unrest', 'agitation'], 'Unrest', 'rising'),
+        (['calm', 'peaceful', 'normal'], 'Calm', 'stable'),
+        (['rumor', 'rumour', 'misinformation'], 'Misinformation', 'rising'),
+    ]
+    
+    for keywords_list, spike_name, trend in spike_patterns:
+        count = sum(1 for kw in keywords_list if kw in combined)
+        if count > 0:
+            change = f"+{count * 15}%" if trend == 'rising' else f"-{count * 10}%"
+            spikes.append({
+                "keyword": spike_name,
+                "trend": trend,
+                "change": change
+            })
+    
+    return spikes[:5]  # Limit to 5 spikes
+
+
 @api_router.post("/bns/search")
 async def search_bns_section(section_number: str = Form(...), officer_id: str = Depends(get_current_officer)):
     """Search for a specific BNS/IPC section"""
