@@ -6,7 +6,7 @@
 **Purpose**: Comprehensive investigation and FIR preparation tool for law enforcement officers
 
 ## Tech Stack
-- **Frontend**: React 18, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js, react-dropzone
+- **Frontend**: React 18, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, docx, file-saver, Leaflet.js, react-dropzone
 - **Backend**: FastAPI, Pydantic, Motor (MongoDB async), PyPDF2, python-docx
 - **Database**: MongoDB
 - **APIs**: Google Cloud Vision, Translate, Speech-to-Text, Natural Language Processing
@@ -39,20 +39,29 @@
 - BSA Section 63 Certifier
 - Case Peer-Reviewer
 
-### 5. Investigation Documents (NEW)
-- 10 document templates:
-  1. Petition Report
-  2. CSR Entry
-  3. Witness Statement (161 CrPC / BNSS)
-  4. Arrest Memo (Section 50 BNSS)
-  5. Seizure Panchanama (Section 105 BNSS)
-  6. Bank Information Request (Section 94 BNSS)
-  7. CDR Request Letter
-  8. CCTV Footage Request
-  9. Charge Sheet Draft (Section 193 BNSS)
-  10. Case Status Report
-- Form filling with auto-population
-- PDF download, Copy, Print functionality
+### 5. Investigation Documents (EXPANDED - Dec 2025)
+**65+ templates organized in 10 categories:**
+
+| Category | Count | Templates |
+|----------|-------|-----------|
+| Complaint Stage | 7 | Petition Report, CSR Entry, Station Diary Entry, Complaint Acknowledgement, Preliminary Enquiry Report, Complaint Closure Report, Complaint Forwarding Note |
+| FIR Stage | 5 | FIR Draft, FIR Correction Report, FIR Copy Generator, FIR Dispatch to Court, FIR Dispatch to Senior |
+| Investigation | 6 | Scene of Crime Report, Crime Scene Sketch, Investigation Commencement, Case Diary Entry, Investigation Progress, Investigation Completion |
+| Witness Examination | 5 | Witness Statement (161), Witness Re-examination, Witness Identification Memo, Witness Protection Note, Witness Attendance Memo |
+| Evidence Collection | 9 | Seizure Panchanama, Property Seizure Memo, Vehicle Seizure Memo, Mobile Phone Seizure, Laptop Seizure Memo, Digital Evidence Report, Evidence Label Register, Evidence Transfer Memo, Chain of Custody Record |
+| Forensic Requests | 5 | FSL Request Letter, Fingerprint Analysis, DNA Examination Request, Cyber Forensic Request, Document Examination |
+| Investigation Letters | 8 | CDR Request, IP Address Request, Bank Account Request, Transaction History, CCTV Footage Request, Hotel Register Request, Vehicle Registration, Social Media Request |
+| Accused Handling | 8 | Notice to Accused (BNSS 35), Summons to Accused, Arrest Memo, Personal Search Memo, Medical Examination, Custody Memo, Bail Opposition Note, Police Custody Request |
+| Court Documents | 6 | Remand Application, Bail Objection Report, Charge Sheet Draft, Supplementary Charge Sheet, Final Investigation Report, Case Closure Report |
+| Administrative | 6 | Case Status Report, Daily Crime Report, Weekly Crime Report, Monthly Crime Report, Station Crime Statistics, Property Disposal Report |
+
+**Features:**
+- Fillable form with auto-fill from FIR data
+- PDF download (jsPDF)
+- Word download (docx library)
+- Print functionality
+- Copy to clipboard
+- **Save to Case File** (auto-links with Case File Manager)
 
 ### 6. Media Forensic Validator
 - Deterministic authenticity scoring
@@ -84,7 +93,7 @@
 - Click-to-find nearest station
 - Zero FIR Transfer Letter PDF generator
 
-### 11. SENTICEL Investigation Diary (NEW)
+### 11. SENTICEL Investigation Diary
 - Social Pulse Integration & Volatility Alert System
 - Sentiment analysis via Google Cloud NLP (with client-side fallback)
 - Dual gauges: Legal Strength & Social Temperature
@@ -92,79 +101,28 @@
 - Keyword Spikes tracking
 - Risk Level assessment (Safe, Moderate, Volatile)
 
-### 12. Evidence Manager (NEW)
+### 12. Evidence Manager
 - File upload with drag-drop (Images, Video, Audio, PDF, Documents)
 - SHA-256 hash generation via browser crypto.subtle.digest
 - Evidence integrity verification
 - Search and filter functionality
 - Evidence Library with case linkage
 - localStorage persistence
+- **Auto-links with Case File Manager via Case ID**
 
-### 13. Case File Manager (NEW)
+### 13. Case File Manager
 - Case file creation with all details
 - Status tracking (Under Investigation, Charge Sheet Filed, Trial Ongoing, Closed, Final Report)
-- Evidence linking from Evidence Manager
-- Comprehensive PDF export
+- **Linked Documents section** - Shows documents saved from Investigation Documents
+- **Linked Evidence section** - Shows evidence from Evidence Manager
+- Comprehensive PDF export (includes linked documents and evidence)
 - localStorage persistence
 
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/signup` - Officer registration
-- `POST /api/auth/login` - Login (officer_id, password)
-- `GET /api/auth/profile` - Get profile
-
-### Documents & OCR
-- `POST /api/ocr/process` - OCR with Vision API
-- `POST /api/translate/process` - Translation
-- `POST /api/speech/process` - Speech-to-Text
-
-### FIR Management
-- `POST /api/fir/create` - Create FIR draft
-- `GET /api/fir/list` - List drafts
-- `POST /api/fir/analyze-errors` - Analyze errors
-
-### Legal Intelligence
-- `POST /api/bns/analyze` - Analyze case facts
-- `POST /api/bns/search` - Search by section number
-- `POST /bns/peer-review` - Peer review analysis
-
-### Jurisdiction
-- `GET /api/jurisdiction/stations` - Get all 713 stations
-- `POST /api/jurisdiction/find` - Find nearest station
-
-### SENTICEL
-- `POST /api/senticel/analyze` - Sentiment analysis
-
-### CDR
-- `POST /api/cdr/upload` - Upload and analyze CDR
-- `GET /api/cdr/records` - Get records
-
-### Forensic
-- `POST /api/forensic/analyze` - Analyze media
-- `GET /api/forensic/reports` - Get reports
-
-### Fraud
-- `POST /api/fraud/create` - Create fraud request
-- `GET /api/fraud/list` - List requests
-
-## Database Schema
-- `officers`: {officer_id, name, email, password_hash, department, rank, district}
-- `fir_drafts`: {officer_id, complaint_text, fir_draft}
-- `documents`: {officer_id, document_type, original_text, translated_text, legal_text}
-- `forensic_reports`: {officer_id, file_name, probability_score, analysis_details}
-- `fraud_requests`: {officer_id, victim_name, transaction_id, amount, bank_name}
-- `cdr_records`: {officer_id, case_id, phone_number, called_number, datetime_str, tower_id}
-- `remand_reports`: {officer_id, fir_id, accused_name, charges, report_text}
-
-## Test Credentials
-- Officer ID: verify_test_001
-- Password: Test123!
-
-## Deployment
-- Preview URL: https://nyaya-prahari.preview.emergentagent.com
-- Backend: FastAPI on port 8001
-- Frontend: React on port 3000
+## Auto-Linking System (NEW)
+Documents and evidence are automatically linked across modules using Case ID:
+- **Investigation Documents** → Save with Case ID → Appears in Case File Manager's "Linked Documents"
+- **Evidence Manager** → Upload with Case ID → Appears in Case File Manager's "Linked Evidence"
+- localStorage keys: `case_documents_{caseId}`, `evidence_manager_data`
 
 ## Data Files
 - `/app/backend/data/telangana_police_stations.json` - 713 stations across 34 districts, 11 commissionerates
@@ -176,7 +134,9 @@
 - [x] Language Intelligence with OCR, Translation, TTS
 - [x] FIR Draft Assistant with third-person conversion
 - [x] Legal Intelligence Engine with 4-tab interface
-- [x] Investigation Documents with 10 templates
+- [x] **Investigation Documents EXPANDED to 65+ templates in 10 categories**
+- [x] **Auto-linking between Investigation Documents and Case File Manager**
+- [x] **Word document download support (docx library)**
 - [x] Media Forensic Validator
 - [x] Fraud Recovery Assistant
 - [x] CDR Analyzer with dynamic columns
@@ -184,12 +144,22 @@
 - [x] Jurisdiction Finder with 713 stations
 - [x] SENTICEL Investigation Diary
 - [x] Evidence Manager
-- [x] Case File Manager
+- [x] Case File Manager with Linked Documents
 
 ### Notes
 - Evidence Manager and Case File Manager use localStorage (no backend APIs)
 - SENTICEL Diary has client-side fallback when Google NLP unavailable
 - Media Forensics uses heuristic analysis
+- Investigation Documents uses client-side PDF/Word generation
+
+## Test Credentials
+- Officer ID: verify_test_001
+- Password: Test123!
+
+## Deployment
+- Preview URL: https://nyaya-prahari.preview.emergentagent.com
+- Backend: FastAPI on port 8001
+- Frontend: React on port 3000
 
 ---
 Last Updated: December 2025
