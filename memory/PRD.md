@@ -1,125 +1,140 @@
-# SAAKSHYAM AI - Product Requirements Document
+# SAAKSHYAM COMMAND - Product Requirements Document
 
 ## Project Overview
-**App Name**: SAAKSHYAM AI (formerly NYAYA PRAHARI)
-**Subtitle**: Cyber Investigation Command Console
-**Purpose**: Pre-CCTNS Intelligence & FIR Preparation System for police officers
-
-## Original Problem Statement
-Build a comprehensive investigation and FIR preparation tool for law enforcement officers with modules for:
-- Language processing (OCR, translation, legal text conversion)
-- FIR drafting with third-person conversion and error analysis
-- Legal section lookup (BNS, BNSS, BSA) with case fact analysis
-- Media forensic validation
-- Fraud recovery assistance
-- CDR analysis with dynamic column mapping
-- Court summons tracking
-- Jurisdiction finding with Haversine distance and Zero FIR generation
-- Audio case diary with integrity hashing
+**App Name**: SAAKSHYAM AI - COMMAND CONSOLE
+**Subtitle**: Cyber Investigation Command Center - Pre-CCTNS Intelligence & FIR Preparation System
+**Purpose**: Comprehensive investigation and FIR preparation tool for law enforcement officers
 
 ## Tech Stack
-- **Frontend**: React, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js, react-dropzone
+- **Frontend**: React 18, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, Leaflet.js, react-dropzone
 - **Backend**: FastAPI, Pydantic, Motor (MongoDB async), PyPDF2, python-docx
 - **Database**: MongoDB
-- **APIs**: 
-  - Google Cloud Vision (OCR - configured with service account)
-  - Google Cloud Translate (configured with language detection)
-  - Google Cloud Speech-to-Text (configured)
+- **APIs**: Google Cloud Vision, Translate, Speech-to-Text, Natural Language Processing
 - **Maps**: Leaflet.js with OpenStreetMap
 
-## Core Features
+## Core Modules (13 Total)
 
-### 1. Dashboard ✅
-- 2x4 grid layout with 9 module cards
-- Dark tactical cyber theme
+### 1. Dashboard
+- Module grid with 13 navigation cards
 - NEW badges on recently added modules
-- HERO badge on Language Intelligence
+- Dark tactical cyber theme
 
-### 2. Language Intelligence ✅ (UPGRADED Dec 2025)
-- **Document Tab**: Supports PNG, JPG, PDF, DOCX
-  - Images: Google Vision OCR
-  - PDF: PyPDF2 text extraction with language detection
-  - DOCX: python-docx text extraction with language detection
-- **Audio Tab**: Supports MP3, WAV, M4A
-  - Google Speech-to-Text API
-  - 5-stage pipeline: Speech→Text→Translation→Grammar→Legal
-- Three-panel output: Original Text, Translated English, Legal English
-- Copy and Download functionality
+### 2. Language Intelligence (HERO)
+- Document processing: PNG, JPG, PDF, DOCX via Google Vision OCR
+- Audio processing: MP3, WAV, M4A via Google Speech-to-Text
+- 5-stage pipeline: Speech/OCR → Text → Translation → Grammar → Legal English
+- Three-panel output: Original, Translated, Legal English
+- TTS Read Aloud feature
 
-### 3. FIR Draft Assistant ✅
+### 3. FIR Draft Assistant
 - First-to-third person conversion
-- Error analysis (mixed narrative, overuse detection)
+- Error analysis (mixed narrative detection)
 - Remand report generation
 
-### 4. Legal Intelligence Engine ✅ (Enhanced)
+### 4. Legal Intelligence Engine
 - 4-tab interface: All Laws, BNS, BNSS, BSA
 - Case fact analysis with keyword detection
-- 50+ sections in database with punishments
-- IPC/CrPC/Evidence Act mappings
-- **Auto-generated Remand Note** when offence sections detected
-- Copy and PDF download for remand notes
+- 50+ sections with IPC/CrPC/Evidence Act mappings
+- Auto-generated Remand Note
+- BSA Section 63 Certifier
+- Case Peer-Reviewer
 
-### 5. Media Forensic Validator ✅
+### 5. Investigation Documents (NEW)
+- 10 document templates:
+  1. Petition Report
+  2. CSR Entry
+  3. Witness Statement (161 CrPC / BNSS)
+  4. Arrest Memo (Section 50 BNSS)
+  5. Seizure Panchanama (Section 105 BNSS)
+  6. Bank Information Request (Section 94 BNSS)
+  7. CDR Request Letter
+  8. CCTV Footage Request
+  9. Charge Sheet Draft (Section 193 BNSS)
+  10. Case Status Report
+- Form filling with auto-population
+- PDF download, Copy, Print functionality
+
+### 6. Media Forensic Validator
 - Deterministic authenticity scoring
-- Multi-factor analysis
-- Video (MP4, MOV, AVI) and audio (WAV, MP3, M4A) support
+- Multi-factor analysis for video (MP4, MOV, AVI) and audio (WAV, MP3, M4A)
 
-### 6. Fraud Recovery Assistant ✅
+### 7. Fraud Recovery Assistant
 - Evidence upload with SHA-256 hashing
 - OCR extraction for transaction details
 - Bank lien request letter generation
 - BSA Section 63 certificate generation
 
-### 7. CDR Analyzer ✅ (Enhanced)
-- **Dynamic column detection** - accepts any Excel/CSV format
-- Automatic header mapping (Phone, DateTime, Duration, Tower, etc.)
+### 8. CDR Analyzer
+- Dynamic column detection for any Excel/CSV format
+- Automatic header mapping
 - Batch processing for 5000+ records
 - Analysis: Most called numbers, common locations, date range
 
-### 8. Smart Summons Tracker ✅
+### 9. Smart Summons Tracker
 - OCR-based summons document parsing
 - Status tracking (Pending, Attended, Missed, Rescheduled)
-- Urgency indicators for upcoming hearings
+- Urgency indicators
 - PDF report generation
 
-### 9. Jurisdiction Finder ✅ (UPGRADED Dec 2025)
-- Leaflet.js interactive map with **306 Telangana police stations across 40 districts**
-- **Haversine formula** for accurate distance calculation
+### 10. Jurisdiction Finder
+- **713 Telangana police stations** across 34 districts, 11 commissionerates
+- Leaflet.js interactive map
+- Haversine formula for distance calculation
 - Search by station name or district
-- Click on map to find nearest station with 6 nearby stations list
-- **Zero FIR Transfer Letter** PDF generator
+- Click-to-find nearest station
+- Zero FIR Transfer Letter PDF generator
 
-### 10. Case Diary - Mobile Sync ✅
-- Audio file upload (MP3, WAV, M4A, max 50MB)
-- Client-side SHA-256 integrity hashing
-- Case number, date, location, description fields
-- Synced entries list with playback controls
+### 11. SENTICEL Investigation Diary (NEW)
+- Social Pulse Integration & Volatility Alert System
+- Sentiment analysis via Google Cloud NLP (with client-side fallback)
+- Dual gauges: Legal Strength & Social Temperature
+- Volatility Alerts (Protest Activity, Rumor Spreading, Crowd Formation, etc.)
+- Keyword Spikes tracking
+- Risk Level assessment (Safe, Moderate, Volatile)
+
+### 12. Evidence Manager (NEW)
+- File upload with drag-drop (Images, Video, Audio, PDF, Documents)
+- SHA-256 hash generation via browser crypto.subtle.digest
+- Evidence integrity verification
+- Search and filter functionality
+- Evidence Library with case linkage
+- localStorage persistence
+
+### 13. Case File Manager (NEW)
+- Case file creation with all details
+- Status tracking (Under Investigation, Charge Sheet Filed, Trial Ongoing, Closed, Final Report)
+- Evidence linking from Evidence Manager
+- Comprehensive PDF export
+- localStorage persistence
 
 ## API Endpoints
 
 ### Authentication
 - `POST /api/auth/signup` - Officer registration
-- `POST /api/auth/login` - Login
+- `POST /api/auth/login` - Login (officer_id, password)
 - `GET /api/auth/profile` - Get profile
 
 ### Documents & OCR
-- `POST /api/ocr/process` - OCR with Vision API (PNG, JPG, PDF, DOCX)
+- `POST /api/ocr/process` - OCR with Vision API
 - `POST /api/translate/process` - Translation
-- `POST /api/speech/process` - Speech-to-Text (MP3, WAV, M4A)
+- `POST /api/speech/process` - Speech-to-Text
 
 ### FIR Management
 - `POST /api/fir/create` - Create FIR draft
 - `GET /api/fir/list` - List drafts
-- `GET /api/fir/{id}` - Get draft
 - `POST /api/fir/analyze-errors` - Analyze errors
 
 ### Legal Intelligence
-- `POST /api/bns/analyze` - Analyze case facts (returns sections + remand note)
+- `POST /api/bns/analyze` - Analyze case facts
 - `POST /api/bns/search` - Search by section number
+- `POST /bns/peer-review` - Peer review analysis
 
 ### Jurisdiction
-- `GET /api/jurisdiction/stations` - Get all 306 stations
-- `POST /api/jurisdiction/find` - Find nearest station with Haversine
+- `GET /api/jurisdiction/stations` - Get all 713 stations
+- `POST /api/jurisdiction/find` - Find nearest station
+
+### SENTICEL
+- `POST /api/senticel/analyze` - Sentiment analysis
 
 ### CDR
 - `POST /api/cdr/upload` - Upload and analyze CDR
@@ -132,13 +147,6 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 ### Fraud
 - `POST /api/fraud/create` - Create fraud request
 - `GET /api/fraud/list` - List requests
-- `PUT /api/fraud/{id}/status` - Update status
-
-### Reminders & Remand
-- `POST /api/reminders/create` - Create reminder
-- `GET /api/reminders/list` - List reminders
-- `POST /api/remand/create` - Create remand report
-- `GET /api/remand/list` - List reports
 
 ## Database Schema
 - `officers`: {officer_id, name, email, password_hash, department, rank, district}
@@ -150,23 +158,38 @@ Build a comprehensive investigation and FIR preparation tool for law enforcement
 - `remand_reports`: {officer_id, fir_id, accused_name, charges, report_text}
 
 ## Test Credentials
-- Officer ID: OFF12345
-- Password: test123
+- Officer ID: verify_test_001
+- Password: Test123!
 
 ## Deployment
 - Preview URL: https://nyaya-prahari.preview.emergentagent.com
 - Backend: FastAPI on port 8001
 - Frontend: React on port 3000
 
-## Google Cloud Configuration
-Credential files stored at:
-- `/app/backend/credentials/google-vision.json`
-- `/app/backend/credentials/google-translate.json`
-- `/app/backend/credentials/google-speech.json`
-- `/app/backend/credentials/google-nlp.json`
-
 ## Data Files
-- `/app/backend/data/telangana_police_stations.json` - 306 stations across 40 districts
+- `/app/backend/data/telangana_police_stations.json` - 713 stations across 34 districts, 11 commissionerates
+
+## Implementation Status
+
+### Completed (December 2025)
+- [x] Dashboard with 13 module cards
+- [x] Language Intelligence with OCR, Translation, TTS
+- [x] FIR Draft Assistant with third-person conversion
+- [x] Legal Intelligence Engine with 4-tab interface
+- [x] Investigation Documents with 10 templates
+- [x] Media Forensic Validator
+- [x] Fraud Recovery Assistant
+- [x] CDR Analyzer with dynamic columns
+- [x] Smart Summons Tracker
+- [x] Jurisdiction Finder with 713 stations
+- [x] SENTICEL Investigation Diary
+- [x] Evidence Manager
+- [x] Case File Manager
+
+### Notes
+- Evidence Manager and Case File Manager use localStorage (no backend APIs)
+- SENTICEL Diary has client-side fallback when Google NLP unavailable
+- Media Forensics uses heuristic analysis
 
 ---
 Last Updated: December 2025
