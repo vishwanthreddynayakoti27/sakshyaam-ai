@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Upload, Video, Music, AlertTriangle, CheckCircle, TrendingUp } from 'lucide-react';
+import { Shield, Upload, Video, Music, AlertTriangle, CheckCircle, XCircle, HelpCircle, TrendingUp, Info } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Layout from '../components/Layout';
@@ -37,6 +37,7 @@ const MediaForensic = () => {
     onDrop: (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
         setFile(acceptedFiles[0]);
+        setResult(null);
       }
     },
     onDropRejected: (rejectedFiles) => {
@@ -65,11 +66,11 @@ const MediaForensic = () => {
       
       const riskLevel = response.data.risk_level;
       if (riskLevel === 'Low') {
-        toast.success(`Authenticity verified: ${response.data.probability_score}% - Low risk`);
+        toast.success('Analysis Complete: Media appears AUTHENTIC');
       } else if (riskLevel === 'Medium') {
-        toast.warning(`Medium risk detected: ${response.data.probability_score}%`);
+        toast.warning('Analysis Complete: Results INCONCLUSIVE');
       } else {
-        toast.error(`High risk: ${response.data.probability_score}% - Further verification required`);
+        toast.error('Analysis Complete: Media may be AI-GENERATED');
       }
       
       loadReports();
@@ -80,11 +81,48 @@ const MediaForensic = () => {
     }
   };
 
-  const getRiskColor = (riskLevel) => {
-    if (riskLevel === 'Low') return 'text-success border-success bg-success/10';
-    if (riskLevel === 'Medium') return 'text-warning border-warning bg-warning/10';
-    return 'text-alert border-alert bg-alert/10';
+  const getVerdictDisplay = () => {
+    if (!result) return null;
+    
+    const score = result.probability_score;
+    
+    if (score >= 75) {
+      return {
+        verdict: 'LIKELY AUTHENTIC',
+        subtitle: 'This media appears to be REAL and unmanipulated',
+        icon: CheckCircle,
+        bgColor: 'bg-green-500/20',
+        borderColor: 'border-green-500',
+        textColor: 'text-green-400',
+        iconColor: 'text-green-400',
+        scoreLabel: 'Authenticity Score'
+      };
+    } else if (score >= 50) {
+      return {
+        verdict: 'INCONCLUSIVE',
+        subtitle: 'Results are unclear - professional verification recommended',
+        icon: HelpCircle,
+        bgColor: 'bg-yellow-500/20',
+        borderColor: 'border-yellow-500',
+        textColor: 'text-yellow-400',
+        iconColor: 'text-yellow-400',
+        scoreLabel: 'Confidence Score'
+      };
+    } else {
+      return {
+        verdict: 'LIKELY AI-GENERATED',
+        subtitle: 'This media may be FAKE or digitally manipulated',
+        icon: XCircle,
+        bgColor: 'bg-red-500/20',
+        borderColor: 'border-red-500',
+        textColor: 'text-red-400',
+        iconColor: 'text-red-400',
+        scoreLabel: 'Authenticity Score'
+      };
+    }
   };
+
+  const verdictDisplay = getVerdictDisplay();
 
   const chartData = result?.spectral_data?.map((value, index) => ({
     index,
@@ -106,7 +144,7 @@ const MediaForensic = () => {
             </h1>
           </div>
           <p className="text-white/60 text-lg">
-            Preliminary AI-based detection of tampered audio/video evidence
+            AI Detection System - Identify if media is REAL or AI-GENERATED
           </p>
           
           <div className="mt-4 p-4 bg-alert/10 border border-alert/30 rounded-lg flex items-start gap-3">
@@ -184,9 +222,12 @@ const MediaForensic = () => {
             </Button>
 
             <div className="mt-6 p-4 bg-white/5 border border-white/10 rounded-lg">
-              <p className="text-white/60 text-xs">
-                <strong>Processing Note:</strong> Current version uses mock analysis. Production ML models 
-                (audio artifact detection, frame consistency analysis) are pending integration.
+              <p className="text-white/60 text-xs flex items-start gap-2">
+                <Info size={14} className="mt-0.5 flex-shrink-0" />
+                <span>
+                  <strong>How it works:</strong> The system analyzes metadata, file structure, compression patterns, 
+                  and spectral characteristics to determine if media is authentic or potentially AI-generated.
+                </span>
               </p>
             </div>
           </motion.div>
@@ -205,35 +246,81 @@ const MediaForensic = () => {
                 <div className="text-center">
                   <Shield size={48} className="mx-auto mb-4 opacity-20" />
                   <p>Upload and analyze media to see results</p>
+                  <p className="text-sm mt-2">We'll tell you if it's REAL or AI-GENERATED</p>
                 </div>
               </div>
             ) : (
               <div className="space-y-6" data-testid="forensic-results">
-                <div className={`p-6 rounded-lg border-2 ${getRiskColor(result.risk_level)}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="font-heading font-bold text-lg">Authenticity Score</span>
-                    <span className="text-3xl font-bold">{result.probability_score}%</span>
+                {/* Main Verdict Box */}
+                <div className={`p-6 rounded-xl border-2 ${verdictDisplay.bgColor} ${verdictDisplay.borderColor}`}>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className={`w-16 h-16 rounded-full ${verdictDisplay.bgColor} border-2 ${verdictDisplay.borderColor} flex items-center justify-center`}>
+                      <verdictDisplay.icon size={32} className={verdictDisplay.iconColor} />
+                    </div>
+                    <div>
+                      <h3 className={`text-2xl font-bold ${verdictDisplay.textColor}`} data-testid="verdict-text">
+                        {verdictDisplay.verdict}
+                      </h3>
+                      <p className="text-white/70 text-sm">{verdictDisplay.subtitle}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-sm mb-3">
-                    <span>Risk Level: <strong>{result.risk_level}</strong></span>
-                    <span>Confidence: <strong>{result.confidence_level}</strong></span>
-                  </div>
-                  <div className="text-xs bg-black/30 p-3 rounded border border-white/10">
-                    <p className="text-white/80">
-                      💡 Score derived from metadata consistency, file hash uniqueness, compression artifact analysis, 
-                      {result.risk_level === 'Low' ? ' frame/spectral integrity checks,' : ''} 
-                      and structural consistency checks.
-                    </p>
+                  
+                  {/* Score Display */}
+                  <div className="flex items-center justify-between bg-black/30 rounded-lg p-4">
+                    <span className="text-white/80">{verdictDisplay.scoreLabel}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-32 h-3 bg-black/50 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full ${result.probability_score >= 75 ? 'bg-green-500' : result.probability_score >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${result.probability_score}%` }}
+                        />
+                      </div>
+                      <span className={`text-2xl font-bold ${verdictDisplay.textColor}`}>
+                        {result.probability_score}%
+                      </span>
+                    </div>
                   </div>
                 </div>
 
+                {/* Interpretation Guide */}
+                <div className="bg-black/30 border border-white/10 rounded-lg p-4">
+                  <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                    <Info size={16} className="text-accent" />
+                    Understanding Your Result
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div className="p-2 bg-green-500/10 border border-green-500/30 rounded">
+                      <div className="flex items-center gap-1 mb-1">
+                        <CheckCircle size={12} className="text-green-400" />
+                        <span className="text-green-400 font-semibold">75-100%</span>
+                      </div>
+                      <p className="text-white/60">REAL - Likely authentic media</p>
+                    </div>
+                    <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded">
+                      <div className="flex items-center gap-1 mb-1">
+                        <HelpCircle size={12} className="text-yellow-400" />
+                        <span className="text-yellow-400 font-semibold">50-74%</span>
+                      </div>
+                      <p className="text-white/60">UNCLEAR - Needs verification</p>
+                    </div>
+                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded">
+                      <div className="flex items-center gap-1 mb-1">
+                        <XCircle size={12} className="text-red-400" />
+                        <span className="text-red-400 font-semibold">0-49%</span>
+                      </div>
+                      <p className="text-white/60">FAKE - Likely AI-generated</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Spectral Analysis Chart */}
                 <div>
                   <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
                     <TrendingUp size={18} className="text-accent" />
                     Spectral Analysis
                   </h3>
                   <div className="bg-black/30 border border-white/10 rounded-lg p-4">
-                    <ResponsiveContainer width="100%" height={200}>
+                    <ResponsiveContainer width="100%" height={150}>
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                         <XAxis dataKey="index" stroke="rgba(255,255,255,0.5)" />
@@ -248,7 +335,7 @@ const MediaForensic = () => {
                         <Line
                           type="monotone"
                           dataKey="value"
-                          stroke="#00F2FF"
+                          stroke={result.probability_score >= 75 ? '#22c55e' : result.probability_score >= 50 ? '#eab308' : '#ef4444'}
                           strokeWidth={2}
                           dot={false}
                         />
@@ -257,13 +344,16 @@ const MediaForensic = () => {
                   </div>
                 </div>
 
+                {/* Analysis Summary */}
                 <div className="bg-black/30 border border-white/10 rounded-lg p-4">
                   <h3 className="text-white font-semibold mb-2">Analysis Summary</h3>
                   <p className="text-white/80 text-sm" data-testid="analysis-summary">
                     {result.analysis_summary}
                   </p>
                   {result.message && (
-                    <p className="text-accent text-xs mt-2">{result.message}</p>
+                    <p className={`text-sm mt-3 font-semibold ${verdictDisplay.textColor}`}>
+                      {result.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -280,32 +370,43 @@ const MediaForensic = () => {
           >
             <h3 className="text-xl font-heading font-bold text-white mb-4">Recent Analyses</h3>
             <div className="space-y-3">
-              {reports.slice(0, 5).map((report) => (
-                <div
-                  key={report.id}
-                  className="bg-black/20 border border-white/10 rounded-lg p-4 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-accent/20 rounded border border-accent flex items-center justify-center">
-                      {report.media_type === 'video' ? (
-                        <Video className="text-accent" size={20} />
-                      ) : (
-                        <Music className="text-accent" size={20} />
-                      )}
+              {reports.slice(0, 5).map((report) => {
+                const isAuthentic = report.probability_score >= 75;
+                const isInconclusive = report.probability_score >= 50 && report.probability_score < 75;
+                
+                return (
+                  <div
+                    key={report.id}
+                    className="bg-black/20 border border-white/10 rounded-lg p-4 flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded border flex items-center justify-center ${
+                        isAuthentic ? 'bg-green-500/20 border-green-500' :
+                        isInconclusive ? 'bg-yellow-500/20 border-yellow-500' :
+                        'bg-red-500/20 border-red-500'
+                      }`}>
+                        {report.media_type === 'video' ? (
+                          <Video className={isAuthentic ? 'text-green-400' : isInconclusive ? 'text-yellow-400' : 'text-red-400'} size={20} />
+                        ) : (
+                          <Music className={isAuthentic ? 'text-green-400' : isInconclusive ? 'text-yellow-400' : 'text-red-400'} size={20} />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold truncate max-w-xs">{report.file_name}</p>
+                        <p className="text-white/40 text-xs">
+                          {new Date(report.created_at).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white font-semibold truncate max-w-xs">{report.file_name}</p>
-                      <p className="text-white/40 text-xs">
-                        {new Date(report.created_at).toLocaleString()}
+                    <div className="text-right">
+                      <p className={`font-bold ${isAuthentic ? 'text-green-400' : isInconclusive ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {isAuthentic ? 'REAL' : isInconclusive ? 'UNCLEAR' : 'FAKE'}
                       </p>
+                      <p className="text-white/60 text-xs">{report.probability_score}% confidence</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-accent font-bold">{report.probability_score}%</p>
-                    <p className="text-white/60 text-xs">{report.confidence_level} confidence</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         )}

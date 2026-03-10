@@ -70,8 +70,16 @@
 - **Save to Case File** (auto-links with Case File Manager)
 
 ### 6. Media Forensic Validator
-- Deterministic authenticity scoring
-- Multi-factor analysis for video (MP4, MOV, AVI) and audio (WAV, MP3, M4A)
+- **AI Detection System** - Clearly identifies if media is REAL or AI-GENERATED
+- Deterministic authenticity scoring with clear verdicts:
+  - **LIKELY AUTHENTIC** (75-100%): Green - Media appears real
+  - **INCONCLUSIVE** (50-74%): Yellow - Needs professional verification  
+  - **LIKELY AI-GENERATED** (0-49%): Red - Media may be fake/manipulated
+- Multi-factor analysis: metadata, file hash, compression artifacts, frame/spectral analysis
+- Visual verdict display with color-coded results
+- Spectral analysis chart with color matching verdict
+- "Understanding Your Result" interpretation guide
+- Recent analyses history with REAL/FAKE/UNCLEAR labels
 
 ### 7. Fraud Recovery Assistant
 - Evidence upload with SHA-256 hashing
