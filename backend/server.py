@@ -1258,13 +1258,214 @@ async def process_speech(
 
 
 def format_to_legal_text(text: str) -> str:
-    text = text.replace("I ", "The complainant ")
-    text = text.replace("my ", "the complainant's ")
-    text = text.replace("me ", "the complainant ")
+    """
+    Convert translated text to formal Police Station Writer / FIR drafting style.
+    Transforms informal spoken language into structured police documentation.
+    """
+    if not text or not text.strip():
+        return text
     
-    legal_intro = "It is stated that "
-    if not text.startswith(legal_intro):
-        text = legal_intro + text[0].lower() + text[1:] if text else text
+    # Step 1: Clean and normalize text
+    text = text.strip()
+    
+    # Step 2: Replace first-person pronouns with formal third-person references
+    # Handle various cases with proper capitalization
+    replacements = [
+        # Subject pronouns
+        ("I am ", "The complainant is "),
+        ("I was ", "The complainant was "),
+        ("I have ", "The complainant has "),
+        ("I had ", "The complainant had "),
+        ("I will ", "The complainant will "),
+        ("I would ", "The complainant would "),
+        ("I can ", "The complainant can "),
+        ("I could ", "The complainant could "),
+        ("I went ", "The complainant went "),
+        ("I came ", "The complainant came "),
+        ("I saw ", "The complainant observed "),
+        ("I noticed ", "The complainant noticed "),
+        ("I found ", "The complainant found "),
+        ("I lost ", "The complainant lost "),
+        ("I filed ", "The complainant filed "),
+        ("I reported ", "The complainant reported "),
+        ("I want ", "The complainant desires "),
+        ("I wish ", "The complainant wishes "),
+        ("I request ", "The complainant requests "),
+        ("I believe ", "The complainant believes "),
+        ("I think ", "The complainant believes "),
+        ("I know ", "The complainant states "),
+        ("I don't know ", "The complainant is unaware "),
+        ("I didn't ", "The complainant did not "),
+        ("I ", "The complainant "),
+        # Possessive pronouns
+        ("my mobile phone", "the complainant's mobile phone"),
+        ("my mobile", "the complainant's mobile phone"),
+        ("my phone", "the complainant's mobile phone"),
+        ("my house", "the complainant's residence"),
+        ("my home", "the complainant's residence"),
+        ("my shop", "the complainant's shop/establishment"),
+        ("my car", "the complainant's vehicle"),
+        ("my bike", "the complainant's two-wheeler"),
+        ("my vehicle", "the complainant's vehicle"),
+        ("my money", "the complainant's money"),
+        ("my cash", "the complainant's cash"),
+        ("my wallet", "the complainant's wallet"),
+        ("my bag", "the complainant's bag"),
+        ("my purse", "the complainant's purse"),
+        ("my account", "the complainant's bank account"),
+        ("my bank", "the complainant's bank account"),
+        ("my card", "the complainant's card"),
+        ("my ATM", "the complainant's ATM card"),
+        ("my laptop", "the complainant's laptop"),
+        ("my computer", "the complainant's computer"),
+        ("my documents", "the complainant's documents"),
+        ("my jewellery", "the complainant's jewellery"),
+        ("my jewelry", "the complainant's jewellery"),
+        ("my gold", "the complainant's gold ornaments"),
+        ("my property", "the complainant's property"),
+        ("my family", "the complainant's family"),
+        ("my wife", "the complainant's wife"),
+        ("my husband", "the complainant's husband"),
+        ("my son", "the complainant's son"),
+        ("my daughter", "the complainant's daughter"),
+        ("my father", "the complainant's father"),
+        ("my mother", "the complainant's mother"),
+        ("my brother", "the complainant's brother"),
+        ("my sister", "the complainant's sister"),
+        ("my friend", "the complainant's friend/acquaintance"),
+        ("my office", "the complainant's workplace"),
+        ("my work", "the complainant's workplace"),
+        ("my ", "the complainant's "),
+        # Object pronouns
+        ("told me", "informed the complainant"),
+        ("called me", "contacted the complainant"),
+        ("threatened me", "threatened the complainant"),
+        ("attacked me", "attacked/assaulted the complainant"),
+        ("hit me", "physically assaulted the complainant"),
+        ("beat me", "physically assaulted the complainant"),
+        ("cheated me", "defrauded the complainant"),
+        ("deceived me", "deceived the complainant"),
+        ("robbed me", "robbed the complainant"),
+        ("snatched from me", "snatched from the complainant"),
+        ("took from me", "took from the complainant's possession"),
+        ("gave me", "provided to the complainant"),
+        ("showed me", "showed to the complainant"),
+        ("asked me", "asked the complainant"),
+        ("contacted me", "contacted the complainant"),
+        ("messaged me", "sent message to the complainant"),
+        ("sent me", "sent to the complainant"),
+        (" me ", " the complainant "),
+        (" me.", " the complainant."),
+        (" me,", " the complainant,"),
+        # Reflexive
+        ("myself", "the complainant"),
+        ("mine", "the complainant's"),
+    ]
+    
+    for old, new in replacements:
+        text = text.replace(old, new)
+        text = text.replace(old.lower(), new.lower())
+        text = text.replace(old.capitalize(), new)
+    
+    # Step 3: Replace informal words with formal police terminology
+    formal_replacements = [
+        ("a person", "an unknown/unidentified individual"),
+        ("one person", "an unidentified individual"),
+        ("some person", "an unidentified individual"),
+        ("someone", "an unidentified person"),
+        ("one guy", "an unidentified male individual"),
+        ("some guy", "an unidentified male individual"),
+        ("a guy", "a male individual"),
+        ("this guy", "the said male individual"),
+        ("that guy", "the said male individual"),
+        ("a man", "a male individual"),
+        ("some man", "an unidentified male individual"),
+        ("a woman", "a female individual"),
+        ("some woman", "an unidentified female individual"),
+        ("people", "individuals"),
+        ("guys", "male individuals"),
+        ("boys", "male individuals"),
+        ("girls", "female individuals"),
+        ("shop", "establishment/shop"),
+        ("store", "establishment/store"),
+        ("cell phone", "mobile phone"),
+        ("cell", "mobile device"),
+        ("stole", "committed theft of"),
+        ("steal", "commit theft of"),
+        ("robbed", "committed robbery"),
+        ("took away", "forcibly took possession of"),
+        ("ran away", "fled from the scene"),
+        ("escaped", "absconded from the spot"),
+        ("came to", "approached"),
+        ("went to", "proceeded to"),
+        ("told", "informed/stated to"),
+        ("said", "stated"),
+        ("asked for", "demanded"),
+        ("gave", "handed over"),
+        ("got", "received"),
+        ("called", "contacted via telephone"),
+        ("messaged", "sent electronic message"),
+        ("WhatsApp", "WhatsApp messaging application"),
+        ("online", "through online/electronic medium"),
+        ("website", "website/online portal"),
+        ("app", "mobile application"),
+        ("link", "electronic link/URL"),
+        ("OTP", "One Time Password (OTP)"),
+        ("UPI", "Unified Payments Interface (UPI)"),
+        ("ATM", "Automated Teller Machine (ATM)"),
+        ("fake", "fraudulent/fake"),
+        ("scam", "fraudulent scheme"),
+        ("lost", "suffered loss of"),
+        ("around ", "approximately "),
+        ("near", "in the vicinity of"),
+        ("next to", "adjacent to"),
+        ("in front of", "in front of"),
+    ]
+    
+    # Apply formal replacements with word boundary checking to avoid partial matches
+    import re
+    for old, new in formal_replacements:
+        # Use word boundaries to avoid partial word replacements
+        pattern = re.compile(r'\b' + re.escape(old) + r'\b', re.IGNORECASE)
+        text = pattern.sub(new, text)
+    
+    # Step 4: Add formal legal introduction if not present
+    legal_intros = [
+        "the complainant stated",
+        "it is stated that",
+        "the complainant has stated",
+        "as per the statement",
+        "according to the complainant"
+    ]
+    
+    has_intro = any(intro in text.lower() for intro in legal_intros)
+    
+    if not has_intro:
+        # Determine appropriate introduction based on content
+        if "complainant" in text.lower():
+            text = "The complainant has stated that " + text[0].lower() + text[1:]
+        else:
+            text = "It is stated that " + text[0].lower() + text[1:]
+    
+    # Step 5: Ensure proper sentence structure
+    sentences = text.split('. ')
+    formatted_sentences = []
+    
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if sentence:
+            # Capitalize first letter
+            sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+            # Ensure period at end
+            if not sentence.endswith('.') and not sentence.endswith('?') and not sentence.endswith('!'):
+                sentence += '.'
+            formatted_sentences.append(sentence)
+    
+    text = ' '.join(formatted_sentences)
+    
+    # Step 6: Add formal closing if appropriate
+    if not any(closing in text.lower() for closing in ["therefore", "hence", "prayer", "action"]):
+        text += " Therefore, appropriate legal action is requested."
     
     return text
 

@@ -25,6 +25,9 @@ const Login = ({ setIsAuthenticated }) => {
       const response = await auth.login(formData.officer_id, formData.password);
       localStorage.setItem('token', response.token);
       localStorage.setItem('officer', JSON.stringify(response.officer));
+      // Store credentials for auto-refresh on token expiration
+      localStorage.setItem('officer_id', formData.officer_id);
+      localStorage.setItem('officer_password', formData.password);
       setIsAuthenticated(true);
       toast.success('Login successful!');
       navigate('/');

@@ -7,6 +7,7 @@ export const api = axios.create({
   baseURL: API,
 });
 
+// Request interceptor - add token to all requests
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -14,6 +15,56 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Response interceptor - handle token expiration with auto-refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // If token expired (401) and we haven't retried yet
+    if (error.response?.status === 401 && 
+        (error.response?.data?.detail === 'Token expired' || error.response?.data?.detail === 'Invalid token') &&
+        !originalRequest._retry) {
+      
+      originalRequest._retry = true;
+      
+      // Try to re-authenticate using stored credentials
+      const storedOfficerId = localStorage.getItem('officer_id');
+      const storedPassword = localStorage.getItem('officer_password');
+      
+      if (storedOfficerId && storedPassword) {
+        try {
+          // Silent re-authentication
+          const refreshResponse = await axios.post(`${API}/auth/login`, {
+            officer_id: storedOfficerId,
+            password: storedPassword
+          });
+          
+          const newToken = refreshResponse.data.token;
+          localStorage.setItem('token', newToken);
+          
+          // Retry original request with new token
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        } catch (refreshError) {
+          // If refresh fails, clear storage and redirect to login
+          localStorage.removeItem('token');
+          localStorage.removeItem('officer_id');
+          localStorage.removeItem('officer_password');
+          window.location.href = '/';
+          return Promise.reject(refreshError);
+        }
+      } else {
+        // No stored credentials, redirect to login
+        localStorage.removeItem('token');
+        window.location.href = '/';
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 export const auth = {
   login: async (officer_id, password) => {

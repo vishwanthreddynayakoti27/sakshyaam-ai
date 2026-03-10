@@ -11,6 +11,7 @@
 - **Database**: MongoDB
 - **APIs**: Google Cloud Vision, Translate, Speech-to-Text, Natural Language Processing
 - **Maps**: Leaflet.js with OpenStreetMap
+- **Auth**: JWT with 7-day expiration, auto-refresh on token expiration
 
 ## Core Modules (13 Total)
 
@@ -25,6 +26,11 @@
 - 5-stage pipeline: Speech/OCR → Text → Translation → Grammar → Legal English
 - Three-panel output: Original, Translated, Legal English
 - TTS Read Aloud feature
+- **Police Station Writer Style** - Converts informal narratives to formal FIR/complaint documentation style:
+  - First-person to third-person conversion
+  - Formal legal terminology
+  - Proper sentence structure
+  - Legal closing statement
 
 ### 3. FIR Draft Assistant
 - First-to-third person conversion
@@ -78,6 +84,8 @@
 - Automatic header mapping
 - Batch processing for 5000+ records
 - Analysis: Most called numbers, common locations, date range
+- **Search by Number** - Find records by phone number
+- **Search by Name** - Find records by subscriber/contact name
 
 ### 9. Smart Summons Tracker
 - OCR-based summons document parsing

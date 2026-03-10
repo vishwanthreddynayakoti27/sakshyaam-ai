@@ -12,10 +12,12 @@ const CDRAnalyzer = () => {
   const [file, setFile] = useState(null);
   const [caseId, setCaseId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [nameSearchTerm, setNameSearchTerm] = useState('');
   const [uploading, setUploading] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [columnsDetected, setColumnsDetected] = useState([]);
   const [recordsCount, setRecordsCount] = useState(0);
+  const [searchResults, setSearchResults] = useState(null);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -76,6 +78,59 @@ const CDRAnalyzer = () => {
     if (analysis?.duplicate_numbers) {
       toast.info(`Duplicates found: ${analysis.duplicate_numbers.length} numbers appear 3+ times`);
     }
+  };
+
+  // Search by phone number
+  const handleNumberSearch = () => {
+    if (!analysis?.records || !searchTerm.trim()) {
+      toast.info('Enter a phone number to search');
+      return;
+    }
+    
+    const matches = analysis.records?.filter(r => 
+      r.phone_number?.includes(searchTerm) || 
+      r.called_number?.includes(searchTerm) ||
+      r.calling_number?.includes(searchTerm)
+    ) || [];
+    
+    if (matches.length > 0) {
+      setSearchResults({ type: 'number', term: searchTerm, results: matches });
+      toast.success(`Found ${matches.length} records for number: ${searchTerm}`);
+    } else {
+      setSearchResults(null);
+      toast.info(`No records found for number: ${searchTerm}`);
+    }
+  };
+
+  // Search by name
+  const handleNameSearch = () => {
+    if (!analysis?.records || !nameSearchTerm.trim()) {
+      toast.info('Enter a name to search');
+      return;
+    }
+    
+    const searchLower = nameSearchTerm.toLowerCase();
+    const matches = analysis.records?.filter(r => 
+      r.subscriber_name?.toLowerCase().includes(searchLower) ||
+      r.contact_name?.toLowerCase().includes(searchLower) ||
+      r.name?.toLowerCase().includes(searchLower) ||
+      r.party_name?.toLowerCase().includes(searchLower) ||
+      r.caller_name?.toLowerCase().includes(searchLower)
+    ) || [];
+    
+    if (matches.length > 0) {
+      setSearchResults({ type: 'name', term: nameSearchTerm, results: matches });
+      toast.success(`Found ${matches.length} records for name: ${nameSearchTerm}`);
+    } else {
+      setSearchResults(null);
+      toast.info(`No records found for name: ${nameSearchTerm}`);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchResults(null);
+    setSearchTerm('');
+    setNameSearchTerm('');
   };
 
   return (
@@ -169,18 +224,68 @@ const CDRAnalyzer = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="text-white/90 mb-2 block text-sm">Search Number</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
-                  <Input
-                    data-testid="cdr-search-input"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Phone number"
-                    className="bg-black/20 border-white/10 focus:border-accent text-white pl-10"
-                  />
+                <label className="text-white/90 mb-2 block text-sm">Search by Number</label>
+                <div className="relative flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Input
+                      data-testid="cdr-search-input"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleNumberSearch()}
+                      placeholder="Phone number"
+                      className="bg-black/20 border-white/10 focus:border-accent text-white pl-10"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleNumberSearch}
+                    disabled={!analysis}
+                    size="sm"
+                    className="bg-accent text-black hover:bg-accent/80"
+                  >
+                    Search
+                  </Button>
                 </div>
               </div>
+
+              <div>
+                <label className="text-white/90 mb-2 block text-sm">Search by Name</label>
+                <div className="relative flex gap-2">
+                  <div className="relative flex-1">
+                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                    <Input
+                      data-testid="cdr-name-search-input"
+                      value={nameSearchTerm}
+                      onChange={(e) => setNameSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleNameSearch()}
+                      placeholder="Subscriber/Contact name"
+                      className="bg-black/20 border-white/10 focus:border-accent text-white pl-10"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleNameSearch}
+                    disabled={!analysis}
+                    size="sm"
+                    className="bg-accent text-black hover:bg-accent/80"
+                  >
+                    Search
+                  </Button>
+                </div>
+              </div>
+
+              {searchResults && (
+                <div className="p-3 bg-accent/10 border border-accent/30 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-accent text-sm font-semibold">
+                      {searchResults.type === 'name' ? 'Name' : 'Number'} Search: "{searchResults.term}"
+                    </span>
+                    <button onClick={clearSearch} className="text-white/60 hover:text-white text-xs">
+                      Clear
+                    </button>
+                  </div>
+                  <p className="text-white text-sm">{searchResults.results.length} matching records found</p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <p className="text-white/90 text-sm mb-2">Quick Filters</p>
