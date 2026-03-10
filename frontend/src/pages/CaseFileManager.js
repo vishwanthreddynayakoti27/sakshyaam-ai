@@ -15,7 +15,9 @@ import {
   ChevronRight,
   CheckCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  FileStack,
+  Link2
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -52,15 +54,21 @@ const CaseFileManager = () => {
     localStorage.setItem('case_file_manager_data', JSON.stringify(cases));
   }, [cases]);
 
-  // Link with other modules - Evidence Manager
+  // Link with other modules - Evidence Manager & Investigation Documents
   useEffect(() => {
     if (selectedCase) {
+      // Link Evidence
       const evidenceData = localStorage.getItem('evidence_manager_data');
       if (evidenceData) {
         const allEvidence = JSON.parse(evidenceData);
         const caseEvidence = allEvidence.filter(e => e.caseId === selectedCase.caseId);
         setSelectedCase(prev => ({ ...prev, evidence: caseEvidence }));
       }
+      
+      // Link Investigation Documents
+      const docsKey = `case_documents_${selectedCase.caseId}`;
+      const caseDocuments = JSON.parse(localStorage.getItem(docsKey) || '[]');
+      setSelectedCase(prev => ({ ...prev, documents: caseDocuments }));
     }
   }, [selectedCase?.caseId]);
 
@@ -167,14 +175,32 @@ const CaseFileManager = () => {
     doc.text(descLines, 15, y);
     y += descLines.length * 5 + 10;
 
+    // Documents Section
+    if (selectedCase.documents && selectedCase.documents.length > 0) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold');
+      doc.text('LINKED DOCUMENTS', 15, y);
+      y += 8;
+      doc.setFont('helvetica', 'normal');
+      
+      selectedCase.documents.forEach((docItem, i) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`${i + 1}. ${docItem.templateName} - ${new Date(docItem.createdAt).toLocaleDateString()}`, 15, y);
+        y += 6;
+      });
+      y += 5;
+    }
+
     // Evidence Section
     if (selectedCase.evidence && selectedCase.evidence.length > 0) {
+      if (y > 250) { doc.addPage(); y = 20; }
       doc.setFont('helvetica', 'bold');
       doc.text('EVIDENCE ATTACHED', 15, y);
       y += 8;
       doc.setFont('helvetica', 'normal');
       
       selectedCase.evidence.forEach((ev, i) => {
+        if (y > 270) { doc.addPage(); y = 20; }
         doc.text(`${i + 1}. ${ev.fileName} - ${ev.fileType} - Hash: ${ev.sha256Hash.substring(0, 16)}...`, 15, y);
         y += 6;
       });
@@ -450,6 +476,34 @@ const CaseFileManager = () => {
                       {selectedCase.description || 'No description provided.'}
                     </p>
                   </div>
+                </div>
+
+                {/* Documents Section */}
+                <div>
+                  <h3 className="text-white font-semibold mb-2 flex items-center gap-2">
+                    <FileStack size={16} className="text-accent" />
+                    Linked Documents ({selectedCase.documents?.length || 0})
+                  </h3>
+                  {selectedCase.documents && selectedCase.documents.length > 0 ? (
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {selectedCase.documents.map((doc, i) => (
+                        <div key={i} className="p-3 bg-white/5 rounded-lg border border-white/10 flex items-center justify-between">
+                          <div>
+                            <p className="text-white text-sm font-semibold">{doc.templateName}</p>
+                            <p className="text-white/50 text-xs">
+                              {doc.category} | Created: {new Date(doc.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Link2 size={16} className="text-accent" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-white/40">
+                      <p className="text-sm">No documents linked to this case</p>
+                      <p className="text-xs mt-1">Generate documents in Investigation Documents with this Case ID</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Evidence Section */}
