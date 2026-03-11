@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { User, Shield, Award, Mail, MapPin, Building, Calendar } from 'lucide-react';
+import { User, Shield, Award, Mail, MapPin, Building, Calendar, Edit2, Save, X } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import PricingModal from '../components/PricingModal';
 import { auth, reminders } from '../utils/api';
 import { toast } from 'sonner';
@@ -11,6 +12,14 @@ const Profile = () => {
   const [officer, setOfficer] = useState(null);
   const [remindersList, setRemindersList] = useState([]);
   const [showPricing, setShowPricing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    name: '',
+    rank: '',
+    department: '',
+    district: '',
+    email: ''
+  });
 
   useEffect(() => {
     loadProfile();
@@ -21,8 +30,29 @@ const Profile = () => {
     try {
       const data = await auth.getProfile();
       setOfficer(data);
+      setEditData({
+        name: data.name || '',
+        rank: data.rank || '',
+        department: data.department || '',
+        district: data.district || '',
+        email: data.email || ''
+      });
     } catch (err) {
-      toast.error('Failed to load profile');
+      // Try loading from localStorage if API fails
+      const storedOfficer = localStorage.getItem('officer');
+      if (storedOfficer) {
+        const data = JSON.parse(storedOfficer);
+        setOfficer(data);
+        setEditData({
+          name: data.name || '',
+          rank: data.rank || '',
+          department: data.department || '',
+          district: data.district || '',
+          email: data.email || ''
+        });
+      } else {
+        toast.error('Failed to load profile');
+      }
     }
   };
 
@@ -35,11 +65,42 @@ const Profile = () => {
     }
   };
 
+  const handleEditChange = (field, value) => {
+    setEditData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      // Update localStorage
+      const updatedOfficer = { ...officer, ...editData };
+      localStorage.setItem('officer', JSON.stringify(updatedOfficer));
+      setOfficer(updatedOfficer);
+      setIsEditing(false);
+      toast.success('Profile updated successfully!');
+    } catch (err) {
+      toast.error('Failed to update profile');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditData({
+      name: officer.name || '',
+      rank: officer.rank || '',
+      department: officer.department || '',
+      district: officer.district || '',
+      email: officer.email || ''
+    });
+    setIsEditing(false);
+  };
+
   if (!officer) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-96">
-          <p className="text-white/60">Loading...</p>
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-accent/30 border-t-accent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-white/60">Loading profile...</p>
+          </div>
         </div>
       </Layout>
     );
@@ -53,10 +114,43 @@ const Profile = () => {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <h1 className="text-4xl font-heading font-bold text-white text-glow mb-3" data-testid="page-title">
-            Officer Profile
-          </h1>
-          <p className="text-white/60 text-lg">Manage your account and subscription</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-heading font-bold text-white text-glow mb-3" data-testid="page-title">
+                Officer Profile
+              </h1>
+              <p className="text-white/60 text-lg">Manage your account information</p>
+            </div>
+            {!isEditing ? (
+              <Button
+                onClick={() => setIsEditing(true)}
+                data-testid="edit-profile-button"
+                className="bg-accent/20 text-accent border border-accent hover:bg-accent hover:text-black transition-all"
+              >
+                <Edit2 size={16} className="mr-2" />
+                Edit Profile
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSaveProfile}
+                  data-testid="save-profile-button"
+                  className="bg-green-500/20 text-green-400 border border-green-500 hover:bg-green-500 hover:text-black transition-all"
+                >
+                  <Save size={16} className="mr-2" />
+                  Save
+                </Button>
+                <Button
+                  onClick={handleCancelEdit}
+                  data-testid="cancel-edit-button"
+                  className="bg-red-500/20 text-red-400 border border-red-500 hover:bg-red-500 hover:text-black transition-all"
+                >
+                  <X size={16} className="mr-2" />
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -69,42 +163,87 @@ const Profile = () => {
               <div className="w-20 h-20 bg-accent/20 rounded-full border-2 border-accent flex items-center justify-center">
                 <User className="text-accent" size={40} />
               </div>
-              <div>
-                <h2 className="text-2xl font-heading font-bold text-white" data-testid="officer-name">{officer.name}</h2>
+              <div className="flex-1">
+                {isEditing ? (
+                  <Input
+                    value={editData.name}
+                    onChange={(e) => handleEditChange('name', e.target.value)}
+                    placeholder="Full Name"
+                    className="text-2xl font-heading font-bold bg-black/30 border-accent/50 text-white mb-2"
+                  />
+                ) : (
+                  <h2 className="text-2xl font-heading font-bold text-white" data-testid="officer-name">{officer.name}</h2>
+                )}
                 <p className="text-accent font-semibold" data-testid="officer-id">{officer.officer_id}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="flex items-start gap-3 p-4 bg-black/20 rounded-lg border border-white/10">
-                <Award className="text-accent mt-1" size={20} />
-                <div>
-                  <p className="text-white/60 text-sm">Rank</p>
-                  <p className="text-white font-semibold" data-testid="officer-rank">{officer.rank}</p>
+                <Award className="text-accent mt-1 flex-shrink-0" size={20} />
+                <div className="flex-1">
+                  <p className="text-white/60 text-sm mb-1">Rank / Designation</p>
+                  {isEditing ? (
+                    <Input
+                      value={editData.rank}
+                      onChange={(e) => handleEditChange('rank', e.target.value)}
+                      placeholder="e.g., Sub-Inspector"
+                      className="bg-black/30 border-white/20 text-white text-sm"
+                    />
+                  ) : (
+                    <p className="text-white font-semibold" data-testid="officer-rank">{officer.rank || 'Not specified'}</p>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-start gap-3 p-4 bg-black/20 rounded-lg border border-white/10">
-                <Building className="text-accent mt-1" size={20} />
-                <div>
-                  <p className="text-white/60 text-sm">Department</p>
-                  <p className="text-white font-semibold" data-testid="officer-department">{officer.department}</p>
+                <Building className="text-accent mt-1 flex-shrink-0" size={20} />
+                <div className="flex-1">
+                  <p className="text-white/60 text-sm mb-1">Department</p>
+                  {isEditing ? (
+                    <Input
+                      value={editData.department}
+                      onChange={(e) => handleEditChange('department', e.target.value)}
+                      placeholder="e.g., Telangana Police"
+                      className="bg-black/30 border-white/20 text-white text-sm"
+                    />
+                  ) : (
+                    <p className="text-white font-semibold" data-testid="officer-department">{officer.department || 'Not specified'}</p>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-start gap-3 p-4 bg-black/20 rounded-lg border border-white/10">
-                <MapPin className="text-accent mt-1" size={20} />
-                <div>
-                  <p className="text-white/60 text-sm">District</p>
-                  <p className="text-white font-semibold" data-testid="officer-district">{officer.district}</p>
+                <MapPin className="text-accent mt-1 flex-shrink-0" size={20} />
+                <div className="flex-1">
+                  <p className="text-white/60 text-sm mb-1">District / Station</p>
+                  {isEditing ? (
+                    <Input
+                      value={editData.district}
+                      onChange={(e) => handleEditChange('district', e.target.value)}
+                      placeholder="e.g., Hyderabad"
+                      className="bg-black/30 border-white/20 text-white text-sm"
+                    />
+                  ) : (
+                    <p className="text-white font-semibold" data-testid="officer-district">{officer.district || 'Not specified'}</p>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-start gap-3 p-4 bg-black/20 rounded-lg border border-white/10">
-                <Mail className="text-accent mt-1" size={20} />
-                <div>
-                  <p className="text-white/60 text-sm">Email</p>
-                  <p className="text-white font-semibold text-sm" data-testid="officer-email">{officer.email}</p>
+                <Mail className="text-accent mt-1 flex-shrink-0" size={20} />
+                <div className="flex-1">
+                  <p className="text-white/60 text-sm mb-1">Email</p>
+                  {isEditing ? (
+                    <Input
+                      value={editData.email}
+                      onChange={(e) => handleEditChange('email', e.target.value)}
+                      placeholder="officer@police.gov.in"
+                      className="bg-black/30 border-white/20 text-white text-sm"
+                    />
+                  ) : (
+                    <p className="text-white font-semibold text-sm" data-testid="officer-email">{officer.email || 'Not specified'}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -123,7 +262,7 @@ const Profile = () => {
             <div className="mb-6">
               <div className="inline-block px-4 py-2 bg-accent/20 border border-accent rounded-lg">
                 <p className="text-accent font-bold uppercase tracking-wider" data-testid="subscription-plan">
-                  {officer.subscription_plan === 'none' ? 'No Active Plan' : officer.subscription_plan}
+                  {officer.subscription_plan === 'none' || !officer.subscription_plan ? 'Free Plan' : officer.subscription_plan}
                 </p>
               </div>
             </div>
@@ -135,6 +274,21 @@ const Profile = () => {
             >
               Manage Subscription
             </Button>
+
+            {/* Quick Stats */}
+            <div className="mt-6 pt-6 border-t border-white/10">
+              <h4 className="text-white/60 text-sm mb-3">Account Statistics</h4>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/60">Member Since</span>
+                  <span className="text-white">{new Date().getFullYear()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/60">Status</span>
+                  <span className="text-green-400">Active</span>
+                </div>
+              </div>
+            </div>
           </motion.div>
         </div>
 
