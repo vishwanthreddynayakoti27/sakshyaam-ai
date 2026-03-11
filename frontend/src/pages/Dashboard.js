@@ -16,7 +16,8 @@ import {
   Package,
   DollarSign,
   AlertTriangle,
-  ChevronRight
+  ChevronRight,
+  Shield
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -29,7 +30,6 @@ const Dashboard = () => {
   const [officer, setOfficer] = useState({ name: 'Officer', role: 'Sub-Inspector', station: 'Cyber Cell' });
 
   useEffect(() => {
-    // Load officer data
     const storedOfficer = localStorage.getItem('officer');
     if (storedOfficer) {
       const data = JSON.parse(storedOfficer);
@@ -66,18 +66,18 @@ const Dashboard = () => {
   );
 
   return (
-    <div className="min-h-screen overflow-hidden relative bg-[#030614]" data-testid="dashboard">
+    <div className="h-screen overflow-hidden relative bg-[#030614]" data-testid="dashboard">
       {/* System Status Warning Bar at TOP */}
       <div className="relative z-20 bg-gradient-to-r from-[#FFB800]/20 via-[#FF3B3B]/20 to-[#FFB800]/20 border-b border-[#FFB800]/50">
-        <div className="max-w-[1800px] mx-auto px-6 py-2 flex items-center justify-center gap-4">
-          <AlertTriangle className="text-[#FFB800] animate-pulse" size={18} />
-          <div className="flex items-center gap-6 text-sm">
+        <div className="max-w-[1800px] mx-auto px-4 py-1.5 flex items-center justify-center gap-4">
+          <AlertTriangle className="text-[#FFB800] animate-pulse" size={16} />
+          <div className="flex items-center gap-4 text-xs">
             <span className="text-[#FFB800] font-bold">System Status:</span>
             <span className="text-white/80">Pre-CCTNS Intelligence System</span>
             <span className="text-white/40">|</span>
             <span className="text-white/80">BNS 2023 & BSA Sec. 63 Compliant</span>
             <span className="text-white/40">|</span>
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#00FFB3] animate-pulse"></span>
               <span className="text-[#00FFB3] font-semibold">All Systems Online</span>
             </span>
@@ -85,118 +85,106 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Top Bar */}
-      <div className="relative z-20 px-6 py-4 border-b border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md">
+      {/* Top Bar with Welcome Note */}
+      <div className="relative z-20 px-4 py-2 border-b border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md">
         <div className="flex items-center justify-between max-w-[1800px] mx-auto">
-          {/* Search Bar */}
-          <div className="relative w-96">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#00C2FF]/50" size={18} />
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search Investigation Tool..."
-              className="w-full pl-12 pr-4 py-3 bg-[#0B0F1A]/60 border border-[#00C2FF]/30 rounded-full text-white placeholder:text-white/40 focus:border-[#00C2FF] focus:ring-1 focus:ring-[#00C2FF]/50"
-              data-testid="search-input"
-            />
+          {/* Welcome Note + Search */}
+          <div className="flex items-center gap-6">
+            {/* Welcome Note */}
+            <div className="flex items-center gap-3">
+              <motion.div 
+                className="p-2 rounded-full bg-[#00C2FF]/20 border border-[#00C2FF]/50"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+              >
+                <Shield className="text-[#00C2FF]" size={18} />
+              </motion.div>
+              <div>
+                <p className="text-white font-semibold text-sm">
+                  Welcome, <span className="text-[#00C2FF]">{officer.name}</span>!
+                </p>
+                <p className="text-white/50 text-xs">{officer.role} • {officer.station} Police</p>
+              </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="relative w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#00C2FF]/50" size={16} />
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search Investigation Tool..."
+                className="w-full pl-10 pr-4 py-2 text-sm bg-[#0B0F1A]/60 border border-[#00C2FF]/30 rounded-full text-white placeholder:text-white/40 focus:border-[#00C2FF] focus:ring-1 focus:ring-[#00C2FF]/50"
+                data-testid="search-input"
+              />
+            </div>
           </div>
 
           {/* User Info */}
           <div 
-            className="flex items-center gap-4 cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-all"
+            className="flex items-center gap-3 cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-all"
             onClick={() => navigate('/profile')}
             data-testid="user-profile-link"
           >
             <div className="text-right">
-              <p className="text-white font-semibold">{officer.name}</p>
+              <p className="text-white font-semibold text-sm">{officer.name}</p>
               <p className="text-[#00C2FF]/70 text-xs">{officer.role} • {officer.station}</p>
             </div>
             <motion.div 
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-[#00C2FF]/30 to-[#4F7EFF]/30 border-2 border-[#00C2FF]/50 flex items-center justify-center"
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00C2FF]/30 to-[#4F7EFF]/30 border-2 border-[#00C2FF]/50 flex items-center justify-center"
               whileHover={{ scale: 1.1, boxShadow: '0 0 20px rgba(0,194,255,0.5)' }}
             >
-              <User className="text-[#00C2FF]" size={24} />
+              <User className="text-[#00C2FF]" size={20} />
             </motion.div>
           </div>
         </div>
       </div>
 
-      <div className="relative z-10 flex h-[calc(100vh-105px)]">
-        {/* Left Sidebar - Module Cards */}
-        <div className="w-72 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-4 overflow-y-auto z-20">
-          <h3 className="text-[#00C2FF] text-xs font-bold uppercase tracking-wider mb-4 px-2">Investigation Modules</h3>
+      <div className="relative z-10 flex" style={{ height: 'calc(100vh - 85px)' }}>
+        {/* Left Sidebar - Compact Module Cards */}
+        <div className="w-56 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-2 overflow-hidden z-20">
+          <h3 className="text-[#00C2FF] text-[10px] font-bold uppercase tracking-wider mb-2 px-2">Investigation Modules</h3>
           
-          <div className="space-y-2">
+          <div className="space-y-1">
             {filteredModules.map((module, index) => {
               const Icon = module.icon;
               return (
                 <motion.div
                   key={module.path}
-                  initial={{ opacity: 0, x: -30 }}
+                  initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  whileHover={{ 
-                    scale: 1.02,
-                    x: 5,
-                  }}
+                  transition={{ delay: index * 0.03 }}
+                  whileHover={{ scale: 1.02, x: 3 }}
                   onClick={() => navigate(module.path)}
                   data-testid={`module-${module.title.toLowerCase().replace(/ /g, '-')}`}
                   className="relative group cursor-pointer"
                 >
-                  {/* Card Background with Glow */}
                   <div 
-                    className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"
-                    style={{ backgroundColor: module.color, opacity: 0.2 }}
-                  />
-                  
-                  {/* Card Content */}
-                  <div 
-                    className="relative p-4 rounded-xl border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
-                    style={{ 
-                      borderColor: `${module.color}30`,
-                      boxShadow: 'none'
-                    }}
+                    className="relative p-2.5 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
+                    style={{ borderColor: `${module.color}20` }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = module.color;
-                      e.currentTarget.style.boxShadow = `0 0 20px ${module.color}40, inset 0 0 20px ${module.color}10`;
+                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30, inset 0 0 15px ${module.color}08`;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = `${module.color}30`;
+                      e.currentTarget.style.borderColor = `${module.color}20`;
                       e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Icon with Glow */}
-                      <motion.div 
-                        className="p-2.5 rounded-lg transition-all duration-300"
+                    <div className="flex items-center gap-2.5">
+                      <div 
+                        className="p-1.5 rounded-md transition-all duration-300"
                         style={{ 
-                          backgroundColor: `${module.color}20`,
-                          boxShadow: `0 0 10px ${module.color}30`
-                        }}
-                        whileHover={{
-                          boxShadow: `0 0 20px ${module.color}60`
+                          backgroundColor: `${module.color}15`,
+                          boxShadow: `0 0 8px ${module.color}20`
                         }}
                       >
-                        <Icon 
-                          size={20} 
-                          style={{ color: module.color }}
-                          className="transition-all duration-300 group-hover:drop-shadow-lg"
-                        />
-                      </motion.div>
-                      
-                      {/* Title */}
-                      <span className="text-white/90 text-sm font-medium group-hover:text-white transition-colors">
+                        <Icon size={16} style={{ color: module.color }} />
+                      </div>
+                      <span className="text-white/85 text-xs font-medium group-hover:text-white transition-colors">
                         {module.title}
                       </span>
                     </div>
-                    
-                    {/* Hover Indicator */}
-                    <motion.div
-                      className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100"
-                      initial={{ x: -10 }}
-                      whileHover={{ x: 0 }}
-                    >
-                      <ChevronRight size={16} style={{ color: module.color }} />
-                    </motion.div>
                   </div>
                 </motion.div>
               );
@@ -204,33 +192,82 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Center Area - Full Background Image */}
-        <div 
-          className="flex-1 relative"
-          style={{
-            backgroundImage: `url(${BACKGROUND_IMAGE})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
-          }}
-        >
-          {/* Optional: Subtle overlay for better text readability if needed */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#030614]/30 via-transparent to-[#030614]/30" />
+        {/* Center Area - Full Background Image with Animations */}
+        <div className="flex-1 relative overflow-hidden">
+          {/* Animated Background Image */}
+          <motion.div 
+            className="absolute inset-0"
+            initial={{ scale: 1.1, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 1.5 }}
+            style={{
+              backgroundImage: `url(${BACKGROUND_IMAGE})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat'
+            }}
+          />
+          
+          {/* Scanning Line Animation */}
+          <motion.div
+            className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#00C2FF] to-transparent z-10"
+            animate={{ top: ['0%', '100%', '0%'] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+            style={{ opacity: 0.6 }}
+          />
+          
+          {/* Pulsing Glow Overlay */}
+          <motion.div
+            className="absolute inset-0 pointer-events-none"
+            animate={{
+              background: [
+                'radial-gradient(circle at center, rgba(0,194,255,0.05) 0%, transparent 50%)',
+                'radial-gradient(circle at center, rgba(0,194,255,0.1) 0%, transparent 60%)',
+                'radial-gradient(circle at center, rgba(0,194,255,0.05) 0%, transparent 50%)',
+              ]
+            }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          />
+          
+          {/* Edge Gradient Overlays */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#030614]/40 via-transparent to-[#030614]/40 pointer-events-none" />
+          
+          {/* Corner Decorations */}
+          <motion.div 
+            className="absolute top-4 left-4 w-16 h-16 border-l-2 border-t-2 border-[#00C2FF]/50"
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity }}
+          />
+          <motion.div 
+            className="absolute top-4 right-4 w-16 h-16 border-r-2 border-t-2 border-[#00C2FF]/50"
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+          />
+          <motion.div 
+            className="absolute bottom-4 left-4 w-16 h-16 border-l-2 border-b-2 border-[#00C2FF]/50"
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 1 }}
+          />
+          <motion.div 
+            className="absolute bottom-4 right-4 w-16 h-16 border-r-2 border-b-2 border-[#00C2FF]/50"
+            animate={{ opacity: [0.3, 0.7, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity, delay: 1.5 }}
+          />
         </div>
 
-        {/* Right Panel - Active Investigations */}
-        <div className="w-80 border-l border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-4 overflow-y-auto z-20">
-          <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+        {/* Right Panel - Compact Active Investigations */}
+        <div className="w-72 border-l border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-3 overflow-hidden z-20 flex flex-col">
+          <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
             <motion.div
               animate={{ rotate: [0, 360] }}
               transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
             >
-              <Activity className="text-[#00C2FF]" size={20} />
+              <Activity className="text-[#00C2FF]" size={16} />
             </motion.div>
             Active Investigations
           </h2>
 
-          <div className="space-y-3">
+          <div className="space-y-2 flex-1">
             {activeInvestigations.map((inv, index) => (
               <motion.div
                 key={inv.id}
@@ -238,19 +275,19 @@ const Dashboard = () => {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.1 }}
                 whileHover={{ scale: 1.02 }}
-                className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer ${
+                className={`p-3 rounded-lg border transition-all duration-300 cursor-pointer ${
                   inv.priority === 'critical' 
-                    ? 'bg-[#FF3B3B]/10 border-[#FF3B3B]/50 hover:border-[#FF3B3B] hover:shadow-[0_0_20px_rgba(255,59,59,0.3)]' 
+                    ? 'bg-[#FF3B3B]/10 border-[#FF3B3B]/50 hover:border-[#FF3B3B] hover:shadow-[0_0_15px_rgba(255,59,59,0.3)]' 
                     : inv.priority === 'high'
-                    ? 'bg-[#FFB800]/10 border-[#FFB800]/50 hover:border-[#FFB800] hover:shadow-[0_0_20px_rgba(255,184,0,0.3)]'
-                    : 'bg-[#00C2FF]/10 border-[#00C2FF]/30 hover:border-[#00C2FF] hover:shadow-[0_0_20px_rgba(0,194,255,0.3)]'
+                    ? 'bg-[#FFB800]/10 border-[#FFB800]/50 hover:border-[#FFB800] hover:shadow-[0_0_15px_rgba(255,184,0,0.3)]'
+                    : 'bg-[#00C2FF]/10 border-[#00C2FF]/30 hover:border-[#00C2FF] hover:shadow-[0_0_15px_rgba(0,194,255,0.3)]'
                 }`}
                 data-testid={`investigation-${inv.id}`}
               >
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-white font-semibold">{inv.title}</h3>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-white font-semibold text-sm">{inv.title}</h3>
                   <motion.span 
-                    className={`px-2 py-0.5 rounded text-xs font-bold ${
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                       inv.priority === 'critical' 
                         ? 'bg-[#FF3B3B]/20 text-[#FF3B3B]'
                         : inv.priority === 'high'
@@ -263,72 +300,49 @@ const Dashboard = () => {
                     {inv.status}
                   </motion.span>
                 </div>
-                <p className="text-white/50 text-sm">{inv.subtitle}</p>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="flex -space-x-2">
-                    {[1,2,3].map(i => (
-                      <div key={i} className="w-6 h-6 rounded-full bg-[#4F7EFF]/30 border border-[#4F7EFF]/50" />
-                    ))}
-                  </div>
-                  <ChevronRight className="text-white/40" size={16} />
-                </div>
+                <p className="text-white/50 text-xs">{inv.subtitle}</p>
               </motion.div>
             ))}
           </div>
 
-          {/* Quick Stats */}
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          {/* Quick Stats - Compact */}
+          <div className="grid grid-cols-2 gap-2 mt-3">
             <motion.div 
-              className="p-4 rounded-xl border border-[#00FFB3]/30 text-center"
-              style={{ 
-                background: 'linear-gradient(135deg, rgba(0,255,179,0.1) 0%, transparent 100%)',
-                boxShadow: '0 0 30px rgba(0,255,179,0.1)'
-              }}
-              whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(0,255,179,0.2)' }}
+              className="p-2.5 rounded-lg border border-[#00FFB3]/30 text-center"
+              style={{ background: 'linear-gradient(135deg, rgba(0,255,179,0.1) 0%, transparent 100%)' }}
+              whileHover={{ scale: 1.05 }}
             >
-              <p className="text-3xl font-bold text-[#00FFB3]">247</p>
-              <p className="text-white/50 text-xs">Resolved</p>
+              <p className="text-2xl font-bold text-[#00FFB3]">247</p>
+              <p className="text-white/50 text-[10px]">Resolved</p>
             </motion.div>
             <motion.div 
-              className="p-4 rounded-xl border border-[#FFB800]/30 text-center"
-              style={{ 
-                background: 'linear-gradient(135deg, rgba(255,184,0,0.1) 0%, transparent 100%)',
-                boxShadow: '0 0 30px rgba(255,184,0,0.1)'
-              }}
-              whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(255,184,0,0.2)' }}
+              className="p-2.5 rounded-lg border border-[#FFB800]/30 text-center"
+              style={{ background: 'linear-gradient(135deg, rgba(255,184,0,0.1) 0%, transparent 100%)' }}
+              whileHover={{ scale: 1.05 }}
             >
-              <p className="text-3xl font-bold text-[#FFB800]">89</p>
-              <p className="text-white/50 text-xs">Active</p>
+              <p className="text-2xl font-bold text-[#FFB800]">89</p>
+              <p className="text-white/50 text-[10px]">Active</p>
             </motion.div>
           </div>
 
-          {/* Legend */}
-          <div className="mt-4 p-4 rounded-xl border border-white/10 bg-black/30">
-            <p className="text-white/60 text-xs mb-3 font-semibold">Node Legend</p>
-            <div className="grid grid-cols-2 gap-2">
+          {/* Legend - Compact */}
+          <div className="mt-2 p-2.5 rounded-lg border border-white/10 bg-black/30">
+            <p className="text-white/60 text-[10px] mb-2 font-semibold">Node Legend</p>
+            <div className="grid grid-cols-2 gap-1.5">
               {[
                 { label: 'Cyber Crime', color: '#00C2FF' },
                 { label: 'Fraud', color: '#FF3B3B' },
                 { label: 'Active', color: '#FFB800' },
                 { label: 'Resolved', color: '#00FFB3' }
               ].map(item => (
-                <div key={item.label} className="flex items-center gap-2">
+                <div key={item.label} className="flex items-center gap-1.5">
                   <motion.div 
-                    className="w-3 h-3 rounded-full"
-                    style={{ 
-                      backgroundColor: item.color,
-                      boxShadow: `0 0 10px ${item.color}`
-                    }}
-                    animate={{
-                      boxShadow: [
-                        `0 0 5px ${item.color}`,
-                        `0 0 15px ${item.color}`,
-                        `0 0 5px ${item.color}`
-                      ]
-                    }}
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.color}` }}
+                    animate={{ boxShadow: [`0 0 4px ${item.color}`, `0 0 12px ${item.color}`, `0 0 4px ${item.color}`] }}
                     transition={{ duration: 2, repeat: Infinity }}
                   />
-                  <span className="text-white/60 text-xs">{item.label}</span>
+                  <span className="text-white/60 text-[10px]">{item.label}</span>
                 </div>
               ))}
             </div>
