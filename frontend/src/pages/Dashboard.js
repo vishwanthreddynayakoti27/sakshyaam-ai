@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Languages, 
   FileText, 
@@ -15,10 +15,8 @@ import {
   FolderOpen,
   Package,
   DollarSign,
-  AlertCircle,
-  ChevronRight,
-  Shield,
-  X
+  AlertTriangle,
+  ChevronRight
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -29,7 +27,6 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [officer, setOfficer] = useState({ name: 'Officer', role: 'Sub-Inspector', station: 'Cyber Cell' });
-  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
     // Load officer data
@@ -41,14 +38,6 @@ const Dashboard = () => {
         role: data.rank || 'Sub-Inspector',
         station: data.district || 'Cyber Cell'
       });
-      
-      // Show welcome message on first load
-      const hasShownWelcome = sessionStorage.getItem('welcomeShown');
-      if (!hasShownWelcome) {
-        setShowWelcome(true);
-        sessionStorage.setItem('welcomeShown', 'true');
-        setTimeout(() => setShowWelcome(false), 5000);
-      }
     }
   }, []);
 
@@ -78,147 +67,26 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen overflow-hidden relative bg-[#030614]" data-testid="dashboard">
-      {/* Animated Stars Background */}
-      <div className="absolute inset-0 z-0 overflow-hidden">
-        {[...Array(50)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute w-1 h-1 bg-white rounded-full"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-            }}
-            animate={{
-              opacity: [0.2, 1, 0.2],
-              scale: [1, 1.5, 1],
-            }}
-            transition={{
-              duration: 2 + Math.random() * 3,
-              repeat: Infinity,
-              delay: Math.random() * 2,
-            }}
-          />
-        ))}
+      {/* System Status Warning Bar at TOP */}
+      <div className="relative z-20 bg-gradient-to-r from-[#FFB800]/20 via-[#FF3B3B]/20 to-[#FFB800]/20 border-b border-[#FFB800]/50">
+        <div className="max-w-[1800px] mx-auto px-6 py-2 flex items-center justify-center gap-4">
+          <AlertTriangle className="text-[#FFB800] animate-pulse" size={18} />
+          <div className="flex items-center gap-6 text-sm">
+            <span className="text-[#FFB800] font-bold">System Status:</span>
+            <span className="text-white/80">Pre-CCTNS Intelligence System</span>
+            <span className="text-white/40">|</span>
+            <span className="text-white/80">BNS 2023 & BSA Sec. 63 Compliant</span>
+            <span className="text-white/40">|</span>
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#00FFB3] animate-pulse"></span>
+              <span className="text-[#00FFB3] font-semibold">All Systems Online</span>
+            </span>
+          </div>
+        </div>
       </div>
-
-      {/* Centered India Map Background */}
-      <div className="absolute inset-0 z-0 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.5, ease: "easeOut" }}
-          className="relative"
-        >
-          {/* Pulsing Glow Effect */}
-          <motion.div
-            className="absolute inset-0 z-0"
-            animate={{
-              boxShadow: [
-                '0 0 100px 50px rgba(0,194,255,0.1)',
-                '0 0 150px 75px rgba(0,194,255,0.2)',
-                '0 0 100px 50px rgba(0,194,255,0.1)',
-              ]
-            }}
-            transition={{
-              duration: 3,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-            style={{
-              borderRadius: '50%',
-              width: '700px',
-              height: '700px',
-              transform: 'translate(-50%, -50%)',
-              left: '50%',
-              top: '50%',
-              position: 'absolute'
-            }}
-          />
-          
-          {/* India Map Image */}
-          <motion.img
-            src={BACKGROUND_IMAGE}
-            alt="India Cyber Map"
-            className="w-[800px] h-[800px] object-contain"
-            animate={{
-              filter: [
-                'drop-shadow(0 0 30px rgba(0,194,255,0.3))',
-                'drop-shadow(0 0 50px rgba(0,194,255,0.5))',
-                'drop-shadow(0 0 30px rgba(0,194,255,0.3))',
-              ]
-            }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-          
-          {/* Scanning Line Animation */}
-          <motion.div
-            className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#00C2FF] to-transparent opacity-50"
-            animate={{
-              top: ['10%', '90%', '10%'],
-            }}
-            transition={{
-              duration: 4,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          />
-        </motion.div>
-      </div>
-
-      {/* Welcome Banner */}
-      <AnimatePresence>
-        {showWelcome && (
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-[#00C2FF]/20 via-[#4F7EFF]/20 to-[#00C2FF]/20 backdrop-blur-md border-b border-[#00C2FF]/30"
-          >
-            <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <motion.div 
-                  className="w-12 h-12 rounded-full bg-[#00C2FF]/20 border-2 border-[#00C2FF] flex items-center justify-center"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                >
-                  <Shield className="text-[#00C2FF]" size={24} />
-                </motion.div>
-                <div>
-                  <motion.h2 
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="text-2xl font-bold text-white"
-                  >
-                    Welcome, <span className="text-[#00C2FF]">{officer.name}</span>!
-                  </motion.h2>
-                  <motion.p 
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="text-white/70"
-                  >
-                    {officer.role} • {officer.station} Police
-                  </motion.p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowWelcome(false)}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors"
-              >
-                <X className="text-white/60 hover:text-white" size={20} />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Top Bar */}
-      <div className={`relative z-10 px-6 py-4 border-b border-[#00C2FF]/20 bg-[#030614]/80 backdrop-blur-md ${showWelcome ? 'mt-20' : ''}`}>
+      <div className="relative z-20 px-6 py-4 border-b border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md">
         <div className="flex items-center justify-between max-w-[1800px] mx-auto">
           {/* Search Bar */}
           <div className="relative w-96">
@@ -252,9 +120,9 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="relative z-10 flex h-[calc(100vh-73px)]">
+      <div className="relative z-10 flex h-[calc(100vh-105px)]">
         {/* Left Sidebar - Module Cards */}
-        <div className="w-72 border-r border-[#00C2FF]/20 bg-[#030614]/80 backdrop-blur-md p-4 overflow-y-auto">
+        <div className="w-72 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-4 overflow-y-auto z-20">
           <h3 className="text-[#00C2FF] text-xs font-bold uppercase tracking-wider mb-4 px-2">Investigation Modules</h3>
           
           <div className="space-y-2">
@@ -282,7 +150,7 @@ const Dashboard = () => {
                   
                   {/* Card Content */}
                   <div 
-                    className="relative p-4 rounded-xl border transition-all duration-300 bg-[#0B0F1A]/60 group-hover:bg-[#0B0F1A]/80"
+                    className="relative p-4 rounded-xl border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
                     style={{ 
                       borderColor: `${module.color}30`,
                       boxShadow: 'none'
@@ -334,37 +202,24 @@ const Dashboard = () => {
               );
             })}
           </div>
-
-          {/* System Info Card */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-6 p-4 rounded-xl border border-[#4F7EFF]/30 bg-gradient-to-br from-[#4F7EFF]/10 to-transparent"
-            style={{ boxShadow: '0 0 30px rgba(79,126,255,0.1)' }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle size={14} className="text-[#4F7EFF]" />
-              <span className="text-[#4F7EFF] text-xs font-semibold">System Status</span>
-            </div>
-            <p className="text-white/50 text-xs leading-relaxed">
-              Pre-CCTNS Intelligence System
-            </p>
-            <p className="text-white/40 text-xs mt-1">
-              BNS 2023 & BSA Sec. 63 Compliant
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#00FFB3] animate-pulse" />
-              <span className="text-[#00FFB3] text-xs">All Systems Online</span>
-            </div>
-          </motion.div>
         </div>
 
-        {/* Center Area - Empty to show background */}
-        <div className="flex-1" />
+        {/* Center Area - Full Background Image */}
+        <div 
+          className="flex-1 relative"
+          style={{
+            backgroundImage: `url(${BACKGROUND_IMAGE})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
+          {/* Optional: Subtle overlay for better text readability if needed */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#030614]/30 via-transparent to-[#030614]/30" />
+        </div>
 
         {/* Right Panel - Active Investigations */}
-        <div className="w-80 border-l border-[#00C2FF]/20 bg-[#030614]/80 backdrop-blur-md p-4 overflow-y-auto">
+        <div className="w-80 border-l border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-4 overflow-y-auto z-20">
           <h2 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
             <motion.div
               animate={{ rotate: [0, 360] }}
