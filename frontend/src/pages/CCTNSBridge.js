@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Globe
 } from 'lucide-react';
+import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import api from '../utils/api';
@@ -29,7 +30,7 @@ const CCTNSBridge = () => {
 
   const loadCaseContexts = async () => {
     try {
-      const response = await api.get('/api/case-context/list');
+      const response = await api.get('/case-context/list');
       setCaseContexts(response.data);
       if (response.data.length > 0) {
         setSelectedContext(response.data[0]);
@@ -49,7 +50,7 @@ const CCTNSBridge = () => {
 
     setIsExporting(true);
     try {
-      const response = await api.get(`/api/case-context/${selectedContext.id}/export-cctns`);
+      const response = await api.get(`/case-context/${selectedContext.id}/export-cctns`);
       setCctnsData(response.data);
       toast.success('CCTNS data exported successfully!');
     } catch (error) {
@@ -109,6 +110,7 @@ const CCTNSBridge = () => {
   ];
 
   return (
+    <Layout>
     <div className="min-h-screen bg-[#030614] p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
@@ -364,6 +366,7 @@ const CCTNSBridge = () => {
         </div>
       </div>
     </div>
+    </Layout>
   );
 };
 

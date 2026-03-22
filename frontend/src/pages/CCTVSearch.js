@@ -15,6 +15,7 @@ import {
   Loader2,
   ImageIcon
 } from 'lucide-react';
+import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
@@ -71,6 +72,7 @@ const CCTVSearch = () => {
   const colors = ['White', 'Black', 'Silver', 'Red', 'Blue', 'Green', 'Yellow', 'Brown'];
 
   return (
+    <Layout>
     <div className="min-h-screen bg-[#030614] p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
@@ -333,6 +335,7 @@ const CCTVSearch = () => {
         </div>
       </div>
     </div>
+    </Layout>
   );
 };
 

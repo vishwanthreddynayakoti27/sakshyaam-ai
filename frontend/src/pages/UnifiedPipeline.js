@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, 
@@ -22,6 +23,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -29,6 +31,7 @@ import { toast } from 'sonner';
 import api from '../utils/api';
 
 const UnifiedPipeline = () => {
+  const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [caseContext, setCaseContext] = useState(null);
@@ -65,7 +68,7 @@ const UnifiedPipeline = () => {
 
   const createCaseContext = async () => {
     try {
-      const response = await api.post('/api/case-context/create', {
+      const response = await api.post('/case-context/create', {
         fir_number: firNumber,
         police_station: policeStation,
         district: district,
@@ -101,7 +104,7 @@ const UnifiedPipeline = () => {
       formData.append('source_language', sourceLanguage);
 
       const response = await api.post(
-        `/api/case-context/${context.id}/process-petition`,
+        `/case-context/${context.id}/process-petition`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
@@ -133,6 +136,7 @@ const UnifiedPipeline = () => {
   };
 
   return (
+    <Layout>
     <div className="min-h-screen bg-[#030614] p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
@@ -589,21 +593,21 @@ const UnifiedPipeline = () => {
 
               <div className="flex justify-center gap-4 flex-wrap">
                 <Button
-                  onClick={() => window.location.href = '/document-generator'}
+                  onClick={() => navigate('/document-generator')}
                   className="bg-[#4F7EFF] hover:bg-[#4F7EFF]/80"
                 >
                   <FileText size={16} className="mr-2" />
                   Generate Charge Sheet
                 </Button>
                 <Button
-                  onClick={() => window.location.href = '/evidence-hash'}
+                  onClick={() => navigate('/evidence-hash')}
                   className="bg-[#FFB800] hover:bg-[#FFB800]/80 text-black"
                 >
                   <Upload size={16} className="mr-2" />
                   Upload Evidence
                 </Button>
                 <Button
-                  onClick={() => window.location.href = '/cctns-bridge'}
+                  onClick={() => navigate('/cctns-bridge')}
                   className="bg-[#00C2FF] hover:bg-[#00C2FF]/80 text-black"
                 >
                   <ArrowRight size={16} className="mr-2" />
@@ -622,6 +626,7 @@ const UnifiedPipeline = () => {
         </AnimatePresence>
       </div>
     </div>
+    </Layout>
   );
 };
 

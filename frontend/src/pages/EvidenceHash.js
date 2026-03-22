@@ -15,6 +15,7 @@ import {
   Trash2,
   Eye
 } from 'lucide-react';
+import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -57,7 +58,7 @@ const EvidenceHash = () => {
 
   const loadCaseContexts = async () => {
     try {
-      const response = await api.get('/api/case-context/list');
+      const response = await api.get('/case-context/list');
       setCaseContexts(response.data);
       if (response.data.length > 0) {
         setSelectedContext(response.data[0]);
@@ -73,7 +74,7 @@ const EvidenceHash = () => {
     if (!selectedContext) return;
     
     try {
-      const response = await api.get(`/api/evidence/${selectedContext.id}/list`);
+      const response = await api.get(`/evidence/${selectedContext.id}/list`);
       setEvidenceItems(response.data.evidence_items || []);
     } catch (error) {
       console.error('Error loading evidence:', error);
@@ -102,7 +103,7 @@ const EvidenceHash = () => {
       formData.append('seized_from', seizedFrom || selectedContext.complainant_name || '');
       formData.append('seizure_date', seizureDate || new Date().toLocaleDateString());
 
-      const response = await api.post('/api/evidence/upload', formData, {
+      const response = await api.post('/evidence/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -140,7 +141,7 @@ const EvidenceHash = () => {
       const formData = new FormData();
       formData.append('file', verifyFile);
 
-      const response = await api.post(`/api/evidence/${verifyEvidenceId}/verify-hash`, formData, {
+      const response = await api.post(`/evidence/${verifyEvidenceId}/verify-hash`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -172,7 +173,7 @@ const EvidenceHash = () => {
       const formData = new FormData();
       formData.append('file', quickHashFile);
 
-      const response = await api.post('/api/evidence/compute-hash', formData, {
+      const response = await api.post('/evidence/compute-hash', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
@@ -196,7 +197,7 @@ const EvidenceHash = () => {
       const formData = new FormData();
       formData.append('evidence_id', evidenceId);
 
-      const response = await api.post(`/api/documents/${selectedContext.id}/bsa-63-certificate`, formData);
+      const response = await api.post(`/documents/${selectedContext.id}/bsa-63-certificate`, formData);
       
       // Open certificate in new window for printing
       const printWindow = window.open('', '_blank');
@@ -221,6 +222,7 @@ const EvidenceHash = () => {
   };
 
   return (
+    <Layout>
     <div className="min-h-screen bg-[#030614] p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
@@ -549,6 +551,7 @@ const EvidenceHash = () => {
         </div>
       </div>
     </div>
+    </Layout>
   );
 };
 

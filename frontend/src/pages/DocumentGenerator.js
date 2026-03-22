@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   FileText, 
@@ -12,8 +13,11 @@ import {
   AlertCircle,
   BookOpen,
   FileStack,
-  Scale
+  Scale,
+  Languages,
+  Sparkles
 } from 'lucide-react';
+import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -21,6 +25,7 @@ import { toast } from 'sonner';
 import api from '../utils/api';
 
 const DocumentGenerator = () => {
+  const navigate = useNavigate();
   const [caseContexts, setCaseContexts] = useState([]);
   const [selectedContext, setSelectedContext] = useState(null);
   const [documentType, setDocumentType] = useState('charge_sheet');
@@ -48,7 +53,7 @@ const DocumentGenerator = () => {
 
   const loadCaseContexts = async () => {
     try {
-      const response = await api.get('/api/case-context/list');
+      const response = await api.get('/case-context/list');
       setCaseContexts(response.data);
       if (response.data.length > 0) {
         setSelectedContext(response.data[0]);
@@ -76,19 +81,19 @@ const DocumentGenerator = () => {
 
       switch (documentType) {
         case 'charge_sheet':
-          response = await api.post(`/api/documents/${contextId}/charge-sheet`);
+          response = await api.post(`/documents/${contextId}/charge-sheet`);
           break;
         case 'case_diary':
           const cdFormData = new FormData();
           cdFormData.append('entry_number', entryNumber);
           cdFormData.append('investigation_progress', investigationProgress);
-          response = await api.post(`/api/documents/${contextId}/case-diary`, cdFormData);
+          response = await api.post(`/documents/${contextId}/case-diary`, cdFormData);
           break;
         case 'remand_report':
           const remandFormData = new FormData();
           remandFormData.append('accused_serial', accusedSerial);
           remandFormData.append('grounds_for_remand', groundsForRemand);
-          response = await api.post(`/api/documents/${contextId}/remand-report`, remandFormData);
+          response = await api.post(`/documents/${contextId}/remand-report`, remandFormData);
           break;
         case 'bsa_63':
           if (!evidenceId) {
@@ -98,7 +103,7 @@ const DocumentGenerator = () => {
           }
           const bsaFormData = new FormData();
           bsaFormData.append('evidence_id', evidenceId);
-          response = await api.post(`/api/documents/${contextId}/bsa-63-certificate`, bsaFormData);
+          response = await api.post(`/documents/${contextId}/bsa-63-certificate`, bsaFormData);
           break;
         default:
           throw new Error('Unknown document type');
@@ -154,20 +159,53 @@ const DocumentGenerator = () => {
   };
 
   return (
+    <Layout>
     <div className="min-h-screen bg-[#030614] p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-4"
+          className="flex items-center justify-between"
         >
-          <div className="p-3 rounded-xl bg-gradient-to-br from-[#4F7EFF]/20 to-[#00C2FF]/20 border border-[#4F7EFF]/30">
-            <FileCheck className="text-[#4F7EFF]" size={28} />
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-[#4F7EFF]/20 to-[#00C2FF]/20 border border-[#4F7EFF]/30">
+              <FileCheck className="text-[#4F7EFF]" size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Document Generator</h1>
+              <p className="text-white/60 text-sm">Auto-generate Charge Sheets, Case Diaries & Certificates</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Document Generator</h1>
-            <p className="text-white/60 text-sm">Auto-generate Charge Sheets, Case Diaries & Certificates</p>
+          {/* Quick Tools */}
+          <div className="flex gap-2">
+            <Button
+              onClick={() => navigate('/language-intelligence')}
+              variant="outline"
+              size="sm"
+              className="border-[#00C2FF]/30 text-[#00C2FF] hover:bg-[#00C2FF]/10"
+            >
+              <Languages size={16} className="mr-2" />
+              Translate
+            </Button>
+            <Button
+              onClick={() => navigate('/fir-draft')}
+              variant="outline"
+              size="sm"
+              className="border-[#4F7EFF]/30 text-[#4F7EFF] hover:bg-[#4F7EFF]/10"
+            >
+              <FileText size={16} className="mr-2" />
+              FIR Draft
+            </Button>
+            <Button
+              onClick={() => navigate('/legal-intelligence')}
+              variant="outline"
+              size="sm"
+              className="border-[#00FFB3]/30 text-[#00FFB3] hover:bg-[#00FFB3]/10"
+            >
+              <Scale size={16} className="mr-2" />
+              Legal AI
+            </Button>
           </div>
         </motion.div>
       </div>
@@ -418,6 +456,7 @@ const DocumentGenerator = () => {
         </div>
       </div>
     </div>
+    </Layout>
   );
 };
 
