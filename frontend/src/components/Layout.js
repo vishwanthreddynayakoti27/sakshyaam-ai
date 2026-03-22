@@ -14,10 +14,13 @@ import {
   DollarSign,
   MapPin,
   Calendar,
-  Activity,
   FileStack,
   Package,
-  FolderOpen
+  Workflow,
+  FileCheck,
+  Camera,
+  Database,
+  Activity
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -43,17 +46,21 @@ const Layout = ({ children }) => {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    // Unified Intelligence Pipeline
+    { icon: Workflow, label: 'Unified Pipeline', path: '/unified-pipeline', isNew: true },
+    { icon: FileCheck, label: 'Document Generator', path: '/document-generator', isNew: true },
+    { icon: Package, label: 'Evidence & Hash', path: '/evidence-hash', isNew: true },
+    { icon: Camera, label: 'CCTV Search', path: '/cctv-search', isNew: true },
+    { icon: Database, label: 'CCTNS Bridge', path: '/cctns-bridge', isNew: true },
+    // Existing Tools
     { icon: Languages, label: 'Language Intelligence', path: '/language-intelligence' },
     { icon: FileText, label: 'FIR Draft Assistant', path: '/fir-draft' },
     { icon: Scale, label: 'Legal Intelligence', path: '/legal-intelligence' },
-    { icon: FileStack, label: 'Investigation Docs', path: '/investigation-documents', isNew: true },
+    { icon: FileStack, label: 'Investigation Docs', path: '/investigation-documents' },
     { icon: DollarSign, label: 'Fraud Recovery', path: '/fraud-recovery' },
     { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
     { icon: Calendar, label: 'Smart Summons', path: '/smart-summons' },
     { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder' },
-    { icon: Activity, label: 'SENTICEL Diary', path: '/senticel-diary' },
-    { icon: Package, label: 'Evidence Manager', path: '/evidence-manager', isNew: true },
-    { icon: FolderOpen, label: 'Case File Manager', path: '/case-file-manager', isNew: true },
   ];
 
   return (

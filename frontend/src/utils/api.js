@@ -152,3 +152,6 @@ export const subscription = {
     return response.data;
   },
 };
+
+// Default export for convenience
+export default api;

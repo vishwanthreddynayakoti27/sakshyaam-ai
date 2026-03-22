@@ -10,14 +10,16 @@ import {
   User,
   MapPin,
   Calendar,
-  Activity,
   FileStack,
-  FolderOpen,
   Package,
   DollarSign,
   AlertTriangle,
-  ChevronRight,
-  Shield
+  Shield,
+  Workflow,
+  FileCheck,
+  Database,
+  Camera,
+  Activity
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -42,6 +44,13 @@ const Dashboard = () => {
   }, []);
 
   const modules = [
+    // UNIFIED INTELLIGENCE PIPELINE - Core Modules
+    { icon: Workflow, title: 'Unified Pipeline', path: '/unified-pipeline', color: '#00FFB3', badge: 'NEW' },
+    { icon: FileCheck, title: 'Document Generator', path: '/document-generator', color: '#4F7EFF', badge: 'NEW' },
+    { icon: Package, title: 'Evidence & Hash', path: '/evidence-hash', color: '#FFB800', badge: 'NEW' },
+    { icon: Camera, title: 'CCTV Search', path: '/cctv-search', color: '#FF3B3B', badge: 'NEW' },
+    { icon: Database, title: 'CCTNS Bridge', path: '/cctns-bridge', color: '#00C2FF', badge: 'NEW' },
+    // Existing Tools
     { icon: Languages, title: 'Language Intelligence', path: '/language-intelligence', color: '#00C2FF' },
     { icon: FileText, title: 'FIR Draft Assistant', path: '/fir-draft', color: '#4F7EFF' },
     { icon: Scale, title: 'Legal Intelligence', path: '/legal-intelligence', color: '#00FFB3' },
@@ -49,9 +58,6 @@ const Dashboard = () => {
     { icon: Phone, title: 'CDR Analyzer', path: '/cdr-analyzer', color: '#FFB800' },
     { icon: Calendar, title: 'Smart Summons', path: '/smart-summons', color: '#00C2FF' },
     { icon: MapPin, title: 'Jurisdiction Finder', path: '/jurisdiction-finder', color: '#4F7EFF' },
-    { icon: Activity, title: 'SENTICEL Diary', path: '/senticel-diary', color: '#FF3B3B' },
-    { icon: Package, title: 'Evidence Manager', path: '/evidence-manager', color: '#00FFB3' },
-    { icon: FolderOpen, title: 'Case File Manager', path: '/case-file-manager', color: '#FFB800' },
     { icon: FileStack, title: 'Investigation Docs', path: '/investigation-documents', color: '#00C2FF' },
   ];
 
@@ -145,7 +151,7 @@ const Dashboard = () => {
         <div className="w-56 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-2 overflow-hidden z-20">
           <h3 className="text-[#00C2FF] text-[10px] font-bold uppercase tracking-wider mb-2 px-2">Investigation Modules</h3>
           
-          <div className="space-y-1">
+          <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
             {filteredModules.map((module, index) => {
               const Icon = module.icon;
               return (
@@ -181,9 +187,14 @@ const Dashboard = () => {
                       >
                         <Icon size={16} style={{ color: module.color }} />
                       </div>
-                      <span className="text-white/85 text-xs font-medium group-hover:text-white transition-colors">
+                      <span className="text-white/85 text-xs font-medium group-hover:text-white transition-colors flex-1">
                         {module.title}
                       </span>
+                      {module.badge && (
+                        <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3] animate-pulse">
+                          {module.badge}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </motion.div>

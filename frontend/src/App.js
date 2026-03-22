@@ -17,6 +17,12 @@ import SenticelDiary from './pages/SenticelDiary';
 import EvidenceManager from './pages/EvidenceManager';
 import CaseFileManager from './pages/CaseFileManager';
 import Profile from './pages/Profile';
+// Unified Intelligence Pipeline - NEW
+import UnifiedPipeline from './pages/UnifiedPipeline';
+import DocumentGenerator from './pages/DocumentGenerator';
+import EvidenceHash from './pages/EvidenceHash';
+import CCTVSearch from './pages/CCTVSearch';
+import CCTNSBridge from './pages/CCTNSBridge';
 import './App.css';
 
 function App() {
@@ -55,6 +61,12 @@ function App() {
           <Route path="/evidence-manager" element={<ProtectedRoute><EvidenceManager /></ProtectedRoute>} />
           <Route path="/case-file-manager" element={<ProtectedRoute><CaseFileManager /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          {/* Unified Intelligence Pipeline Routes */}
+          <Route path="/unified-pipeline" element={<ProtectedRoute><UnifiedPipeline /></ProtectedRoute>} />
+          <Route path="/document-generator" element={<ProtectedRoute><DocumentGenerator /></ProtectedRoute>} />
+          <Route path="/evidence-hash" element={<ProtectedRoute><EvidenceHash /></ProtectedRoute>} />
+          <Route path="/cctv-search" element={<ProtectedRoute><CCTVSearch /></ProtectedRoute>} />
+          <Route path="/cctns-bridge" element={<ProtectedRoute><CCTNSBridge /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" theme="dark" richColors />
