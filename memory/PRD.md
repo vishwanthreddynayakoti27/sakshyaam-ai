@@ -1,181 +1,155 @@
-# SAAKSHYAM COMMAND - Product Requirements Document
+# SAAKSHYAM AI - Unified Intelligence Pipeline
 
-## Project Overview
-**App Name**: SAAKSHYAM AI - COMMAND CONSOLE
-**Subtitle**: Cyber Investigation Command Center - Pre-CCTNS Intelligence & FIR Preparation System
-**Purpose**: Comprehensive investigation and FIR preparation tool for law enforcement officers
+## Overview
+SAAKSHYAM AI is a comprehensive police investigation command console that automates investigation workflows through a unified data-sharing ecosystem.
+
+## Original Problem Statement
+Transform the existing SAAKSHYAM AI application from a collection of siloed tools into a **Unified Intelligence Pipeline** - a seamless data-sharing ecosystem that automates police investigation workflows from petition analysis to CCTNS data entry.
+
+## Core Architecture: Unified Intelligence Pipeline
+
+### 1. Global Case Context
+The central data model that shares information across all tools:
+- Case identification (FIR Number, Crime Number)
+- Complainant details
+- Accused persons (A1, A2, etc.)
+- Witnesses (LW-1, LW-2, etc.)
+- Evidence items with SHA-256 hashes
+- Legal sections (BNS/BNSS/BSA)
+- Case diary entries
+
+### 2. Single-Source Entry (Unified Pipeline Page)
+- Multi-modal input: Text, File upload (PDF/JPG), Voice
+- Legal LLM (GPT-5.2) for translation preserving police legalese
+- Auto-extracts entities: Name, Phone, Vehicle, BNS Sections
+- Populates Global Case Context automatically
+- 4-step workflow: Input Petition → AI Processing → Review & Edit → Case Context
+
+### 3. Document Generator
+Auto-generates legal documents from Case Context:
+- **Charge Sheet** (Sec 193 BNSS) - Brief Facts, Witness Table, Accused Details
+- **Case Diary** (Sec 172 BNSS) - Chronological investigation entries
+- **Remand Report** - For requesting judicial custody
+- **BSA Section 63 Certificate** - Digital evidence authentication
+
+### 4. Evidence & Hash Manager
+- Upload digital evidence (video/photo/documents)
+- Instant SHA-256 hash computation
+- Hash verification for integrity checking
+- Auto-links to Case Context with FIR Number
+- BSA Sec 63 certificate generation
+
+### 5. CCTV Attribute Search (Beta)
+- Upload CCTV footage
+- Search by attributes (Vehicle Type, Color, Model, Person Clothing)
+- AI scans video for timestamped matches
+- Attach screenshots to case evidence
+- *Note: AI video analysis is mocked in beta*
+
+### 6. CCTNS Extension Bridge
+- Consolidates all case data into CCTNS-compatible JSON
+- Backend endpoint: `/api/case-context/{id}/export-cctns`
+- Designed for browser extension auto-fill
+- Maps to official CCTNS portal form fields
 
 ## Tech Stack
-- **Frontend**: React 18, Tailwind CSS, Framer Motion, Lucide Icons, jsPDF, docx, file-saver, Leaflet.js, react-dropzone
-- **Backend**: FastAPI, Pydantic, Motor (MongoDB async), PyPDF2, python-docx
-- **Database**: MongoDB
-- **APIs**: Google Cloud Vision, Translate, Speech-to-Text, Natural Language Processing
-- **Maps**: Leaflet.js with OpenStreetMap
-- **Auth**: JWT with 7-day expiration, auto-refresh on token expiration
+- **Frontend:** React, Tailwind CSS, Framer Motion, Shadcn/UI
+- **Backend:** FastAPI, Pydantic, Motor (MongoDB)
+- **LLM Integration:** GPT-5.2 via Emergent Integrations
+- **Database:** MongoDB
 
-## Core Modules (13 Total)
+## API Endpoints (New)
 
-### 1. Dashboard
-- Module grid with 13 navigation cards
-- NEW badges on recently added modules
-- Dark tactical cyber theme
+### Case Context
+- `POST /api/case-context/create` - Create new case context
+- `GET /api/case-context/list` - List all case contexts
+- `GET /api/case-context/{id}` - Get specific context
+- `PUT /api/case-context/{id}` - Update context
+- `POST /api/case-context/{id}/process-petition` - Process petition with AI
+- `POST /api/case-context/{id}/add-accused` - Add accused person
+- `POST /api/case-context/{id}/add-witness` - Add witness
+- `POST /api/case-context/{id}/add-evidence` - Add evidence
+- `POST /api/case-context/{id}/suggest-sections` - Get BNS section suggestions
+- `GET /api/case-context/{id}/export-cctns` - Export CCTNS JSON
 
-### 2. Language Intelligence (HERO)
-- Document processing: PNG, JPG, PDF, DOCX via Google Vision OCR
-- Audio processing: MP3, WAV, M4A via Google Speech-to-Text
-- 5-stage pipeline: Speech/OCR → Text → Translation → Grammar → Legal English
-- Three-panel output: Original, Translated, Legal English
-- TTS Read Aloud feature
-- **Police Station Writer Style** - Converts informal narratives to formal FIR/complaint documentation style:
-  - First-person to third-person conversion
-  - Formal legal terminology
-  - Proper sentence structure
-  - Legal closing statement
+### Document Generator
+- `POST /api/documents/{id}/charge-sheet` - Generate Charge Sheet
+- `POST /api/documents/{id}/case-diary` - Generate Case Diary
+- `POST /api/documents/{id}/remand-report` - Generate Remand Report
+- `POST /api/documents/{id}/bsa-63-certificate` - Generate BSA 63 Certificate
 
-### 3. FIR Draft Assistant
-- First-to-third person conversion
-- Error analysis (mixed narrative detection)
-- Remand report generation
+### Evidence Manager
+- `POST /api/evidence/upload` - Upload evidence with auto-hashing
+- `POST /api/evidence/compute-hash` - Compute hash only (no storage)
+- `GET /api/evidence/{context_id}/list` - List evidence items
+- `POST /api/evidence/{id}/verify-hash` - Verify file integrity
 
-### 4. Legal Intelligence Engine
-- 4-tab interface: All Laws, BNS, BNSS, BSA
-- Case fact analysis with keyword detection
-- 50+ sections with IPC/CrPC/Evidence Act mappings
-- Auto-generated Remand Note
-- BSA Section 63 Certifier
-- Case Peer-Reviewer
+## Completed Features (Phase 1)
 
-### 5. Investigation Documents (EXPANDED - Dec 2025)
-**65+ templates organized in 10 categories:**
+### December 2025
+- [x] Unified Pipeline page with 4-step workflow
+- [x] Document Generator with 4 document types
+- [x] Evidence & Hash Manager with SHA-256
+- [x] CCTV Search UI (beta - mocked)
+- [x] CCTNS Bridge with JSON export
+- [x] Global Case Context data model
+- [x] Backend routers: case_context, document_generator, evidence_manager
+- [x] GPT-5.2 integration for Legal LLM
+- [x] Dashboard updated with NEW badges
+- [x] Deprecated modules removed (SENTICEL Diary, Case File Manager, Media Forensic)
 
-| Category | Count | Templates |
-|----------|-------|-----------|
-| Complaint Stage | 7 | Petition Report, CSR Entry, Station Diary Entry, Complaint Acknowledgement, Preliminary Enquiry Report, Complaint Closure Report, Complaint Forwarding Note |
-| FIR Stage | 5 | FIR Draft, FIR Correction Report, FIR Copy Generator, FIR Dispatch to Court, FIR Dispatch to Senior |
-| Investigation | 6 | Scene of Crime Report, Crime Scene Sketch, Investigation Commencement, Case Diary Entry, Investigation Progress, Investigation Completion |
-| Witness Examination | 5 | Witness Statement (161), Witness Re-examination, Witness Identification Memo, Witness Protection Note, Witness Attendance Memo |
-| Evidence Collection | 9 | Seizure Panchanama, Property Seizure Memo, Vehicle Seizure Memo, Mobile Phone Seizure, Laptop Seizure Memo, Digital Evidence Report, Evidence Label Register, Evidence Transfer Memo, Chain of Custody Record |
-| Forensic Requests | 5 | FSL Request Letter, Fingerprint Analysis, DNA Examination Request, Cyber Forensic Request, Document Examination |
-| Investigation Letters | 8 | CDR Request, IP Address Request, Bank Account Request, Transaction History, CCTV Footage Request, Hotel Register Request, Vehicle Registration, Social Media Request |
-| Accused Handling | 8 | Notice to Accused (BNSS 35), Summons to Accused, Arrest Memo, Personal Search Memo, Medical Examination, Custody Memo, Bail Opposition Note, Police Custody Request |
-| Court Documents | 6 | Remand Application, Bail Objection Report, Charge Sheet Draft, Supplementary Charge Sheet, Final Investigation Report, Case Closure Report |
-| Administrative | 6 | Case Status Report, Daily Crime Report, Weekly Crime Report, Monthly Crime Report, Station Crime Statistics, Property Disposal Report |
+## Existing Features (Pre-Pipeline)
+- [x] Authentication with JWT and auto-refresh
+- [x] Language Intelligence (Translation)
+- [x] FIR Draft Assistant
+- [x] Legal Intelligence (BNS Search)
+- [x] Investigation Documents (65+ templates)
+- [x] CDR Analyzer (Search by Number/Name)
+- [x] Fraud Recovery
+- [x] Smart Summons
+- [x] Jurisdiction Finder (713 stations)
 
-**Features:**
-- Fillable form with auto-fill from FIR data
-- PDF download (jsPDF)
-- Word download (docx library)
-- Print functionality
-- Copy to clipboard
-- **Save to Case File** (auto-links with Case File Manager)
+## Backlog / Future Tasks
 
-### 6. Media Forensic Validator
-- **AI Detection System** - Clearly identifies if media is REAL or AI-GENERATED
-- Deterministic authenticity scoring with clear verdicts:
-  - **LIKELY AUTHENTIC** (75-100%): Green - Media appears real
-  - **INCONCLUSIVE** (50-74%): Yellow - Needs professional verification  
-  - **LIKELY AI-GENERATED** (0-49%): Red - Media may be fake/manipulated
-- Multi-factor analysis: metadata, file hash, compression artifacts, frame/spectral analysis
-- Visual verdict display with color-coded results
-- Spectral analysis chart with color matching verdict
-- "Understanding Your Result" interpretation guide
-- Recent analyses history with REAL/FAKE/UNCLEAR labels
+### P0 - High Priority
+- [ ] Full AI video analysis for CCTV Search (currently mocked)
+- [ ] OSINT Integration (SurePass/OSINT Industries) for deep search on phone numbers
+- [ ] Voice input processing in Unified Pipeline
 
-### 7. Fraud Recovery Assistant
-- Evidence upload with SHA-256 hashing
-- OCR extraction for transaction details
-- Bank lien request letter generation
-- BSA Section 63 certificate generation
+### P1 - Medium Priority
+- [ ] Template management for custom document formats
+- [ ] Batch processing for multiple petitions
+- [ ] Case linking between related FIRs
 
-### 8. CDR Analyzer
-- Dynamic column detection for any Excel/CSV format
-- Automatic header mapping
-- Batch processing for 5000+ records
-- Analysis: Most called numbers, common locations, date range
-- **Search by Number** - Find records by phone number
-- **Search by Name** - Find records by subscriber/contact name
-
-### 9. Smart Summons Tracker
-- OCR-based summons document parsing
-- Status tracking (Pending, Attended, Missed, Rescheduled)
-- Urgency indicators
-- PDF report generation
-
-### 10. Jurisdiction Finder
-- **713 Telangana police stations** across 34 districts, 11 commissionerates
-- Leaflet.js interactive map
-- Haversine formula for distance calculation
-- Search by station name or district
-- Click-to-find nearest station
-- Zero FIR Transfer Letter PDF generator
-
-### 11. SENTICEL Investigation Diary
-- Social Pulse Integration & Volatility Alert System
-- Sentiment analysis via Google Cloud NLP (with client-side fallback)
-- Dual gauges: Legal Strength & Social Temperature
-- Volatility Alerts (Protest Activity, Rumor Spreading, Crowd Formation, etc.)
-- Keyword Spikes tracking
-- Risk Level assessment (Safe, Moderate, Volatile)
-
-### 12. Evidence Manager
-- File upload with drag-drop (Images, Video, Audio, PDF, Documents)
-- SHA-256 hash generation via browser crypto.subtle.digest
-- Evidence integrity verification
-- Search and filter functionality
-- Evidence Library with case linkage
-- localStorage persistence
-- **Auto-links with Case File Manager via Case ID**
-
-### 13. Case File Manager
-- Case file creation with all details
-- Status tracking (Under Investigation, Charge Sheet Filed, Trial Ongoing, Closed, Final Report)
-- **Linked Documents section** - Shows documents saved from Investigation Documents
-- **Linked Evidence section** - Shows evidence from Evidence Manager
-- Comprehensive PDF export (includes linked documents and evidence)
-- localStorage persistence
-
-## Auto-Linking System (NEW)
-Documents and evidence are automatically linked across modules using Case ID:
-- **Investigation Documents** → Save with Case ID → Appears in Case File Manager's "Linked Documents"
-- **Evidence Manager** → Upload with Case ID → Appears in Case File Manager's "Linked Evidence"
-- localStorage keys: `case_documents_{caseId}`, `evidence_manager_data`
-
-## Data Files
-- `/app/backend/data/telangana_police_stations.json` - 713 stations across 34 districts, 11 commissionerates
-
-## Implementation Status
-
-### Completed (December 2025)
-- [x] Dashboard with 13 module cards
-- [x] Language Intelligence with OCR, Translation, TTS
-- [x] FIR Draft Assistant with third-person conversion
-- [x] Legal Intelligence Engine with 4-tab interface
-- [x] **Investigation Documents EXPANDED to 65+ templates in 10 categories**
-- [x] **Auto-linking between Investigation Documents and Case File Manager**
-- [x] **Word document download support (docx library)**
-- [x] Media Forensic Validator
-- [x] Fraud Recovery Assistant
-- [x] CDR Analyzer with dynamic columns
-- [x] Smart Summons Tracker
-- [x] Jurisdiction Finder with 713 stations
-- [x] SENTICEL Investigation Diary
-- [x] Evidence Manager
-- [x] Case File Manager with Linked Documents
-
-### Notes
-- Evidence Manager and Case File Manager use localStorage (no backend APIs)
-- SENTICEL Diary has client-side fallback when Google NLP unavailable
-- Media Forensics uses heuristic analysis
-- Investigation Documents uses client-side PDF/Word generation
+### P2 - Low Priority
+- [ ] Browser extension for CCTNS auto-fill (frontend)
+- [ ] Analytics dashboard for case statistics
+- [ ] Officer performance tracking
 
 ## Test Credentials
-- Officer ID: verify_test_001
-- Password: Test123!
+- Officer ID: `TEST123`
+- Password: `test123`
 
-## Deployment
-- Preview URL: https://nyaya-prahari.preview.emergentagent.com
-- Backend: FastAPI on port 8001
-- Frontend: React on port 3000
-
----
-Last Updated: December 2025
+## File Structure
+```
+/app/
+├── backend/
+│   ├── models/
+│   │   └── case_context.py    # Global Case Context model
+│   ├── routers/
+│   │   ├── case_context.py    # Case Context API
+│   │   ├── document_generator.py  # Document generation API
+│   │   └── evidence_manager.py    # Evidence management API
+│   ├── services/
+│   │   ├── legal_llm.py       # GPT-5.2 integration
+│   │   └── document_generator.py  # Document templates
+│   └── server.py              # Main FastAPI app
+└── frontend/
+    └── src/
+        └── pages/
+            ├── UnifiedPipeline.js    # Main pipeline entry
+            ├── DocumentGenerator.js  # Document generation
+            ├── EvidenceHash.js       # Evidence management
+            ├── CCTVSearch.js         # CCTV analysis (beta)
+            └── CCTNSBridge.js        # CCTNS export
+```
