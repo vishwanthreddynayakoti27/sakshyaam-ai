@@ -22,6 +22,20 @@ import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
+// Helper to extract error message from API response
+const getErrorMessage = (error, fallback = 'An error occurred') => {
+  const detail = error.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return fallback;
+};
+
 const EvidenceHash = () => {
   const [caseContexts, setCaseContexts] = useState([]);
   const [selectedContext, setSelectedContext] = useState(null);
@@ -122,7 +136,7 @@ const EvidenceHash = () => {
       toast.info(`SHA-256: ${response.data.sha256_hash.substring(0, 32)}...`);
     } catch (error) {
       console.error('Error uploading evidence:', error);
-      toast.error(error.response?.data?.detail || 'Upload failed');
+      toast.error(getErrorMessage(error, 'Upload failed'));
     } finally {
       setIsUploading(false);
     }
@@ -154,7 +168,7 @@ const EvidenceHash = () => {
       }
     } catch (error) {
       console.error('Error verifying hash:', error);
-      toast.error(error.response?.data?.detail || 'Verification failed');
+      toast.error(getErrorMessage(error, 'Verification failed'));
     } finally {
       setIsVerifying(false);
     }

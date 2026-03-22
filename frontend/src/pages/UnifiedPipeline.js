@@ -30,6 +30,20 @@ import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
+// Helper to extract error message from API response
+const getErrorMessage = (error, fallback = 'An error occurred') => {
+  const detail = error.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return fallback;
+};
+
 const UnifiedPipeline = () => {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(1);
@@ -123,7 +137,7 @@ const UnifiedPipeline = () => {
       toast.success('Petition processed successfully!');
     } catch (error) {
       console.error('Error processing petition:', error);
-      toast.error(error.response?.data?.detail || 'Failed to process petition');
+      toast.error(getErrorMessage(error, 'Failed to process petition'));
       setActiveStep(1);
     } finally {
       setIsProcessing(false);

@@ -24,6 +24,20 @@ import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
+// Helper to extract error message from API response
+const getErrorMessage = (error, fallback = 'An error occurred') => {
+  const detail = error.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return fallback;
+};
+
 const DocumentGenerator = () => {
   const navigate = useNavigate();
   const [caseContexts, setCaseContexts] = useState([]);
@@ -113,7 +127,7 @@ const DocumentGenerator = () => {
       toast.success('Document generated successfully!');
     } catch (error) {
       console.error('Error generating document:', error);
-      toast.error(error.response?.data?.detail || 'Failed to generate document');
+      toast.error(getErrorMessage(error, 'Failed to generate document'));
     } finally {
       setIsLoading(false);
     }

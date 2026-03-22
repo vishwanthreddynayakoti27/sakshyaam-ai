@@ -17,6 +17,20 @@ import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
+// Helper to extract error message from API response
+const getErrorMessage = (error, fallback = 'An error occurred') => {
+  const detail = error.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return fallback;
+};
+
 const CCTNSBridge = () => {
   const [caseContexts, setCaseContexts] = useState([]);
   const [selectedContext, setSelectedContext] = useState(null);
@@ -55,7 +69,7 @@ const CCTNSBridge = () => {
       toast.success('CCTNS data exported successfully!');
     } catch (error) {
       console.error('Error exporting CCTNS data:', error);
-      toast.error(error.response?.data?.detail || 'Export failed');
+      toast.error(getErrorMessage(error, 'Export failed'));
     } finally {
       setIsExporting(false);
     }
