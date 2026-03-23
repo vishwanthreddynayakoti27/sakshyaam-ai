@@ -176,6 +176,111 @@ async def extract_text_from_file(file: UploadFile, contents: bytes) -> str:
         return f"[Unsupported file format: {filename}]"
 
 
+async def extract_text_from_audio(contents: bytes, filename: str) -> dict:
+    """Extract text from audio using Google Speech-to-Text and translate"""
+    result = {"text": "", "language": "unknown", "translated": "", "legal_text": ""}
+    
+    GOOGLE_SPEECH_CREDENTIALS = os.environ.get('GOOGLE_SPEECH_CREDENTIALS', '')
+    
+    try:
+        if GOOGLE_SPEECH_CREDENTIALS and os.path.exists(GOOGLE_SPEECH_CREDENTIALS):
+            from google.cloud import speech
+            from google.oauth2 import service_account
+            
+            credentials = service_account.Credentials.from_service_account_file(GOOGLE_SPEECH_CREDENTIALS)
+            speech_client = speech.SpeechClient(credentials=credentials)
+            
+            # Determine encoding based on file type
+            file_ext = filename.lower().split('.')[-1]
+            if file_ext == 'mp3':
+                encoding = speech.RecognitionConfig.AudioEncoding.MP3
+            elif file_ext in ['m4a', 'aac']:
+                encoding = speech.RecognitionConfig.AudioEncoding.MP3
+            elif file_ext == 'wav':
+                encoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
+            elif file_ext == 'webm':
+                encoding = speech.RecognitionConfig.AudioEncoding.WEBM_OPUS
+            else:
+                encoding = speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED
+            
+            audio = speech.RecognitionAudio(content=contents)
+            config = speech.RecognitionConfig(
+                encoding=encoding,
+                language_code="te-IN",  # Telugu
+                alternative_language_codes=["hi-IN", "en-IN"],  # Hindi and English
+                enable_automatic_punctuation=True,
+            )
+            
+            response = speech_client.recognize(config=config, audio=audio)
+            
+            for resp_result in response.results:
+                result["text"] += resp_result.alternatives[0].transcript + " "
+                if hasattr(resp_result, 'language_code'):
+                    result["language"] = resp_result.language_code
+            
+            result["text"] = result["text"].strip()
+            
+            # Translate if not English
+            if translate_client and result["text"] and result["language"] not in ['en', 'en-IN']:
+                try:
+                    translation = translate_client.translate(result["text"], target_language='en')
+                    result["translated"] = translation['translatedText']
+                except Exception as te:
+                    logger.warning(f"Translation failed: {te}")
+                    result["translated"] = result["text"]
+            else:
+                result["translated"] = result["text"]
+            
+            # Convert to legal text format
+            if result["translated"]:
+                result["legal_text"] = convert_to_legal_format(result["translated"])
+                
+        else:
+            result["text"] = "[Speech-to-Text not available - Google Speech API not configured]"
+            
+    except Exception as e:
+        logger.error(f"Speech-to-Text error: {e}")
+        result["text"] = f"[Speech-to-Text error: {str(e)}]"
+    
+    return result
+
+
+def convert_to_legal_format(text: str) -> str:
+    """Convert informal text to legal FIR format"""
+    if not text:
+        return text
+    
+    # Replace first-person with third-person
+    replacements = [
+        ("I am ", "The complainant is "),
+        ("I was ", "The complainant was "),
+        ("I have ", "The complainant has "),
+        ("I had ", "The complainant had "),
+        ("I went ", "The complainant went "),
+        ("I saw ", "The complainant observed "),
+        ("I lost ", "The complainant lost "),
+        ("I want ", "The complainant desires "),
+        ("I request ", "The complainant requests "),
+        ("my mobile", "the complainant's mobile phone"),
+        ("my phone", "the complainant's mobile phone"),
+        ("my money", "the complainant's money"),
+        ("my house", "the complainant's residence"),
+        ("my ", "the complainant's "),
+        (" me ", " the complainant "),
+        (" I ", " the complainant "),
+    ]
+    
+    for old, new in replacements:
+        text = text.replace(old, new)
+        text = text.replace(old.lower(), new.lower())
+    
+    # Add formal introduction if not present
+    if "complainant" in text.lower() and not text.lower().startswith("the complainant"):
+        text = "The complainant has stated that " + text[0].lower() + text[1:]
+    
+    return text
+
+
 def set_database(database):
     """Set the database connection from main app"""
     global db
@@ -610,3 +715,80 @@ async def process_documents(
     except Exception as e:
         logger.error(f"Document processing error: {e}")
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+
+
+@router.post("/voice-to-text")
+async def process_voice_input(
+    audio_file: UploadFile = File(...),
+    convert_to_legal: bool = Form(default=True),
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Process voice recording and convert to text.
+    Supports Telugu, Hindi, and English with automatic translation.
+    """
+    try:
+        # Validate file type
+        filename = audio_file.filename.lower() if audio_file.filename else ""
+        allowed_formats = ['mp3', 'wav', 'm4a', 'webm', 'ogg', 'aac']
+        file_ext = filename.split('.')[-1] if '.' in filename else ''
+        
+        if file_ext not in allowed_formats:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported audio format. Supported: {', '.join(allowed_formats)}"
+            )
+        
+        contents = await audio_file.read()
+        
+        # Extract text from audio
+        result = await extract_text_from_audio(contents, audio_file.filename)
+        
+        response_data = {
+            "success": True,
+            "original_text": result.get("text", ""),
+            "language_detected": result.get("language", "unknown"),
+            "translated_text": result.get("translated", ""),
+        }
+        
+        if convert_to_legal and result.get("legal_text"):
+            response_data["legal_text"] = result["legal_text"]
+        
+        # If speech API not available, return helpful message
+        if "[Speech-to-Text not available" in result.get("text", ""):
+            response_data["success"] = False
+            response_data["message"] = "Speech-to-Text API not configured. Please configure Google Speech credentials."
+            # Provide mock for demo
+            response_data["demo_mode"] = True
+            response_data["original_text"] = "[Demo] Voice input received. In production, this would be transcribed using Google Speech-to-Text."
+            response_data["translated_text"] = "[Demo] The complainant states that the accused person approached them and committed fraud."
+            response_data["legal_text"] = "The complainant has stated that the accused person(s) approached the complainant and committed the offense of fraud by deception."
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Voice processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Voice processing failed: {str(e)}")
+
+
+@router.post("/convert-to-legal")
+async def convert_text_to_legal(
+    text: str = Form(...),
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Convert informal text to legal FIR format.
+    """
+    try:
+        legal_text = convert_to_legal_format(text)
+        return {
+            "success": True,
+            "original_text": text,
+            "legal_text": legal_text
+        }
+    except Exception as e:
+        logger.error(f"Legal conversion error: {e}")
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")

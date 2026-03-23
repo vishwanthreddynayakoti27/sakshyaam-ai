@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -20,7 +20,10 @@ import {
   Sparkles,
   FileStack,
   Table,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Mic,
+  MicOff,
+  Square
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -68,6 +71,14 @@ const ChargeSheetFusion = () => {
   const [editableContent, setEditableContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
+  // Voice recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
+  const [legalText, setLegalText] = useState('');
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
   const steps = [
     { number: 1, title: 'Upload Documents', icon: Upload, color: '#00C2FF' },
     { number: 2, title: 'AI Fusion', icon: Sparkles, color: '#4F7EFF' },
@@ -85,6 +96,88 @@ const ChargeSheetFusion = () => {
   const removeFile = (setter, type) => {
     setter(null);
     toast.info(`${type} removed`);
+  };
+
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processVoiceRecording(audioBlob);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      toast.info('Recording started... Speak now', { duration: 2000 });
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast.error('Could not access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      toast.info('Processing your voice input...');
+    }
+  };
+
+  const processVoiceRecording = async (audioBlob) => {
+    setIsProcessingVoice(true);
+    try {
+      const formData = new FormData();
+      formData.append('audio_file', audioBlob, 'recording.webm');
+      formData.append('convert_to_legal', 'true');
+
+      const response = await api.post('/charge-sheet-fusion/voice-to-text', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.data.success || response.data.demo_mode) {
+        setVoiceText(response.data.translated_text || response.data.original_text || '');
+        setLegalText(response.data.legal_text || '');
+        
+        if (response.data.demo_mode) {
+          toast.info('Demo mode: Speech API not configured', { duration: 3000 });
+        } else {
+          toast.success('Voice input processed successfully!');
+        }
+      } else {
+        toast.error(response.data.message || 'Voice processing failed');
+      }
+    } catch (error) {
+      console.error('Error processing voice:', error);
+      toast.error(getErrorMessage(error, 'Failed to process voice input'));
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  };
+
+  const insertVoiceText = () => {
+    if (legalText) {
+      // Insert legal text at the end of editable content
+      setEditableContent(prev => {
+        const insertion = `\n\nBRIEF FACTS (Voice Input):\n${legalText}`;
+        return prev + insertion;
+      });
+      toast.success('Voice text inserted into charge sheet');
+      setVoiceText('');
+      setLegalText('');
+    }
   };
 
   const processDocuments = async () => {
@@ -391,6 +484,90 @@ const ChargeSheetFusion = () => {
                           onChange={(e) => handleFileUpload(e.target.files[0], setCaseDiaryPart2, 'Case Diary')}
                         />
                       </label>
+                    )}
+                  </div>
+                </div>
+
+                {/* Voice Recording Section */}
+                <div className="lg:col-span-4">
+                  <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
+                    <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                      <Mic className="text-[#FF3B3B]" size={18} />
+                      Voice Input (Telugu/Hindi/English)
+                    </h3>
+                    <p className="text-white/50 text-xs mb-4">
+                      Record complaint narrative - automatically transcribed, translated to English, and converted to legal format
+                    </p>
+                    
+                    <div className="flex flex-wrap items-center gap-4">
+                      {/* Recording Controls */}
+                      <div className="flex items-center gap-2">
+                        {!isRecording ? (
+                          <Button
+                            onClick={startRecording}
+                            disabled={isProcessingVoice}
+                            className="bg-gradient-to-r from-[#FF3B3B] to-[#FF6B6B] hover:opacity-90"
+                            data-testid="start-recording-btn"
+                          >
+                            <Mic size={16} className="mr-2" />
+                            Start Recording
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={stopRecording}
+                            className="bg-gradient-to-r from-[#FFB800] to-[#FFC933] hover:opacity-90 animate-pulse"
+                            data-testid="stop-recording-btn"
+                          >
+                            <Square size={16} className="mr-2" />
+                            Stop Recording
+                          </Button>
+                        )}
+                        
+                        {isProcessingVoice && (
+                          <div className="flex items-center gap-2 text-white/60">
+                            <Loader2 className="animate-spin" size={16} />
+                            <span className="text-sm">Processing...</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Recording indicator */}
+                      {isRecording && (
+                        <div className="flex items-center gap-2">
+                          <motion.div
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1, repeat: Infinity }}
+                            className="w-3 h-3 rounded-full bg-[#FF3B3B]"
+                          />
+                          <span className="text-[#FF3B3B] text-sm font-medium">Recording...</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Voice Text Results */}
+                    {(voiceText || legalText) && (
+                      <div className="mt-4 space-y-3">
+                        {voiceText && (
+                          <div className="p-3 rounded-lg bg-[#030614] border border-white/10">
+                            <p className="text-white/60 text-xs mb-1">Translated Text:</p>
+                            <p className="text-white text-sm">{voiceText}</p>
+                          </div>
+                        )}
+                        {legalText && (
+                          <div className="p-3 rounded-lg bg-[#00FFB3]/10 border border-[#00FFB3]/30">
+                            <p className="text-[#00FFB3] text-xs mb-1">Legal Format:</p>
+                            <p className="text-white text-sm">{legalText}</p>
+                            <Button
+                              onClick={insertVoiceText}
+                              className="mt-3 bg-[#00FFB3]/20 hover:bg-[#00FFB3]/30 text-[#00FFB3]"
+                              size="sm"
+                            >
+                              <CheckCircle2 size={14} className="mr-1" />
+                              Insert into Charge Sheet
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

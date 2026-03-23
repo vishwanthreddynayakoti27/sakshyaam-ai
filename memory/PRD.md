@@ -90,6 +90,12 @@ Central data model sharing information across all tools:
 - [x] Navigation updated for dual-wing modules
 - [x] **Deprecated modules removed (SenticelDiary, CaseFileManager, FIRDraftAssistant)**
 
+### Session 3 (Voice Input & UI Refinements)
+- [x] **Voice recording for Charge Sheet Fusion** (Telugu/Hindi/English transcription + legal conversion)
+- [x] **Dashboard UI update**: WING 2 moved to right side
+- [x] **Active Investigations section removed from dashboard**
+- [x] **User name/designation replaced with "SAAKSHYAM AI Command Center"**
+
 ## Removed Modules
 - SENTICEL Investigation Diary
 - Case File Manager

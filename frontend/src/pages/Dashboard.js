@@ -17,7 +17,6 @@ import {
   FileCheck,
   Database,
   Camera,
-  Activity,
   Microscope,
   User
 } from 'lucide-react';
@@ -64,12 +63,6 @@ const Dashboard = () => {
     { icon: Package, title: 'e-Sakshya & Hash', path: '/evidence-hash', color: '#00FFB3' },
   ];
 
-  const activeInvestigations = [
-    { id: 1, title: 'Fraud Case', subtitle: 'Transaction Analysis', status: 'In Progress', priority: 'high' },
-    { id: 2, title: 'Cyber Harassment', subtitle: 'Social Media Tracking', status: 'Pending', priority: 'medium' },
-    { id: 3, title: 'Financial Scam', subtitle: 'Bank Freeze Request', status: 'Critical', priority: 'critical' },
-  ];
-
   const allModules = [...adminWing, ...labWing];
   const filteredModules = allModules.filter(m => 
     m.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -95,12 +88,12 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Top Bar with Welcome Note */}
+      {/* Top Bar with System Icon */}
       <div className="relative z-20 px-4 py-2 border-b border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md">
         <div className="flex items-center justify-between max-w-[1800px] mx-auto">
-          {/* Welcome Note + Search */}
+          {/* System Icon + Search */}
           <div className="flex items-center gap-6">
-            {/* Welcome Note */}
+            {/* System Icon */}
             <div className="flex items-center gap-3">
               <motion.div 
                 className="p-2 rounded-full bg-[#00C2FF]/20 border border-[#00C2FF]/50"
@@ -111,9 +104,9 @@ const Dashboard = () => {
               </motion.div>
               <div>
                 <p className="text-white font-semibold text-sm">
-                  Welcome, <span className="text-[#00C2FF]">{officer.name}</span>!
+                  SAAKSHYAM AI <span className="text-[#00C2FF]">Command Center</span>
                 </p>
-                <p className="text-white/50 text-xs">{officer.role} • {officer.station} Police</p>
+                <p className="text-white/50 text-xs">Dual-Wing Modular System</p>
               </div>
             </div>
 
@@ -130,16 +123,12 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* User Info */}
+          {/* User Info - Profile Icon Only */}
           <div 
             className="flex items-center gap-3 cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-all"
             onClick={() => navigate('/profile')}
             data-testid="user-profile-link"
           >
-            <div className="text-right">
-              <p className="text-white font-semibold text-sm">{officer.name}</p>
-              <p className="text-[#00C2FF]/70 text-xs">{officer.role} • {officer.station}</p>
-            </div>
             <motion.div 
               className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00C2FF]/30 to-[#4F7EFF]/30 border-2 border-[#00C2FF]/50 flex items-center justify-center"
               whileHover={{ scale: 1.1, boxShadow: '0 0 20px rgba(0,194,255,0.5)' }}
@@ -151,7 +140,7 @@ const Dashboard = () => {
       </div>
 
       <div className="relative z-10 flex" style={{ height: 'calc(100vh - 85px)' }}>
-        {/* Left Sidebar - Dual Wing Module Cards */}
+        {/* Left Sidebar - WING 1: ADMIN */}
         <div className="w-56 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-2 overflow-hidden z-20">
           
           <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 100px)' }}>
@@ -161,57 +150,6 @@ const Dashboard = () => {
               <span className="text-[9px] text-[#00C2FF] font-bold tracking-wider">WING 1: ADMIN</span>
             </div>
             {adminWing.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase())).map((module, index) => {
-              const Icon = module.icon;
-              return (
-                <motion.div
-                  key={module.path}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  whileHover={{ scale: 1.02, x: 3 }}
-                  onClick={() => navigate(module.path)}
-                  data-testid={`module-${module.title.toLowerCase().replace(/ /g, '-')}`}
-                  className="relative group cursor-pointer"
-                >
-                  <div 
-                    className="relative p-2 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
-                    style={{ borderColor: `${module.color}20` }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = module.color;
-                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30`;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = `${module.color}20`;
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="p-1 rounded-md"
-                        style={{ backgroundColor: `${module.color}15` }}
-                      >
-                        <Icon size={14} style={{ color: module.color }} />
-                      </div>
-                      <span className="text-white/85 text-[11px] font-medium group-hover:text-white transition-colors flex-1">
-                        {module.title}
-                      </span>
-                      {module.badge && (
-                        <span className="px-1 py-0.5 text-[7px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">
-                          {module.badge}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-
-            {/* WING 2: LAB */}
-            <div className="flex items-center gap-2 px-2 py-1.5 mt-3 mb-1">
-              <Microscope size={12} className="text-[#FF3B3B]" />
-              <span className="text-[9px] text-[#FF3B3B] font-bold tracking-wider">WING 2: FORENSIC LAB</span>
-            </div>
-            {labWing.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase())).map((module, index) => {
               const Icon = module.icon;
               return (
                 <motion.div
@@ -322,54 +260,59 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Right Panel - Compact Active Investigations */}
-        <div className="w-72 border-l border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-3 overflow-hidden z-20 flex flex-col">
-          <h2 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
-            <motion.div
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-            >
-              <Activity className="text-[#00C2FF]" size={16} />
-            </motion.div>
-            Active Investigations
-          </h2>
-
-          <div className="space-y-2 flex-1">
-            {activeInvestigations.map((inv, index) => (
-              <motion.div
-                key={inv.id}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                whileHover={{ scale: 1.02 }}
-                className={`p-3 rounded-lg border transition-all duration-300 cursor-pointer ${
-                  inv.priority === 'critical' 
-                    ? 'bg-[#FF3B3B]/10 border-[#FF3B3B]/50 hover:border-[#FF3B3B] hover:shadow-[0_0_15px_rgba(255,59,59,0.3)]' 
-                    : inv.priority === 'high'
-                    ? 'bg-[#FFB800]/10 border-[#FFB800]/50 hover:border-[#FFB800] hover:shadow-[0_0_15px_rgba(255,184,0,0.3)]'
-                    : 'bg-[#00C2FF]/10 border-[#00C2FF]/30 hover:border-[#00C2FF] hover:shadow-[0_0_15px_rgba(0,194,255,0.3)]'
-                }`}
-                data-testid={`investigation-${inv.id}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-white font-semibold text-sm">{inv.title}</h3>
-                  <motion.span 
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      inv.priority === 'critical' 
-                        ? 'bg-[#FF3B3B]/20 text-[#FF3B3B]'
-                        : inv.priority === 'high'
-                        ? 'bg-[#FFB800]/20 text-[#FFB800]'
-                        : 'bg-[#00C2FF]/20 text-[#00C2FF]'
-                    }`}
-                    animate={inv.priority === 'critical' ? { opacity: [1, 0.5, 1] } : {}}
-                    transition={{ duration: 1, repeat: Infinity }}
+        {/* Right Panel - WING 2: FORENSIC LAB */}
+        <div className="w-56 border-l border-[#FF3B3B]/20 bg-[#030614]/90 backdrop-blur-md p-2 overflow-hidden z-20 flex flex-col">
+          <div className="space-y-1 overflow-y-auto flex-1" style={{ maxHeight: 'calc(100vh - 100px)' }}>
+            {/* WING 2: LAB */}
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
+              <Microscope size={12} className="text-[#FF3B3B]" />
+              <span className="text-[9px] text-[#FF3B3B] font-bold tracking-wider">WING 2: FORENSIC LAB</span>
+            </div>
+            {labWing.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase())).map((module, index) => {
+              const Icon = module.icon;
+              return (
+                <motion.div
+                  key={module.path}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  whileHover={{ scale: 1.02, x: -3 }}
+                  onClick={() => navigate(module.path)}
+                  data-testid={`module-${module.title.toLowerCase().replace(/ /g, '-')}`}
+                  className="relative group cursor-pointer"
+                >
+                  <div 
+                    className="relative p-2 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
+                    style={{ borderColor: `${module.color}20` }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = module.color;
+                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = `${module.color}20`;
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                   >
-                    {inv.status}
-                  </motion.span>
-                </div>
-                <p className="text-white/50 text-xs">{inv.subtitle}</p>
-              </motion.div>
-            ))}
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="p-1 rounded-md"
+                        style={{ backgroundColor: `${module.color}15` }}
+                      >
+                        <Icon size={14} style={{ color: module.color }} />
+                      </div>
+                      <span className="text-white/85 text-[11px] font-medium group-hover:text-white transition-colors flex-1">
+                        {module.title}
+                      </span>
+                      {module.badge && (
+                        <span className="px-1 py-0.5 text-[7px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">
+                          {module.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
 
           {/* Quick Stats - Compact */}
@@ -390,29 +333,6 @@ const Dashboard = () => {
               <p className="text-2xl font-bold text-[#FFB800]">89</p>
               <p className="text-white/50 text-[10px]">Active</p>
             </motion.div>
-          </div>
-
-          {/* Legend - Compact */}
-          <div className="mt-2 p-2.5 rounded-lg border border-white/10 bg-black/30">
-            <p className="text-white/60 text-[10px] mb-2 font-semibold">Node Legend</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { label: 'Cyber Crime', color: '#00C2FF' },
-                { label: 'Fraud', color: '#FF3B3B' },
-                { label: 'Active', color: '#FFB800' },
-                { label: 'Resolved', color: '#00FFB3' }
-              ].map(item => (
-                <div key={item.label} className="flex items-center gap-1.5">
-                  <motion.div 
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.color}` }}
-                    animate={{ boxShadow: [`0 0 4px ${item.color}`, `0 0 12px ${item.color}`, `0 0 4px ${item.color}`] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  />
-                  <span className="text-white/60 text-[10px]">{item.label}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>
