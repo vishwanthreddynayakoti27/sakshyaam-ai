@@ -11,6 +11,8 @@ import jwt
 import logging
 import base64
 import io
+import tempfile
+import subprocess
 
 from services.legal_llm import translate_to_legal_english, extract_entities, suggest_bns_sections
 
@@ -24,6 +26,82 @@ db = None
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+
+async def extract_text_from_file(file: UploadFile, contents: bytes) -> str:
+    """Extract text from various document formats"""
+    filename = file.filename.lower() if file.filename else ""
+    
+    # Handle DOCX files
+    if filename.endswith('.docx'):
+        try:
+            from docx import Document
+            doc = Document(io.BytesIO(contents))
+            text_parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+            # Also extract from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if row_text:
+                        text_parts.append(" | ".join(row_text))
+            return "\n".join(text_parts)
+        except Exception as e:
+            logger.error(f"DOCX extraction error: {e}")
+            return f"[Error extracting DOCX: {str(e)}]"
+    
+    # Handle legacy DOC files using antiword
+    elif filename.endswith('.doc'):
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp:
+                tmp.write(contents)
+                tmp_path = tmp.name
+            
+            result = subprocess.run(
+                ['antiword', tmp_path],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            os.unlink(tmp_path)  # Clean up temp file
+            
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout
+            else:
+                return f"[DOC extraction failed: {result.stderr or 'No text extracted'}]"
+        except subprocess.TimeoutExpired:
+            return "[DOC extraction timed out]"
+        except FileNotFoundError:
+            return "[antiword not installed - cannot process .doc files]"
+        except Exception as e:
+            logger.error(f"DOC extraction error: {e}")
+            return f"[Error extracting DOC: {str(e)}]"
+    
+    # Handle PDF files
+    elif filename.endswith('.pdf'):
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(io.BytesIO(contents))
+            text_parts = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+            return "\n".join(text_parts) if text_parts else "[No text extracted from PDF]"
+        except Exception as e:
+            logger.error(f"PDF extraction error: {e}")
+            return f"[Error extracting PDF: {str(e)}]"
+    
+    # Handle image files (would need OCR, return placeholder for now)
+    elif filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
+        # Note: Full OCR implementation would require Google Vision or similar
+        return f"[Image file: {file.filename} - requires OCR processing]"
+    
+    # Unknown format
+    else:
+        return f"[Unsupported file format: {filename}]"
 
 
 def set_database(database):
@@ -371,36 +449,50 @@ async def process_documents(
     
     extracted_data_list = []
     doc_count = 0
+    extraction_logs = []
     
     try:
         # Process Telugu Petition
         if petition:
             doc_count += 1
-            await petition.read()  # Read content for future OCR processing
-            # For images/PDFs, we'd use OCR or multimodal LLM
-            # For now, simulate extraction
-            text = f"[Petition content from {petition.filename}]"
-            result = await process_with_llm(text, "Telugu Petition")
-            if result.get("success"):
-                extracted_data_list.append(result.get("data", {}))
+            contents = await petition.read()
+            text = await extract_text_from_file(petition, contents)
+            extraction_logs.append(f"Petition ({petition.filename}): {len(text)} chars extracted")
+            
+            if text and not text.startswith("[Error") and not text.startswith("[Unsupported"):
+                result = await process_with_llm(text, "Telugu Petition")
+                if result.get("success"):
+                    extracted_data_list.append(result.get("data", {}))
+            else:
+                logger.warning(f"Petition extraction issue: {text[:100]}")
         
         # Process CDF
         if cdf:
             doc_count += 1
-            await cdf.read()  # Read content for future OCR processing
-            text = f"[CDF content from {cdf.filename}]"
-            result = await process_with_llm(text, "Crime Details Form")
-            if result.get("success"):
-                extracted_data_list.append(result.get("data", {}))
+            contents = await cdf.read()
+            text = await extract_text_from_file(cdf, contents)
+            extraction_logs.append(f"CDF ({cdf.filename}): {len(text)} chars extracted")
+            
+            if text and not text.startswith("[Error") and not text.startswith("[Unsupported"):
+                result = await process_with_llm(text, "Crime Details Form")
+                if result.get("success"):
+                    extracted_data_list.append(result.get("data", {}))
+            else:
+                logger.warning(f"CDF extraction issue: {text[:100]}")
         
         # Process Case Diary
         if case_diary:
             doc_count += 1
-            await case_diary.read()  # Read content for future OCR processing
-            text = f"[Case Diary content from {case_diary.filename}]"
-            result = await process_with_llm(text, "Case Diary Part-II")
-            if result.get("success"):
-                extracted_data_list.append(result.get("data", {}))
+            contents = await case_diary.read()
+            text = await extract_text_from_file(case_diary, contents)
+            extraction_logs.append(f"Case Diary ({case_diary.filename}): {len(text)} chars extracted")
+            
+            if text and not text.startswith("[Error") and not text.startswith("[Unsupported"):
+                result = await process_with_llm(text, "Case Diary Part-II")
+                if result.get("success"):
+                    extracted_data_list.append(result.get("data", {}))
+            else:
+                logger.warning(f"Case Diary extraction issue: {text[:100]}")
         
         # Merge all extracted data
         merged_data = merge_extracted_data(extracted_data_list)

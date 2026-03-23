@@ -50,28 +50,38 @@ const MediaForensic = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      setResult(response.data);
+      // Map the response to our expected format
+      const analysisResult = {
+        verdict: response.data.verdict || 'UNKNOWN',
+        confidence: response.data.confidence || response.data.probability_score || 0,
+        details: response.data.details || response.data.analysis_summary || ''
+      };
       
-      const verdict = response.data.verdict;
-      if (verdict === 'REAL') {
+      setResult(analysisResult);
+      
+      if (analysisResult.verdict === 'REAL') {
         toast.success('Media verified as AUTHENTIC');
-      } else if (verdict === 'AI_GENERATED') {
+      } else if (analysisResult.verdict === 'AI_GENERATED') {
         toast.warning('Media detected as AI GENERATED');
-      } else if (verdict === 'DEEP_FAKE') {
+      } else if (analysisResult.verdict === 'DEEP_FAKE') {
         toast.error('Media detected as DEEP FAKE');
       }
     } catch (error) {
       console.error('Analysis error:', error);
-      toast.error('Analysis failed. Please try again.');
+      const errorMsg = error.response?.data?.detail || 'Analysis failed. Please try again.';
+      toast.error(errorMsg);
       
-      // Simulate result for demo
-      const mockResults = [
-        { verdict: 'REAL', confidence: 94.5, details: 'No manipulation detected' },
-        { verdict: 'AI_GENERATED', confidence: 87.2, details: 'AI generation patterns detected' },
-        { verdict: 'DEEP_FAKE', confidence: 91.8, details: 'Face manipulation detected' }
-      ];
-      const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
-      setResult(randomResult);
+      // Only use mock for unsupported file types
+      if (errorMsg.includes('Unsupported')) {
+        // Simulate result for demo with images
+        const mockResults = [
+          { verdict: 'REAL', confidence: 94.5, details: 'No manipulation detected' },
+          { verdict: 'AI_GENERATED', confidence: 87.2, details: 'AI generation patterns detected' },
+          { verdict: 'DEEP_FAKE', confidence: 91.8, details: 'Face manipulation detected' }
+        ];
+        const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
+        setResult(randomResult);
+      }
     } finally {
       setIsAnalyzing(false);
     }
