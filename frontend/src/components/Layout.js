@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import { 
   LayoutDashboard, 
   Languages, 
-  FileText, 
   Scale, 
   Phone, 
   User, 
@@ -20,7 +19,9 @@ import {
   FileCheck,
   Camera,
   Database,
-  Activity
+  Activity,
+  Shield,
+  Microscope
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -44,23 +45,25 @@ const Layout = ({ children }) => {
     navigate('/login');
   };
 
-  const menuItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-    // Unified Intelligence Pipeline
-    { icon: Workflow, label: 'Unified Pipeline', path: '/unified-pipeline', isNew: true },
-    { icon: FileCheck, label: 'Document Generator', path: '/document-generator', isNew: true },
-    { icon: Package, label: 'Evidence & Hash', path: '/evidence-hash', isNew: true },
-    { icon: Camera, label: 'CCTV Search', path: '/cctv-search', isNew: true },
-    { icon: Database, label: 'CCTNS Bridge', path: '/cctns-bridge', isNew: true },
-    // Existing Tools
+  // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
+  const adminWing = [
+    { icon: Workflow, label: 'Charge Sheet Fusion', path: '/charge-sheet-fusion', isNew: true },
+    { icon: FileCheck, label: 'Document Generator', path: '/document-generator' },
+    { icon: Database, label: 'CCTNS Bridge', path: '/cctns-bridge' },
     { icon: Languages, label: 'Language Intelligence', path: '/language-intelligence' },
-    { icon: FileText, label: 'FIR Draft Assistant', path: '/fir-draft' },
     { icon: Scale, label: 'Legal Intelligence', path: '/legal-intelligence' },
     { icon: FileStack, label: 'Investigation Docs', path: '/investigation-documents' },
     { icon: DollarSign, label: 'Fraud Recovery', path: '/fraud-recovery' },
-    { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
     { icon: Calendar, label: 'Smart Summons', path: '/smart-summons' },
     { icon: MapPin, label: 'Jurisdiction Finder', path: '/jurisdiction-finder' },
+  ];
+
+  // WING 2: SAAKSHYAM LAB - Advanced Forensic Lab
+  const labWing = [
+    { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
+    { icon: Microscope, label: 'Media Forensic', path: '/media-forensic', isNew: true },
+    { icon: Camera, label: 'CCTV Search', path: '/cctv-search' },
+    { icon: Package, label: 'e-Sakshya & Hash', path: '/evidence-hash' },
   ];
 
   return (
@@ -80,7 +83,7 @@ const Layout = ({ children }) => {
                 </div>
                 <div>
                   <span className="text-white font-heading font-bold text-sm block">SAAKSHYAM AI</span>
-                  <span className="text-accent/80 text-[10px] font-semibold tracking-wider">COMMAND CONSOLE</span>
+                  <span className="text-accent/80 text-[10px] font-semibold tracking-wider">DUAL-WING SYSTEM</span>
                 </div>
               </motion.div>
             )}
@@ -94,28 +97,83 @@ const Layout = ({ children }) => {
           </div>
 
           <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-            {menuItems.map((item) => {
+            {/* Dashboard */}
+            <Link
+              to="/"
+              data-testid="sidebar-dashboard"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                location.pathname === '/'
+                  ? 'bg-accent/20 text-accent border border-accent/30'
+                  : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
+              }`}
+            >
+              <LayoutDashboard size={18} strokeWidth={1.5} />
+              {sidebarOpen && <span className="font-medium text-sm">Dashboard</span>}
+            </Link>
+
+            {/* WING 1: ADMIN */}
+            {sidebarOpen && (
+              <div className="pt-3 pb-1">
+                <div className="flex items-center gap-2 px-3 py-1">
+                  <Shield size={12} className="text-[#00C2FF]" />
+                  <span className="text-[10px] text-[#00C2FF] font-bold tracking-wider">WING 1: ADMIN</span>
+                </div>
+              </div>
+            )}
+            {adminWing.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
                   to={item.path}
-                  data-testid={`nav-link-${item.label.toLowerCase().replace(/ /g, '-')}`}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                  data-testid={`sidebar-${item.label.toLowerCase().replace(/ /g, '-')}`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all ${
                     isActive
-                      ? 'bg-accent/20 text-accent border border-accent/30'
+                      ? 'bg-[#00C2FF]/20 text-[#00C2FF] border border-[#00C2FF]/30'
                       : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
                   }`}
                 >
-                  <Icon size={18} strokeWidth={1.5} />
+                  <Icon size={16} strokeWidth={1.5} />
                   {sidebarOpen && (
-                    <span className="font-medium text-sm flex-1">{item.label}</span>
+                    <span className="font-medium text-xs flex-1">{item.label}</span>
                   )}
                   {sidebarOpen && item.isNew && (
-                    <span className="px-1.5 py-0.5 bg-success/20 text-success text-[9px] font-bold rounded">
-                      NEW
-                    </span>
+                    <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">NEW</span>
+                  )}
+                </Link>
+              );
+            })}
+
+            {/* WING 2: LAB */}
+            {sidebarOpen && (
+              <div className="pt-4 pb-1">
+                <div className="flex items-center gap-2 px-3 py-1">
+                  <Microscope size={12} className="text-[#FF3B3B]" />
+                  <span className="text-[10px] text-[#FF3B3B] font-bold tracking-wider">WING 2: FORENSIC LAB</span>
+                </div>
+              </div>
+            )}
+            {labWing.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  data-testid={`sidebar-${item.label.toLowerCase().replace(/ /g, '-')}`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all ${
+                    isActive
+                      ? 'bg-[#FF3B3B]/20 text-[#FF3B3B] border border-[#FF3B3B]/30'
+                      : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
+                  }`}
+                >
+                  <Icon size={16} strokeWidth={1.5} />
+                  {sidebarOpen && (
+                    <span className="font-medium text-xs flex-1">{item.label}</span>
+                  )}
+                  {sidebarOpen && item.isNew && (
+                    <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">NEW</span>
                   )}
                 </Link>
               );
@@ -125,7 +183,7 @@ const Layout = ({ children }) => {
           <div className="p-3 border-t border-white/10 space-y-1">
             <Link
               to="/profile"
-              data-testid="nav-link-profile"
+              data-testid="sidebar-profile"
               className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
                 location.pathname === '/profile'
                   ? 'bg-accent/20 text-accent border border-accent/30'
@@ -156,14 +214,16 @@ const Layout = ({ children }) => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-heading font-bold text-white">Cyber Investigation Command Center</h2>
-              <p className="text-xs text-white/50">Pre-CCTNS Intelligence & FIR Preparation System</p>
+              <p className="text-xs text-white/50">Dual-Wing Modular System • Pre-CCTNS Intelligence</p>
             </div>
-            {officer && (
-              <div className="text-right">
-                <p className="text-white font-semibold text-sm" data-testid="header-officer-name">{officer.name}</p>
-                <p className="text-xs text-white/60">{officer.rank} • {officer.district}</p>
-              </div>
-            )}
+            {/* Profile button only - no name/designation */}
+            <Link
+              to="/profile"
+              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+              data-testid="header-profile-btn"
+            >
+              <User size={20} className="text-white/70" />
+            </Link>
           </div>
         </header>
 

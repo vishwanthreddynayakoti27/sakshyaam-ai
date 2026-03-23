@@ -3,11 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Languages, 
-  FileText, 
   Scale, 
   Phone, 
   Search,
-  User,
   MapPin,
   Calendar,
   FileStack,
@@ -19,7 +17,9 @@ import {
   FileCheck,
   Database,
   Camera,
-  Activity
+  Activity,
+  Microscope,
+  User
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -43,22 +43,25 @@ const Dashboard = () => {
     }
   }, []);
 
-  const modules = [
-    // UNIFIED INTELLIGENCE PIPELINE - Core Modules
-    { icon: Workflow, title: 'Unified Pipeline', path: '/unified-pipeline', color: '#00FFB3', badge: 'NEW' },
-    { icon: FileCheck, title: 'Document Generator', path: '/document-generator', color: '#4F7EFF', badge: 'NEW' },
-    { icon: Package, title: 'Evidence & Hash', path: '/evidence-hash', color: '#FFB800', badge: 'NEW' },
-    { icon: Camera, title: 'CCTV Search', path: '/cctv-search', color: '#FF3B3B', badge: 'NEW' },
-    { icon: Database, title: 'CCTNS Bridge', path: '/cctns-bridge', color: '#00C2FF', badge: 'NEW' },
-    // Existing Tools
+  // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
+  const adminWing = [
+    { icon: Workflow, title: 'Charge Sheet Fusion', path: '/charge-sheet-fusion', color: '#00C2FF', badge: 'NEW' },
+    { icon: FileCheck, title: 'Document Generator', path: '/document-generator', color: '#4F7EFF' },
+    { icon: Database, title: 'CCTNS Bridge', path: '/cctns-bridge', color: '#00FFB3' },
     { icon: Languages, title: 'Language Intelligence', path: '/language-intelligence', color: '#00C2FF' },
-    { icon: FileText, title: 'FIR Draft Assistant', path: '/fir-draft', color: '#4F7EFF' },
     { icon: Scale, title: 'Legal Intelligence', path: '/legal-intelligence', color: '#00FFB3' },
+    { icon: FileStack, title: 'Investigation Docs', path: '/investigation-documents', color: '#4F7EFF' },
     { icon: DollarSign, title: 'Fraud Recovery', path: '/fraud-recovery', color: '#FF3B3B' },
+    { icon: Calendar, title: 'Smart Summons', path: '/smart-summons', color: '#FFB800' },
+    { icon: MapPin, title: 'Jurisdiction Finder', path: '/jurisdiction-finder', color: '#00C2FF' },
+  ];
+
+  // WING 2: SAAKSHYAM LAB - Advanced Forensic Lab
+  const labWing = [
     { icon: Phone, title: 'CDR Analyzer', path: '/cdr-analyzer', color: '#FFB800' },
-    { icon: Calendar, title: 'Smart Summons', path: '/smart-summons', color: '#00C2FF' },
-    { icon: MapPin, title: 'Jurisdiction Finder', path: '/jurisdiction-finder', color: '#4F7EFF' },
-    { icon: FileStack, title: 'Investigation Docs', path: '/investigation-documents', color: '#00C2FF' },
+    { icon: Microscope, title: 'Media Forensic', path: '/media-forensic', color: '#FF3B3B', badge: 'NEW' },
+    { icon: Camera, title: 'CCTV Search', path: '/cctv-search', color: '#4F7EFF' },
+    { icon: Package, title: 'e-Sakshya & Hash', path: '/evidence-hash', color: '#00FFB3' },
   ];
 
   const activeInvestigations = [
@@ -67,7 +70,8 @@ const Dashboard = () => {
     { id: 3, title: 'Financial Scam', subtitle: 'Bank Freeze Request', status: 'Critical', priority: 'critical' },
   ];
 
-  const filteredModules = modules.filter(m => 
+  const allModules = [...adminWing, ...labWing];
+  const filteredModules = allModules.filter(m => 
     m.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -147,12 +151,16 @@ const Dashboard = () => {
       </div>
 
       <div className="relative z-10 flex" style={{ height: 'calc(100vh - 85px)' }}>
-        {/* Left Sidebar - Compact Module Cards */}
+        {/* Left Sidebar - Dual Wing Module Cards */}
         <div className="w-56 border-r border-[#00C2FF]/20 bg-[#030614]/90 backdrop-blur-md p-2 overflow-hidden z-20">
-          <h3 className="text-[#00C2FF] text-[10px] font-bold uppercase tracking-wider mb-2 px-2">Investigation Modules</h3>
           
-          <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-            {filteredModules.map((module, index) => {
+          <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 100px)' }}>
+            {/* WING 1: ADMIN */}
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
+              <Shield size={12} className="text-[#00C2FF]" />
+              <span className="text-[9px] text-[#00C2FF] font-bold tracking-wider">WING 1: ADMIN</span>
+            </div>
+            {adminWing.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase())).map((module, index) => {
               const Icon = module.icon;
               return (
                 <motion.div
@@ -166,32 +174,80 @@ const Dashboard = () => {
                   className="relative group cursor-pointer"
                 >
                   <div 
-                    className="relative p-2.5 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
+                    className="relative p-2 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
                     style={{ borderColor: `${module.color}20` }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = module.color;
-                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30, inset 0 0 15px ${module.color}08`;
+                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30`;
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor = `${module.color}20`;
                       e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       <div 
-                        className="p-1.5 rounded-md transition-all duration-300"
-                        style={{ 
-                          backgroundColor: `${module.color}15`,
-                          boxShadow: `0 0 8px ${module.color}20`
-                        }}
+                        className="p-1 rounded-md"
+                        style={{ backgroundColor: `${module.color}15` }}
                       >
-                        <Icon size={16} style={{ color: module.color }} />
+                        <Icon size={14} style={{ color: module.color }} />
                       </div>
-                      <span className="text-white/85 text-xs font-medium group-hover:text-white transition-colors flex-1">
+                      <span className="text-white/85 text-[11px] font-medium group-hover:text-white transition-colors flex-1">
                         {module.title}
                       </span>
                       {module.badge && (
-                        <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3] animate-pulse">
+                        <span className="px-1 py-0.5 text-[7px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">
+                          {module.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+
+            {/* WING 2: LAB */}
+            <div className="flex items-center gap-2 px-2 py-1.5 mt-3 mb-1">
+              <Microscope size={12} className="text-[#FF3B3B]" />
+              <span className="text-[9px] text-[#FF3B3B] font-bold tracking-wider">WING 2: FORENSIC LAB</span>
+            </div>
+            {labWing.filter(m => m.title.toLowerCase().includes(searchTerm.toLowerCase())).map((module, index) => {
+              const Icon = module.icon;
+              return (
+                <motion.div
+                  key={module.path}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  whileHover={{ scale: 1.02, x: 3 }}
+                  onClick={() => navigate(module.path)}
+                  data-testid={`module-${module.title.toLowerCase().replace(/ /g, '-')}`}
+                  className="relative group cursor-pointer"
+                >
+                  <div 
+                    className="relative p-2 rounded-lg border transition-all duration-300 bg-[#0B0F1A]/80 group-hover:bg-[#0B0F1A]/95"
+                    style={{ borderColor: `${module.color}20` }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = module.color;
+                      e.currentTarget.style.boxShadow = `0 0 15px ${module.color}30`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = `${module.color}20`;
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="p-1 rounded-md"
+                        style={{ backgroundColor: `${module.color}15` }}
+                      >
+                        <Icon size={14} style={{ color: module.color }} />
+                      </div>
+                      <span className="text-white/85 text-[11px] font-medium group-hover:text-white transition-colors flex-1">
+                        {module.title}
+                      </span>
+                      {module.badge && (
+                        <span className="px-1 py-0.5 text-[7px] font-bold rounded bg-[#00FFB3]/20 text-[#00FFB3]">
                           {module.badge}
                         </span>
                       )}

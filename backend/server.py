@@ -2541,17 +2541,19 @@ async def list_remand_reports(officer_id: str = Depends(get_current_officer)):
 
 
 # Import new routers for Unified Intelligence Pipeline
-from routers import case_context, document_generator, evidence_manager
+from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion
 
 # Set database for new routers
 case_context.set_database(db)
 document_generator.set_database(db)
 evidence_manager.set_database(db)
+charge_sheet_fusion.set_database(db)
 
 # Include new routers under /api prefix
 api_router.include_router(case_context.router)
 api_router.include_router(document_generator.router)
 api_router.include_router(evidence_manager.router)
+api_router.include_router(charge_sheet_fusion.router)
 
 app.include_router(api_router)
 
