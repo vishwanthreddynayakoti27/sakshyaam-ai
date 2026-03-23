@@ -26,6 +26,75 @@ db = None
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+GOOGLE_VISION_CREDENTIALS = os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
+GOOGLE_TRANSLATE_CREDENTIALS = os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')
+
+# Initialize Google Cloud clients
+vision_client = None
+translate_client = None
+
+try:
+    if GOOGLE_VISION_CREDENTIALS and os.path.exists(GOOGLE_VISION_CREDENTIALS):
+        from google.cloud import vision
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(GOOGLE_VISION_CREDENTIALS)
+        vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+        logger.info("Google Vision client initialized for Charge Sheet Fusion")
+except Exception as e:
+    logger.warning(f"Could not initialize Vision client in Charge Sheet Fusion: {e}")
+
+try:
+    if GOOGLE_TRANSLATE_CREDENTIALS and os.path.exists(GOOGLE_TRANSLATE_CREDENTIALS):
+        from google.cloud import translate_v2 as translate
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_file(GOOGLE_TRANSLATE_CREDENTIALS)
+        translate_client = translate.Client(credentials=credentials)
+        logger.info("Google Translate client initialized for Charge Sheet Fusion")
+except Exception as e:
+    logger.warning(f"Could not initialize Translate client in Charge Sheet Fusion: {e}")
+
+
+async def extract_text_from_image_ocr(contents: bytes, filename: str) -> dict:
+    """Extract text from image using Google Vision OCR and translate if needed"""
+    result = {"text": "", "language": "unknown", "translated": ""}
+    
+    if not vision_client:
+        result["text"] = f"[OCR not available - Google Vision not configured. Image: {filename}]"
+        return result
+    
+    try:
+        from google.cloud import vision
+        image = vision.Image(content=contents)
+        response = vision_client.text_detection(image=image)
+        
+        if response.error.message:
+            result["text"] = f"[Vision API error: {response.error.message}]"
+            return result
+        
+        texts = response.text_annotations
+        if texts:
+            result["text"] = texts[0].description
+            result["language"] = texts[0].locale if texts[0].locale else "unknown"
+            
+            # Translate if not English
+            if translate_client and result["language"] not in ['en', 'unknown', '']:
+                try:
+                    translation = translate_client.translate(result["text"], target_language='en')
+                    result["translated"] = translation['translatedText']
+                    logger.info(f"Translated from {result['language']} to English")
+                except Exception as te:
+                    logger.warning(f"Translation failed: {te}")
+                    result["translated"] = result["text"]
+            else:
+                result["translated"] = result["text"]
+        else:
+            result["text"] = "[No text detected in image]"
+            
+    except Exception as e:
+        logger.error(f"OCR extraction error: {e}")
+        result["text"] = f"[OCR error: {str(e)}]"
+    
+    return result
 
 
 async def extract_text_from_file(file: UploadFile, contents: bytes) -> str:
@@ -94,10 +163,13 @@ async def extract_text_from_file(file: UploadFile, contents: bytes) -> str:
             logger.error(f"PDF extraction error: {e}")
             return f"[Error extracting PDF: {str(e)}]"
     
-    # Handle image files (would need OCR, return placeholder for now)
+    # Handle image files with OCR
     elif filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-        # Note: Full OCR implementation would require Google Vision or similar
-        return f"[Image file: {file.filename} - requires OCR processing]"
+        ocr_result = await extract_text_from_image_ocr(contents, file.filename)
+        # Return translated text if available, otherwise original
+        if ocr_result["translated"]:
+            return ocr_result["translated"]
+        return ocr_result["text"]
     
     # Unknown format
     else:

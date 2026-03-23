@@ -82,10 +82,13 @@ Central data model sharing information across all tools:
 - [x] Dual-Wing UI architecture (Layout.js, Dashboard.js)
 - [x] Charge Sheet Fusion with multi-upload support
 - [x] Document text extraction (DOCX, DOC, PDF)
+- [x] **OCR support for Telugu Petition images (Google Vision + Translation)**
 - [x] Active Blanks for missing mandatory fields
-- [x] Media Forensic with new verdict format
+- [x] Media Forensic with new verdict format ([REAL]/[AI_GENERATED]/[DEEP_FAKE] + %)
+- [x] Image file support for Media Forensic (JPG, PNG, GIF, WebP)
 - [x] User name/designation removed from top bar
 - [x] Navigation updated for dual-wing modules
+- [x] **Deprecated modules removed (SenticelDiary, CaseFileManager, FIRDraftAssistant)**
 
 ## Removed Modules
 - SENTICEL Investigation Diary
