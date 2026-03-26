@@ -15,6 +15,12 @@ import tempfile
 import subprocess
 
 from services.legal_llm import translate_to_legal_english, extract_entities, suggest_bns_sections
+from services.template_generator import (
+    generate_18_column_charge_sheet,
+    generate_case_diary_part1,
+    generate_html_table_charge_sheet,
+    suggest_bns_sections as ml_suggest_sections
+)
 
 logger = logging.getLogger(__name__)
 
@@ -682,9 +688,24 @@ async def process_documents(
             "police_station": police_station,
             "district": district,
             "fir_number": fir_number,
-            "sections": sections
+            "sections": sections,
+            "fir_date": "",  # Can be extracted from documents
+            "io_name": officer.get("name", ""),
+            "io_rank": officer.get("rank", "")
         }
-        charge_sheet = generate_charge_sheet_content(merged_data, case_info)
+        
+        # Generate 18-Column Charge Sheet (Makthal PS Format)
+        charge_sheet_18col = generate_18_column_charge_sheet(merged_data, case_info)
+        
+        # Generate Case Diary Part-I with 8-Point Header
+        case_diary_part1 = generate_case_diary_part1(merged_data, case_info)
+        
+        # Generate HTML table version for export/print
+        charge_sheet_html = generate_html_table_charge_sheet(merged_data, case_info)
+        
+        # ML-suggested sections based on brief facts
+        brief_facts = merged_data.get("brief_facts", "")
+        suggested_sections = ml_suggest_sections(brief_facts) if brief_facts else []
         
         # Save to database
         fusion_record = {
@@ -695,7 +716,11 @@ async def process_documents(
             "documents_processed": doc_count,
             "extracted_data": merged_data,
             "missing_fields": missing_fields,
-            "charge_sheet": charge_sheet,
+            "charge_sheet_18col": charge_sheet_18col,
+            "case_diary_part1": case_diary_part1,
+            "charge_sheet_html": charge_sheet_html,
+            "suggested_sections": suggested_sections,
+            "extraction_logs": extraction_logs,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         await db.charge_sheet_fusions.insert_one(fusion_record)
@@ -706,10 +731,16 @@ async def process_documents(
             "extracted_data": {
                 "accused_count": len(merged_data.get("accused_persons", [])),
                 "witness_count": len(merged_data.get("witnesses", [])),
-                "sections": ", ".join(merged_data.get("sections_of_law", [])) or sections
+                "sections": ", ".join(merged_data.get("sections_of_law", [])) or sections,
+                "complainant": merged_data.get("complainant", {}),
+                "brief_facts": merged_data.get("brief_facts", "")
             },
             "missing_fields": missing_fields,
-            "charge_sheet": charge_sheet
+            "suggested_sections": suggested_sections,
+            "charge_sheet": charge_sheet_18col,
+            "case_diary": case_diary_part1,
+            "charge_sheet_html": charge_sheet_html,
+            "extraction_logs": extraction_logs
         }
         
     except Exception as e:

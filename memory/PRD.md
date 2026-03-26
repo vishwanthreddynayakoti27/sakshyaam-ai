@@ -15,7 +15,7 @@ Transform SAAKSHYAM AI into a Dual-Wing Modular System with:
 
 | Module | Description | Status |
 |--------|-------------|--------|
-| **Charge Sheet Fusion** | Multi-upload (Telugu Petition, CDF, Case Diary), 95% accuracy extraction, Active Blanks for missing fields, editable charge sheet generation | COMPLETE |
+| **Charge Sheet Fusion** | Multi-upload (Telugu Petition, CDF, Case Diary), **18-Column Fixed Template** with 95% accuracy extraction, **Active Blanks** for missing fields, **ML-driven BNS section suggestion**, editable charge sheet + Case Diary Part-I generation | COMPLETE |
 | **Document Generator** | Auto-generates Charge Sheet, Case Diary, Remand Report, BSA 63 Certificate | COMPLETE |
 | **CCTNS Bridge** | JSON export for browser extension, consolidates all case data | COMPLETE |
 | **Language Intelligence** | Translation, OCR, Speech-to-Text | COMPLETE |
@@ -96,6 +96,14 @@ Central data model sharing information across all tools:
 - [x] **Active Investigations section removed from dashboard**
 - [x] **User name/designation replaced with "SAAKSHYAM AI Command Center"**
 - [x] **CCTV Search video fixes**: Added video thumbnail preview, main video player, and working "Jump to" timestamp feature
+
+### Session 4 (18-Column Fixed Template System)
+- [x] **18-Column Charge Sheet Template** matching Makthal PS format (Columns 01-18)
+- [x] **8-Point Case Diary (Part-I)** with all rows always present for manual entry
+- [x] **Blank Integrity**: Missing fields shown as `[ ]` placeholder instead of errors
+- [x] **ML-Driven Section Suggestion**: Auto-populates BNS sections based on brief facts
+- [x] **Dynamic Row Expansion**: Accused (A1-An) and Witnesses (LW1-LWn) rows expand dynamically
+- [x] **HTML Table Export** for print-ready charge sheets
 
 ## Removed Modules
 - SENTICEL Investigation Diary
