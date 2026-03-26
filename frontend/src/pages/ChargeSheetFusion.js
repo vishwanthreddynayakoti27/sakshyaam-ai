@@ -66,6 +66,8 @@ const ChargeSheetFusion = () => {
   const [generatedChargeSheet, setGeneratedChargeSheet] = useState(null);
   const [extractedData, setExtractedData] = useState(null);
   const [activeBlankFields, setActiveBlankFields] = useState([]);
+  const [suggestedSections, setSuggestedSections] = useState([]);
+  const [caseDiaryContent, setCaseDiaryContent] = useState('');
   
   // Editable content
   const [editableContent, setEditableContent] = useState('');
@@ -213,6 +215,8 @@ const ChargeSheetFusion = () => {
       setGeneratedChargeSheet(response.data.charge_sheet || '');
       setEditableContent(response.data.charge_sheet || '');
       setActiveBlankFields(response.data.missing_fields || []);
+      setSuggestedSections(response.data.suggested_sections || []);
+      setCaseDiaryContent(response.data.case_diary || '');
       
       setActiveStep(3);
       toast.success('Documents processed successfully!');
@@ -644,6 +648,26 @@ const ChargeSheetFusion = () => {
                     </div>
                   )}
 
+                  {/* ML Suggested Sections */}
+                  {suggestedSections && suggestedSections.length > 0 && (
+                    <div className="p-4 rounded-xl bg-[#4F7EFF]/10 border border-[#4F7EFF]/30">
+                      <h3 className="text-[#4F7EFF] font-semibold mb-2 flex items-center gap-2">
+                        <Scale size={18} />
+                        ML Suggested Sections
+                      </h3>
+                      <p className="text-white/60 text-xs mb-2">
+                        Based on brief facts analysis:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {suggestedSections.map((sec, idx) => (
+                          <span key={idx} className="px-2 py-1 rounded bg-[#4F7EFF]/20 text-[#4F7EFF] text-xs font-medium">
+                            {sec}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Extracted Summary */}
                   <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
                     <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
@@ -688,10 +712,32 @@ const ChargeSheetFusion = () => {
                 {/* Editable Document */}
                 <div className="lg:col-span-2">
                   <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
+                    {/* Document Type Tabs */}
+                    <div className="flex items-center gap-2 mb-4">
+                      <Button
+                        onClick={() => setEditableContent(generatedChargeSheet)}
+                        variant="outline"
+                        size="sm"
+                        className={`border-white/20 ${editableContent === generatedChargeSheet ? 'bg-[#00C2FF]/20 text-[#00C2FF]' : 'text-white/60'}`}
+                      >
+                        <FileCheck size={14} className="mr-1" />
+                        Charge Sheet (18-Col)
+                      </Button>
+                      <Button
+                        onClick={() => setEditableContent(caseDiaryContent)}
+                        variant="outline"
+                        size="sm"
+                        className={`border-white/20 ${editableContent === caseDiaryContent ? 'bg-[#00FFB3]/20 text-[#00FFB3]' : 'text-white/60'}`}
+                      >
+                        <Table size={14} className="mr-1" />
+                        Case Diary Part-I
+                      </Button>
+                    </div>
+                    
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-white font-semibold flex items-center gap-2">
                         <FileCheck className="text-[#00FFB3]" size={18} />
-                        Generated Charge Sheet (u/s 193 BNSS)
+                        {editableContent === caseDiaryContent ? 'Case Diary Part-I (8-Point)' : 'Charge Sheet (u/s 193 BNSS)'}
                       </h3>
                       <div className="flex gap-2">
                         <Button
@@ -705,6 +751,10 @@ const ChargeSheetFusion = () => {
                         </Button>
                       </div>
                     </div>
+
+                    <p className="text-white/50 text-xs mb-3">
+                      Click any [ ] blank cell to edit. Changes sync to CCTNS Auto-Filler.
+                    </p>
 
                     {isEditing ? (
                       <Textarea

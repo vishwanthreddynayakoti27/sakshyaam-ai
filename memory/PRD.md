@@ -104,6 +104,12 @@ Central data model sharing information across all tools:
 - [x] **ML-Driven Section Suggestion**: Auto-populates BNS sections based on brief facts
 - [x] **Dynamic Row Expansion**: Accused (A1-An) and Witnesses (LW1-LWn) rows expand dynamically
 - [x] **HTML Table Export** for print-ready charge sheets
+- [x] **GD Linkage**: Added GD Entry No. and GD Entry Time fields
+- [x] **Investigation Timeline**: Added "Resumed at" and "Closed for the day at" timestamps
+- [x] **Investigation Narrative**: Auto-generates "On this day I resumed further investigation..." text
+- [x] **Witness Examination**: Auto-generates 180 BNSS statement recording notes
+- [x] **APP Consultation & CDF Verification** notes included
+- [x] **Tabbed Document View**: Switch between Charge Sheet (18-Col) and Case Diary Part-I
 
 ## Removed Modules
 - SENTICEL Investigation Diary

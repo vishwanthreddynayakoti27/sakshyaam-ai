@@ -95,6 +95,7 @@ CHARGE_SHEET_18_COLUMN = """
 # ============================================================================
 # 8-POINT CASE DIARY (PART-I) HEADER TABLE
 # Exact format matching Makthal PS official document
+# Includes GD Linkage, Resumed/Closed Timeline, and Narrative
 # ============================================================================
 
 CASE_DIARY_PART1_TEMPLATE = """
@@ -106,6 +107,11 @@ F.I.R. No.: {fir_number}
 Date, Time & Place of occurrence: {occurrence_datetime_place}
 CD Dt: {cd_date}
 Offence u/s {sections}
+--------------------------------------------------------------------------------
+GD Entry No.: {gd_number}                     GD Entry Time: {gd_entry_time}
+--------------------------------------------------------------------------------
+Investigation Resumed at: {investigation_resumed_time}
+Investigation Closed for the day at: {investigation_closed_time}
 ================================================================================
 
 ┌────┬────────────────────────────────────────────────────────────────────────┐
@@ -140,9 +146,20 @@ Offence u/s {sections}
 └────┴────────────────────────────────────────────────────────────────────────┘
 
 ================================================================================
-                        INVESTIGATION DETAILS
+                    INVESTIGATION NARRATIVE
 ================================================================================
+
+On this day I resumed further investigation into this case at {investigation_resumed_time}.
+
 {investigation_narrative}
+
+{witness_examination_narrative}
+
+{app_consultation}
+
+{verification_notes}
+
+Investigation closed for the day at {investigation_closed_time}.
 
 ================================================================================
                                         ({io_name})
@@ -153,11 +170,12 @@ Offence u/s {sections}
 
 
 def format_accused_rows(accused_persons: List[Dict], for_charge_sheet: bool = True) -> str:
-    """Format accused persons with dynamic row expansion"""
+    """
+    Format accused persons with dynamic row expansion (A1-An)
+    Maintains clean table borders regardless of count
+    """
     if not accused_persons:
-        if for_charge_sheet:
-            return "│     │   [ ] No accused details available                                           │"
-        return "│     │   [ ] No accused details available                                           │"
+        return "│    │   [ ] No accused details available                                      │"
     
     rows = []
     for i, acc in enumerate(accused_persons):
@@ -168,38 +186,59 @@ def format_accused_rows(accused_persons: List[Dict], for_charge_sheet: bool = Tr
         caste = acc.get("caste") or "[ ]"
         occupation = acc.get("occupation") or "[ ]"
         address = acc.get("address") or "[ ]"
+        phone = acc.get("phone") or "[ ]"
         
-        rows.append(f"│     │   {serial}. {name}")
-        rows.append(f"│     │      S/o: {father}")
-        rows.append(f"│     │      Age: {age}, Caste: {caste}, Occupation: {occupation}")
-        rows.append(f"│     │      R/o: {address}")
+        # Create sub-row for each accused with proper formatting
+        rows.append(f"│    │   {serial}. {name}")
+        rows.append(f"│    │      S/o/W/o/D/o: {father}")
+        rows.append(f"│    │      Age: {age} years, Caste: {caste}, Occ: {occupation}")
+        rows.append(f"│    │      R/o: {address}")
+        rows.append(f"│    │      Ph: {phone}")
+        
         if for_charge_sheet:
-            rows.append(f"│     │      a) Date of arrest/release: [ ]")
-            rows.append(f"│     │      b) Surety particulars: [ ]")
-            rows.append(f"│     │      c) Previous convictions: [ ]")
-        rows.append("│     │")
+            # Add arrest/bail details for charge sheet
+            rows.append(f"│    │      a) Date of arrest/release: [ ]")
+            rows.append(f"│    │      b) Sureties if on bail: [ ]")
+            rows.append(f"│    │      c) Previous convictions: [ ]")
+        
+        # Add separator between accused
+        if i < len(accused_persons) - 1:
+            rows.append("│    │   ────────────────────────────────────────────────────────────────")
     
-    # Pad to ensure proper formatting
-    formatted = "\n".join(rows)
-    return formatted
+    return "\n".join(rows)
 
 
 def format_witness_rows(witnesses: List[Dict]) -> str:
-    """Format witness list with dynamic row expansion"""
+    """
+    Format witness list with dynamic row expansion (LW1-LWn)
+    Maintains clean table borders regardless of count
+    """
     if not witnesses:
-        return "│     │   [ ] No witness details available                                          │"
+        return "│    │   [ ] No witness details available                                     │"
     
     rows = []
     for i, wit in enumerate(witnesses):
         serial = wit.get("serial") or f"LW-{i+1}"
         name = wit.get("name") or "[ ]"
-        role = wit.get("role") or "[ ]"
+        father = wit.get("father_name") or "[ ]"
+        age = wit.get("age") or "[ ]"
+        caste = wit.get("caste") or "[ ]"
+        occupation = wit.get("occupation") or "[ ]"
         address = wit.get("address") or "[ ]"
+        phone = wit.get("phone") or "[ ]"
+        role = wit.get("role") or "[ ]"
         
-        rows.append(f"│     │   {serial}. {name}")
-        rows.append(f"│     │      Role: {role}")
-        if address != "[ ]":
-            rows.append(f"│     │      Address: {address}")
+        # Create sub-row for each witness
+        rows.append(f"│    │   {serial}. {name}")
+        rows.append(f"│    │      S/o/W/o/D/o: {father}")
+        rows.append(f"│    │      Age: {age} years, Caste: {caste}, Occ: {occupation}")
+        rows.append(f"│    │      R/o: {address}")
+        rows.append(f"│    │      Ph: {phone}")
+        rows.append(f"│    │      Role: {role}")
+        
+        # Add separator between witnesses
+        if i < len(witnesses) - 1:
+            rows.append("│    │   ────────────────────────────────────────────────────────────────")
     
     return "\n".join(rows)
 
@@ -345,6 +384,7 @@ def generate_18_column_charge_sheet(data: Dict, case_info: Dict) -> str:
 def generate_case_diary_part1(data: Dict, case_info: Dict) -> str:
     """
     Generate Case Diary (Part-I) with 8-Point Header Table
+    Includes GD Linkage, Resumed/Closed Timeline, and Investigation Narrative
     All 8 rows are ALWAYS present even if blank (for manual typing)
     """
     # Extract complainant
@@ -357,10 +397,10 @@ def generate_case_diary_part1(data: Dict, case_info: Dict) -> str:
     complainant_address = comp.get("address") or "[ ]"
     complainant_phone = comp.get("phone") or "[ ]"
     
-    # Format accused table
+    # Format accused table with proper sub-rows
     accused_table = format_accused_rows(data.get("accused_persons", []), for_charge_sheet=False)
     
-    # Format witness table
+    # Format witness table with proper sub-rows
     witness_table = format_witness_rows(data.get("witnesses", []))
     
     # Offense details
@@ -370,8 +410,30 @@ def generate_case_diary_part1(data: Dict, case_info: Dict) -> str:
     # Sections
     sections = ", ".join(data.get("sections_of_law", [])) or case_info.get("sections") or "[ ]"
     
-    # Investigation narrative (initially blank for manual entry)
-    investigation_narrative = data.get("brief_facts") or "[ ] - To be filled by Station Writer"
+    # GD Linkage (General Diary)
+    gd_number = case_info.get("gd_number") or "[ ]"
+    gd_entry_time = case_info.get("gd_entry_time") or "[ ] hrs"
+    
+    # Investigation Timeline
+    investigation_resumed_time = case_info.get("investigation_resumed_time") or "10:00 hrs"
+    investigation_closed_time = case_info.get("investigation_closed_time") or "18:00 hrs"
+    
+    # Generate witness examination narrative
+    witnesses = data.get("witnesses", [])
+    witness_examination_narrative = generate_witness_examination_narrative(witnesses)
+    
+    # APP consultation note
+    app_consultation = "Consulted with the Assistant Public Prosecutor (APP) regarding the legal provisions and course of investigation."
+    
+    # Verification notes
+    verification_notes = "Verified the Rough Sketch and Modus Operandi as recorded in the Crime Details Form (CDF)."
+    
+    # Main investigation narrative
+    brief_facts = data.get("brief_facts") or ""
+    if brief_facts:
+        investigation_narrative = f"Based on the complaint received, proceeded to investigate the matter. {brief_facts}"
+    else:
+        investigation_narrative = "[ ] - To be filled by Station Writer"
     
     case_diary = CASE_DIARY_PART1_TEMPLATE.format(
         police_station=case_info.get("police_station", "[ ]"),
@@ -380,6 +442,10 @@ def generate_case_diary_part1(data: Dict, case_info: Dict) -> str:
         occurrence_datetime_place=occurrence_datetime_place,
         cd_date=datetime.now().strftime("%d.%m.%Y"),
         sections=sections,
+        gd_number=gd_number,
+        gd_entry_time=gd_entry_time,
+        investigation_resumed_time=investigation_resumed_time,
+        investigation_closed_time=investigation_closed_time,
         date_time_of_report=case_info.get("fir_date") or datetime.now().strftime("%d.%m.%Y"),
         complainant_name=complainant_name,
         complainant_father=complainant_father,
@@ -395,11 +461,33 @@ def generate_case_diary_part1(data: Dict, case_info: Dict) -> str:
         deceased_details="---",
         witness_table=witness_table,
         investigation_narrative=investigation_narrative,
+        witness_examination_narrative=witness_examination_narrative,
+        app_consultation=app_consultation,
+        verification_notes=verification_notes,
         io_name=case_info.get("io_name") or "[ ]",
         io_rank=case_info.get("io_rank") or "[ ]"
     )
     
     return case_diary
+
+
+def generate_witness_examination_narrative(witnesses: List[Dict]) -> str:
+    """Generate narrative for witness examination under 180 BNSS"""
+    if not witnesses:
+        return "[ ] - No witnesses examined on this day."
+    
+    narratives = []
+    for i, wit in enumerate(witnesses):
+        serial = wit.get("serial") or f"LW-{i+1}"
+        name = wit.get("name") or "[ ]"
+        role = wit.get("role") or ""
+        
+        if role:
+            narratives.append(f"Examined {serial} ({name}) - {role} and recorded statement under Section 180 BNSS.")
+        else:
+            narratives.append(f"Examined {serial} ({name}) and recorded statement under Section 180 BNSS.")
+    
+    return "\n".join(narratives)
 
 
 def generate_html_table_charge_sheet(data: Dict, case_info: Dict, embedded_images: Dict = None) -> str:
