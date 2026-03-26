@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Upload, Bell, FileText, Clock, AlertTriangle, CheckCircle, Download, Search } from 'lucide-react';
+import { Calendar, Upload, Bell, FileText, Clock, AlertTriangle, CheckCircle, Download, Search, MessageCircle } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
-import { ocr } from '../utils/api';
+import api, { ocr } from '../utils/api';
 import jsPDF from 'jspdf';
 
 const SmartSummons = () => {
@@ -117,13 +117,34 @@ const SmartSummons = () => {
       notificationStatus: 'Scheduled for 09:00 AM, 1 day before hearing'
     };
 
-    // Schedule WhatsApp notification (backend would handle actual scheduling)
+    // Schedule WhatsApp notification via backend API
     try {
-      // In production, this would call the backend to schedule the notification
-      toast.success('WhatsApp notifications scheduled for all contacts!');
-      toast.info(`Reminders will be sent at 09:00 AM on ${getOneDayBefore(formData.hearingDate)}`);
+      const scheduleResponse = await api.post('/summons/schedule', {
+        summons_id: newSummons.id,
+        case_number: formData.caseNumber,
+        court_name: formData.courtName,
+        hearing_date: formData.hearingDate,
+        hearing_time: formData.hearingTime,
+        party_name: formData.partyName,
+        advocate: formData.advocate,
+        purpose: formData.purpose,
+        court_police_phone: formData.courtPolicePhone,
+        victim_phone: formData.victimPhone,
+        advocate_phone: formData.advocatePhone
+      });
+      
+      if (scheduleResponse.data.success) {
+        toast.success('WhatsApp notifications scheduled for all contacts!');
+        toast.info(`Reminders will be sent at ${scheduleResponse.data.notification_time || '09:00 AM, 1 day before'}`);
+        newSummons.notificationStatus = `Scheduled: ${scheduleResponse.data.notification_time}`;
+      } else {
+        toast.warning('Summons saved but notification scheduling failed');
+        newSummons.notificationStatus = 'Scheduling failed - ' + (scheduleResponse.data.error || 'Unknown error');
+      }
     } catch (error) {
       console.error('Notification scheduling error:', error);
+      toast.warning('Summons saved but WhatsApp scheduling needs API configuration');
+      newSummons.notificationStatus = 'API pending configuration';
     }
 
     setSummonsList(prev => [newSummons, ...prev]);

@@ -2748,6 +2748,191 @@ async def extract_video_frame(
 
 
 
+# =============================================================================
+# SMART SUMMONS SCHEDULER ENDPOINTS
+# =============================================================================
+
+from services.summons_scheduler import (
+    schedule_summons_notification,
+    get_scheduled_summons,
+    cancel_summons_notification,
+    format_whatsapp_message
+)
+
+
+class SummonsScheduleRequest(BaseModel):
+    summons_id: str
+    case_number: str
+    court_name: str = ""
+    hearing_date: str  # DD/MM/YYYY or DD-MM-YYYY
+    hearing_time: str = ""
+    party_name: str = ""
+    advocate: str = ""
+    purpose: str = ""
+    court_police_phone: str
+    victim_phone: str
+    advocate_phone: str
+
+
+@api_router.post("/summons/schedule")
+async def schedule_summons(
+    request: SummonsScheduleRequest,
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    Schedule WhatsApp notifications for a court summons.
+    Sends to Court Police, Victim, and Defense Advocate at 09:00 AM, 1 day before hearing.
+    """
+    summons_data = request.model_dump()
+    summons_data['officer_id'] = officer_id
+    
+    # Store summons in database
+    summons_record = {
+        **summons_data,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "scheduled"
+    }
+    await db.summons.insert_one(summons_record)
+    
+    # Schedule notifications
+    result = await schedule_summons_notification(request.summons_id, summons_data)
+    
+    return {
+        "success": result.get("success", False),
+        "summons_id": request.summons_id,
+        "notification_time": result.get("notification_time", ""),
+        "contacts_scheduled": 3,
+        "message": result.get("message", ""),
+        "preview_message": format_whatsapp_message(summons_data)
+    }
+
+
+@api_router.get("/summons/scheduled")
+async def get_scheduled(officer_id: str = Depends(get_current_officer)):
+    """Get all scheduled summons notifications."""
+    summons_list = await db.summons.find(
+        {"officer_id": officer_id},
+        {"_id": 0}
+    ).to_list(100)
+    return {"summons": summons_list, "count": len(summons_list)}
+
+
+@api_router.delete("/summons/{summons_id}/cancel")
+async def cancel_summons(
+    summons_id: str,
+    officer_id: str = Depends(get_current_officer)
+):
+    """Cancel a scheduled summons notification."""
+    result = cancel_summons_notification(summons_id)
+    await db.summons.update_one(
+        {"summons_id": summons_id, "officer_id": officer_id},
+        {"$set": {"status": "cancelled"}}
+    )
+    return result
+
+
+# =============================================================================
+# BSA SECTION 63 HASH CERTIFICATE ENDPOINTS
+# =============================================================================
+
+from services.hash_certificate import (
+    compute_sha256,
+    compute_md5,
+    generate_bsa_section_63_certificate
+)
+
+
+@api_router.post("/evidence/generate-certificate")
+async def generate_hash_certificate(
+    file: UploadFile = File(...),
+    fir_number: str = Form(default=""),
+    police_station: str = Form(default=""),
+    seized_from: str = Form(default=""),
+    seizure_date: str = Form(default=""),
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    Generate Section 63 BSA Digital Certificate for uploaded digital evidence.
+    Computes SHA-256 and MD5 hashes for court admissibility.
+    """
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Compute hashes
+        sha256_hash = compute_sha256(file_content)
+        md5_hash = compute_md5(file_content)
+        
+        # Get officer info
+        officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+        officer_name = officer.get("name", "") if officer else ""
+        officer_designation = officer.get("rank", "") if officer else ""
+        
+        # Generate certificate
+        certificate = generate_bsa_section_63_certificate(
+            file_name=file.filename,
+            file_type=file.content_type or "application/octet-stream",
+            file_size=len(file_content),
+            sha256_hash=sha256_hash,
+            md5_hash=md5_hash,
+            fir_number=fir_number,
+            police_station=police_station,
+            seized_from=seized_from,
+            seizure_date=seizure_date,
+            officer_name=officer_name,
+            officer_designation=officer_designation
+        )
+        
+        # Store certificate in database
+        cert_record = {
+            **certificate,
+            "officer_id": officer_id
+        }
+        await db.hash_certificates.insert_one(cert_record)
+        
+        return certificate
+        
+    except Exception as e:
+        logger.error(f"Certificate generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Certificate generation failed: {str(e)}")
+
+
+@api_router.post("/evidence/compute-hash-only")
+async def compute_hash_quick(
+    file: UploadFile = File(...),
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    Quick SHA-256 hash computation without generating full certificate.
+    """
+    try:
+        file_content = await file.read()
+        sha256_hash = compute_sha256(file_content)
+        md5_hash = compute_md5(file_content)
+        
+        return {
+            "file_name": file.filename,
+            "file_type": file.content_type,
+            "file_size": len(file_content),
+            "sha256_hash": sha256_hash,
+            "md5_hash": md5_hash,
+            "computed_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hash computation failed: {str(e)}")
+
+
+@api_router.get("/evidence/certificates")
+async def list_certificates(officer_id: str = Depends(get_current_officer)):
+    """List all generated hash certificates."""
+    certificates = await db.hash_certificates.find(
+        {"officer_id": officer_id},
+        {"_id": 0}
+    ).to_list(100)
+    return {"certificates": certificates, "count": len(certificates)}
+
+
 # Import new routers for Unified Intelligence Pipeline
 from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion
 

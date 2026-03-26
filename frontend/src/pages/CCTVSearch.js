@@ -335,17 +335,6 @@ const CCTVSearch = () => {
               </>
             )}
           </Button>
-
-          {/* Coming Soon Notice */}
-          <div className="p-4 rounded-xl bg-[#FFB800]/10 border border-[#FFB800]/30">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="text-[#FFB800]" size={18} />
-              <span className="text-[#FFB800] font-semibold text-sm">Beta Feature</span>
-            </div>
-            <p className="text-white/60 text-xs">
-              Full AI-powered video analysis coming soon. Currently showing demo results.
-            </p>
-          </div>
         </div>
 
         {/* Right Panel - Video Player + Results */}

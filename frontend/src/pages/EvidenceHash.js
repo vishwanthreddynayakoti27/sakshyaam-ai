@@ -13,7 +13,10 @@ import {
   Copy,
   Download,
   Trash2,
-  Eye
+  Eye,
+  Award,
+  FileText,
+  Printer
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -59,6 +62,15 @@ const EvidenceHash = () => {
   const [quickHashFile, setQuickHashFile] = useState(null);
   const [quickHashResult, setQuickHashResult] = useState(null);
   const [isHashing, setIsHashing] = useState(false);
+
+  // BSA Section 63 Certificate
+  const [certFile, setCertFile] = useState(null);
+  const [certFirNumber, setCertFirNumber] = useState('');
+  const [certPoliceStation, setCertPoliceStation] = useState('');
+  const [certSeizedFrom, setCertSeizedFrom] = useState('');
+  const [certSeizureDate, setCertSeizureDate] = useState('');
+  const [generatedCertificate, setGeneratedCertificate] = useState(null);
+  const [isGeneratingCert, setIsGeneratingCert] = useState(false);
 
   useEffect(() => {
     loadCaseContexts();
@@ -204,6 +216,65 @@ const EvidenceHash = () => {
   const copyHash = (hash) => {
     navigator.clipboard.writeText(hash);
     toast.success('Hash copied to clipboard!');
+  };
+
+  // NEW: Generate BSA Section 63 Certificate
+  const generateNewBSACertificate = async () => {
+    if (!certFile) {
+      toast.error('Please select a file for certificate generation');
+      return;
+    }
+
+    setIsGeneratingCert(true);
+    setGeneratedCertificate(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', certFile);
+      formData.append('fir_number', certFirNumber);
+      formData.append('police_station', certPoliceStation);
+      formData.append('seized_from', certSeizedFrom);
+      formData.append('seizure_date', certSeizureDate);
+
+      const response = await api.post('/evidence/generate-certificate', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setGeneratedCertificate(response.data);
+      toast.success('BSA Section 63 Certificate Generated!');
+    } catch (error) {
+      console.error('Error generating certificate:', error);
+      toast.error(getErrorMessage(error, 'Certificate generation failed'));
+    } finally {
+      setIsGeneratingCert(false);
+    }
+  };
+
+  const printCertificate = () => {
+    if (!generatedCertificate?.certificate_html) {
+      toast.error('No certificate to print');
+      return;
+    }
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(generatedCertificate.certificate_html);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const downloadCertificateText = () => {
+    if (!generatedCertificate?.certificate_text) return;
+    
+    const blob = new Blob([generatedCertificate.certificate_text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BSA_Sec63_Certificate_${generatedCertificate.certificate_id}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Certificate downloaded!');
   };
 
   const generateBSACertificate = async (evidenceId) => {
@@ -401,6 +472,110 @@ const EvidenceHash = () => {
                   >
                     <Copy size={12} className="mr-1" /> Copy
                   </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* BSA Section 63 Certificate Generator */}
+          <div className="p-4 rounded-xl bg-[#0B0F1A] border border-[#FFB800]/30">
+            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+              <Award className="text-[#FFB800]" size={18} />
+              BSA Section 63 Certificate
+            </h3>
+            <p className="text-white/50 text-xs mb-3">
+              Generate court-admissible digital evidence certificate
+            </p>
+            
+            <div className="space-y-3">
+              <label className="cursor-pointer block">
+                <div className={`border-2 border-dashed rounded-lg p-3 text-center hover:border-[#FFB800]/50 transition-colors ${
+                  certFile ? 'border-[#FFB800]/50' : 'border-white/20'
+                }`}>
+                  {certFile ? (
+                    <div>
+                      <FileCheck className="text-[#FFB800] mx-auto mb-1" size={20} />
+                      <p className="text-white text-sm truncate">{certFile.name}</p>
+                      <p className="text-white/50 text-xs">{(certFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="text-white/30 mx-auto mb-1" size={20} />
+                      <p className="text-white/50 text-xs">Select evidence file</p>
+                    </>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => setCertFile(e.target.files[0])}
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                />
+              </label>
+
+              <Input
+                value={certFirNumber}
+                onChange={(e) => setCertFirNumber(e.target.value)}
+                placeholder="FIR Number (optional)"
+                className="bg-[#030614] border-white/20 text-white text-xs"
+              />
+              <Input
+                value={certPoliceStation}
+                onChange={(e) => setCertPoliceStation(e.target.value)}
+                placeholder="Police Station (optional)"
+                className="bg-[#030614] border-white/20 text-white text-xs"
+              />
+              <Input
+                value={certSeizedFrom}
+                onChange={(e) => setCertSeizedFrom(e.target.value)}
+                placeholder="Seized From (optional)"
+                className="bg-[#030614] border-white/20 text-white text-xs"
+              />
+              <Input
+                type="date"
+                value={certSeizureDate}
+                onChange={(e) => setCertSeizureDate(e.target.value)}
+                placeholder="Seizure Date"
+                className="bg-[#030614] border-white/20 text-white text-xs"
+              />
+
+              <Button
+                onClick={generateNewBSACertificate}
+                disabled={!certFile || isGeneratingCert}
+                className="w-full bg-gradient-to-r from-[#FFB800] to-[#FF3B3B] text-black font-semibold"
+              >
+                {isGeneratingCert ? (
+                  <><Loader2 className="animate-spin mr-2" size={14} /> Generating...</>
+                ) : (
+                  <><Award size={14} className="mr-2" /> Generate Certificate</>
+                )}
+              </Button>
+
+              {generatedCertificate && (
+                <div className="mt-3 p-3 rounded-lg bg-[#030614] border border-[#00FFB3]/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 className="text-[#00FFB3]" size={16} />
+                    <span className="text-[#00FFB3] text-sm font-semibold">Certificate Generated!</span>
+                  </div>
+                  <p className="text-white/60 text-xs mb-1">ID: {generatedCertificate.certificate_id}</p>
+                  <p className="text-white/60 text-xs mb-2">SHA-256: {generatedCertificate.sha256_hash?.substring(0, 32)}...</p>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={printCertificate}
+                      size="sm"
+                      className="flex-1 bg-[#00C2FF]/20 text-[#00C2FF] hover:bg-[#00C2FF]/30"
+                    >
+                      <Printer size={12} className="mr-1" /> Print
+                    </Button>
+                    <Button
+                      onClick={downloadCertificateText}
+                      size="sm"
+                      className="flex-1 bg-white/10 text-white hover:bg-white/20"
+                    >
+                      <Download size={12} className="mr-1" /> Download
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
