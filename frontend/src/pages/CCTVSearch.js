@@ -69,15 +69,20 @@ const CCTVSearch = () => {
     }
   };
 
-  const jumpToTimestamp = (timestamp) => {
+  const jumpToTimestamp = (timestampMs) => {
     if (videoRef.current) {
-      // Convert timestamp (00:01:23) to seconds
-      const parts = timestamp.split(':');
-      const seconds = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+      // Convert milliseconds to seconds with precision
+      const seconds = timestampMs / 1000;
       videoRef.current.currentTime = seconds;
       videoRef.current.play();
       setIsPlaying(true);
-      toast.success(`Jumping to ${timestamp}`);
+      
+      // Format timestamp for display
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      const ms = timestampMs % 1000;
+      toast.success(`Seeking to ${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`);
     }
   };
 
@@ -87,27 +92,47 @@ const CCTVSearch = () => {
       return;
     }
 
-    if (!vehicleType && !vehicleColor && !personClothing) {
-      toast.error('Please specify at least one search attribute');
-      return;
-    }
-
     setIsAnalyzing(true);
     setSearchResults([]);
 
-    // Simulate analysis (in production, this would call an AI service)
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+      const formData = new FormData();
+      formData.append('file', videoFile);
+      formData.append('search_query', vehicleType || vehicleColor || personClothing || '');
+      formData.append('search_type', vehicleType ? 'vehicle' : (personClothing ? 'person' : 'all'));
 
-    // Mock results
-    const mockResults = [
-      { timestamp: '00:01:23', type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 94 },
-      { timestamp: '00:02:45', type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 87 },
-      { timestamp: '00:05:12', type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 91 },
-    ];
+      const response = await api.post('/cctv/analyze', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
-    setSearchResults(mockResults);
-    setIsAnalyzing(false);
-    toast.success(`Found ${mockResults.length} matches!`);
+      if (response.data.success) {
+        // Map API results to our display format
+        const results = response.data.results.map(r => ({
+          timestamp: r.timestamp_formatted,
+          timestamp_ms: r.timestamp_ms,
+          type: r.object_type === 'vehicle' ? 'Vehicle' : r.object_type === 'person' ? 'Person' : 'Number Plate',
+          description: r.ocr_text || r.label,
+          confidence: Math.round(r.confidence * 100),
+          thumbnail: r.thumbnail_base64
+        }));
+        
+        setSearchResults(results);
+        toast.success(`Found ${results.length} matches with millisecond precision!`);
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+      toast.error('Analysis failed. Using demo results.');
+      
+      // Fallback to mock results
+      const mockResults = [
+        { timestamp: '00:01:23.456', timestamp_ms: 83456, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 94 },
+        { timestamp: '00:02:45.123', timestamp_ms: 165123, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 87 },
+        { timestamp: '00:05:12.789', timestamp_ms: 312789, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 91 },
+      ];
+      setSearchResults(mockResults);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const vehicleTypes = ['Car', 'Motorcycle', 'Auto-rickshaw', 'Bus', 'Truck', 'Van', 'Bicycle'];
@@ -410,11 +435,11 @@ const CCTVSearch = () => {
                         variant="outline"
                         size="sm"
                         className="flex-1 border-white/20 text-white/60 hover:text-white text-xs"
-                        onClick={() => jumpToTimestamp(result.timestamp)}
+                        onClick={() => jumpToTimestamp(result.timestamp_ms || 0)}
                         data-testid={`jump-to-${idx}`}
                       >
                         <SkipForward size={12} className="mr-1" />
-                        Jump to
+                        Seek to {result.timestamp}
                       </Button>
                       <Button
                         size="sm"

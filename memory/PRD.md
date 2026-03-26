@@ -111,6 +111,16 @@ Central data model sharing information across all tools:
 - [x] **APP Consultation & CDF Verification** notes included
 - [x] **Tabbed Document View**: Switch between Charge Sheet (18-Col) and Case Diary Part-I
 
+### Session 5 (Structural Patches - Grid-Cell, CDF, CCTV)
+- [x] **PATCH 1: Grid-Cell Mandate** - All documents use HTML tables with border="1"
+- [x] **PATCH 2: Remand CD Generator** - Auto-triggered when arrest detected, includes Grounds of Arrest and Prayer
+- [x] **PATCH 3: Bilingual CDF Overlay** - Digital CDF form with Telugu/English toggle
+- [x] **PATCH 4: CDF Auto-Sync** - CDF data syncs to Charge Sheet Columns 13 (Witnesses) & 16 (Modus Operandi)
+- [x] **PATCH 5: CCTV Temporal Sync** - Millisecond-precise timestamp indexing (HH:MM:SS.mmm)
+- [x] **PATCH 6: Auto-Seek Video Player** - Click result → player.seek(timestamp_ms) with auto-play
+- [x] **PATCH 7: CCTV API Endpoints** - /api/cctv/analyze and /api/cctv/extract-frame
+- [x] **PATCH 8: OCR Lock for Number Plates** - 95% confidence threshold for plate detection
+
 ## Removed Modules
 - SENTICEL Investigation Diary
 - Case File Manager

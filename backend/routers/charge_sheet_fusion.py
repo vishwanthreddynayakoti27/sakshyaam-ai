@@ -21,6 +21,14 @@ from services.template_generator import (
     generate_html_table_charge_sheet,
     suggest_bns_sections as ml_suggest_sections
 )
+from services.remand_generator import (
+    generate_remand_case_diary_html,
+    detect_arrest_status
+)
+from services.cdf_overlay import (
+    generate_cdf_digital_form_html,
+    extract_cdf_data_for_chargesheet
+)
 
 logger = logging.getLogger(__name__)
 
@@ -823,3 +831,138 @@ async def convert_text_to_legal(
     except Exception as e:
         logger.error(f"Legal conversion error: {e}")
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+
+
+
+@router.post("/generate-remand")
+async def generate_remand_cd(
+    police_station: str = Form(...),
+    district: str = Form(...),
+    fir_number: str = Form(...),
+    sections: str = Form(default=""),
+    data: str = Form(default="{}"),
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Generate Remand Case Diary (Part-1) when arrest status is detected.
+    Auto-triggered or manually requested.
+    """
+    import json
+    
+    try:
+        extracted_data = json.loads(data) if data else {}
+        
+        case_info = {
+            "police_station": police_station,
+            "district": district,
+            "fir_number": fir_number,
+            "sections": sections,
+            "io_name": officer.get("name", ""),
+            "io_rank": officer.get("rank", "Sub Inspector of Police")
+        }
+        
+        # Generate Remand CD HTML
+        remand_html = generate_remand_case_diary_html(extracted_data, case_info)
+        
+        return {
+            "success": True,
+            "remand_cd_html": remand_html,
+            "arrest_detected": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Remand CD generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Remand CD generation failed: {str(e)}")
+
+
+@router.get("/cdf-form")
+async def get_cdf_digital_form(
+    language: str = "english",
+    fir_number: Optional[str] = None,
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Get digital CDF form with bilingual support (Telugu/English toggle).
+    """
+    try:
+        # Get existing case data if FIR number provided
+        extracted_data = {}
+        case_info = {
+            "police_station": "",
+            "district": "",
+            "fir_number": fir_number or "",
+            "sections": "",
+            "io_name": officer.get("name", ""),
+            "io_rank": officer.get("rank", "")
+        }
+        
+        if fir_number and db:
+            case = await db.charge_sheet_fusions.find_one({"fir_number": fir_number})
+            if case:
+                extracted_data = case.get("extracted_data", {})
+                case_info["police_station"] = case.get("police_station", "")
+                case_info["district"] = case.get("district", "")
+                case_info["sections"] = case.get("sections", "")
+        
+        cdf_html = generate_cdf_digital_form_html(extracted_data, case_info, language)
+        
+        return {
+            "success": True,
+            "cdf_html": cdf_html,
+            "language": language
+        }
+        
+    except Exception as e:
+        logger.error(f"CDF form generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"CDF form generation failed: {str(e)}")
+
+
+@router.post("/cdf-form/save")
+async def save_cdf_form(
+    police_station: str = Form(...),
+    district: str = Form(...),
+    fir_number: str = Form(...),
+    cdf_data: str = Form(...),
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Save CDF form data and auto-sync to Charge Sheet columns 13 & 16.
+    """
+    import json
+    
+    try:
+        data = json.loads(cdf_data)
+        
+        # Extract data for Charge Sheet sync
+        chargesheet_data = extract_cdf_data_for_chargesheet(data)
+        
+        # Save to database
+        cdf_record = {
+            "officer_id": officer.get("officer_id"),
+            "police_station": police_station,
+            "district": district,
+            "fir_number": fir_number,
+            "cdf_data": data,
+            "chargesheet_sync": chargesheet_data,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        if db:
+            await db.cdf_forms.update_one(
+                {"fir_number": fir_number},
+                {"$set": cdf_record},
+                upsert=True
+            )
+        
+        return {
+            "success": True,
+            "message": "CDF saved and synced to Charge Sheet",
+            "chargesheet_sync": {
+                "column_13_witnesses": len(chargesheet_data.get("witnesses", [])),
+                "column_16_modus_operandi": bool(chargesheet_data.get("modus_operandi"))
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"CDF save error: {e}")
+        raise HTTPException(status_code=500, detail=f"CDF save failed: {str(e)}")
