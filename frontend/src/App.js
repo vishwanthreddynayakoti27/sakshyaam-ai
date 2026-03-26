@@ -19,6 +19,9 @@ import DocumentGenerator from './pages/DocumentGenerator';
 import EvidenceHash from './pages/EvidenceHash';
 import CCTVSearch from './pages/CCTVSearch';
 import CCTNSBridge from './pages/CCTNSBridge';
+// New Modules
+import RemandReport from './pages/RemandReport';
+import CDFFiller from './pages/CDFFiller';
 import './App.css';
 
 function App() {
@@ -45,6 +48,8 @@ function App() {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           {/* WING 1: ADMIN */}
           <Route path="/charge-sheet-fusion" element={<ProtectedRoute><ChargeSheetFusion /></ProtectedRoute>} />
+          <Route path="/remand-report" element={<ProtectedRoute><RemandReport /></ProtectedRoute>} />
+          <Route path="/cdf-filler" element={<ProtectedRoute><CDFFiller /></ProtectedRoute>} />
           <Route path="/document-generator" element={<ProtectedRoute><DocumentGenerator /></ProtectedRoute>} />
           <Route path="/cctns-bridge" element={<ProtectedRoute><CCTNSBridge /></ProtectedRoute>} />
           <Route path="/language-intelligence" element={<ProtectedRoute><LanguageIntelligence /></ProtectedRoute>} />

@@ -45,11 +45,12 @@ const Dashboard = () => {
   // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
   const adminWing = [
     { icon: Workflow, title: 'Charge Sheet Fusion', path: '/charge-sheet-fusion', color: '#00C2FF', badge: 'NEW' },
+    { icon: Shield, title: 'Remand Report', path: '/remand-report', color: '#FF3B3B', badge: 'NEW' },
+    { icon: FileStack, title: 'CDF Filler', path: '/cdf-filler', color: '#FFB800', badge: 'NEW' },
     { icon: FileCheck, title: 'Document Generator', path: '/document-generator', color: '#4F7EFF' },
     { icon: Database, title: 'CCTNS Bridge', path: '/cctns-bridge', color: '#00FFB3' },
     { icon: Languages, title: 'Language Intelligence', path: '/language-intelligence', color: '#00C2FF' },
     { icon: Scale, title: 'Legal Intelligence', path: '/legal-intelligence', color: '#00FFB3' },
-    { icon: FileStack, title: 'Investigation Docs', path: '/investigation-documents', color: '#4F7EFF' },
     { icon: DollarSign, title: 'Fraud Recovery', path: '/fraud-recovery', color: '#FF3B3B' },
     { icon: Calendar, title: 'Smart Summons', path: '/smart-summons', color: '#FFB800' },
     { icon: MapPin, title: 'Jurisdiction Finder', path: '/jurisdiction-finder', color: '#00C2FF' },
@@ -58,7 +59,7 @@ const Dashboard = () => {
   // WING 2: SAAKSHYAM LAB - Advanced Forensic Lab
   const labWing = [
     { icon: Phone, title: 'CDR Analyzer', path: '/cdr-analyzer', color: '#FFB800' },
-    { icon: Microscope, title: 'Media Forensic', path: '/media-forensic', color: '#FF3B3B', badge: 'NEW' },
+    { icon: Microscope, title: 'Media Forensic', path: '/media-forensic', color: '#FF3B3B' },
     { icon: Camera, title: 'CCTV Search', path: '/cctv-search', color: '#4F7EFF' },
     { icon: Package, title: 'e-Sakshya & Hash', path: '/evidence-hash', color: '#00FFB3' },
   ];

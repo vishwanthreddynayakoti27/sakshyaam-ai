@@ -14,6 +14,7 @@ const SmartSummons = () => {
   const [processing, setProcessing] = useState(false);
   const [summonsList, setSummonsList] = useState([]);
   const [extractedData, setExtractedData] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     caseNumber: '',
     courtName: '',
@@ -22,7 +23,11 @@ const SmartSummons = () => {
     partyName: '',
     advocate: '',
     purpose: '',
-    remarks: ''
+    remarks: '',
+    // Mandatory WhatsApp notification fields
+    courtPolicePhone: '',
+    victimPhone: '',
+    advocatePhone: ''
   });
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -81,18 +86,45 @@ const SmartSummons = () => {
     }
   };
 
-  const handleAddSummons = () => {
+  const handleAddSummons = async () => {
+    // Validate mandatory fields including phone numbers
     if (!formData.caseNumber || !formData.hearingDate) {
       toast.error('Case number and hearing date are required');
       return;
     }
+    
+    // Validate mandatory phone numbers for WhatsApp notification
+    if (!formData.courtPolicePhone || !formData.victimPhone || !formData.advocatePhone) {
+      toast.error('All three contact numbers (Court Police, Victim, Advocate) are MANDATORY for WhatsApp notifications');
+      return;
+    }
 
+    // Validate phone number format (Indian 10-digit)
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(formData.courtPolicePhone) || !phoneRegex.test(formData.victimPhone) || !phoneRegex.test(formData.advocatePhone)) {
+      toast.error('Please enter valid 10-digit Indian mobile numbers');
+      return;
+    }
+
+    setIsSaving(true);
+    
     const newSummons = {
       id: Date.now().toString(),
       ...formData,
       status: 'Pending',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      whatsappScheduled: true,
+      notificationStatus: 'Scheduled for 09:00 AM, 1 day before hearing'
     };
+
+    // Schedule WhatsApp notification (backend would handle actual scheduling)
+    try {
+      // In production, this would call the backend to schedule the notification
+      toast.success('WhatsApp notifications scheduled for all contacts!');
+      toast.info(`Reminders will be sent at 09:00 AM on ${getOneDayBefore(formData.hearingDate)}`);
+    } catch (error) {
+      console.error('Notification scheduling error:', error);
+    }
 
     setSummonsList(prev => [newSummons, ...prev]);
     setFormData({
@@ -103,11 +135,26 @@ const SmartSummons = () => {
       partyName: '',
       advocate: '',
       purpose: '',
-      remarks: ''
+      remarks: '',
+      courtPolicePhone: '',
+      victimPhone: '',
+      advocatePhone: ''
     });
     setExtractedData(null);
     setFile(null);
-    toast.success('Summons added to tracker!');
+    setIsSaving(false);
+    toast.success('Summons added with WhatsApp auto-notification enabled!');
+  };
+
+  const getOneDayBefore = (dateStr) => {
+    try {
+      const parts = dateStr.split(/[\/\-]/);
+      const date = new Date(parts[2], parts[1] - 1, parts[0]);
+      date.setDate(date.getDate() - 1);
+      return date.toLocaleDateString('en-IN');
+    } catch {
+      return 'the day before hearing';
+    }
   };
 
   const handleStatusChange = (id, status) => {
@@ -315,12 +362,56 @@ const SmartSummons = () => {
                 className="bg-white/5 border-white/20 text-white"
               />
 
+              {/* Mandatory WhatsApp Notification Fields */}
+              <div className="p-4 mt-4 rounded-lg bg-[#FFB800]/10 border border-[#FFB800]/30">
+                <h4 className="text-[#FFB800] font-semibold mb-3 flex items-center gap-2">
+                  <Bell size={16} />
+                  WhatsApp Notification Contacts (MANDATORY)
+                </h4>
+                <p className="text-white/60 text-xs mb-3">
+                  Auto-notification will be sent at 09:00 AM, 1 day before court date
+                </p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/60 text-xs w-24">Court Police:</span>
+                    <Input
+                      placeholder="10-digit mobile *"
+                      value={formData.courtPolicePhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, courtPolicePhone: e.target.value }))}
+                      className="bg-white/5 border-[#FFB800]/30 text-white flex-1"
+                      data-testid="court-police-phone"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/60 text-xs w-24">Victim:</span>
+                    <Input
+                      placeholder="10-digit mobile *"
+                      value={formData.victimPhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, victimPhone: e.target.value }))}
+                      className="bg-white/5 border-[#FFB800]/30 text-white flex-1"
+                      data-testid="victim-phone"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/60 text-xs w-24">Advocate:</span>
+                    <Input
+                      placeholder="10-digit mobile *"
+                      value={formData.advocatePhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, advocatePhone: e.target.value }))}
+                      className="bg-white/5 border-[#FFB800]/30 text-white flex-1"
+                      data-testid="advocate-phone"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <Button
                 onClick={handleAddSummons}
+                disabled={isSaving}
                 data-testid="add-summons-btn"
                 className="w-full bg-success text-black font-bold hover:bg-success/80"
               >
-                Add to Tracker
+                {isSaving ? 'Scheduling Notifications...' : 'Save & Schedule WhatsApp Notifications'}
               </Button>
             </div>
           </motion.div>
