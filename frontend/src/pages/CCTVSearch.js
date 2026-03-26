@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Camera, 
@@ -13,7 +13,9 @@ import {
   Shirt,
   AlertTriangle,
   Loader2,
-  ImageIcon
+  ImageIcon,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -22,8 +24,12 @@ import { toast } from 'sonner';
 
 const CCTVSearch = () => {
   const [videoFile, setVideoFile] = useState(null);
+  const [videoUrl, setVideoUrl] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const videoRef = useRef(null);
   
   // Search attributes
   const [vehicleType, setVehicleType] = useState('');
@@ -35,7 +41,43 @@ const CCTVSearch = () => {
     const file = e.target.files[0];
     if (file) {
       setVideoFile(file);
+      // Create object URL for video preview
+      const url = URL.createObjectURL(file);
+      setVideoUrl(url);
       toast.success(`Video loaded: ${file.name}`);
+    }
+  };
+
+  const removeVideo = () => {
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+    }
+    setVideoFile(null);
+    setVideoUrl(null);
+    setSearchResults([]);
+    setIsPlaying(false);
+  };
+
+  const togglePlayPause = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const jumpToTimestamp = (timestamp) => {
+    if (videoRef.current) {
+      // Convert timestamp (00:01:23) to seconds
+      const parts = timestamp.split(':');
+      const seconds = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+      videoRef.current.currentTime = seconds;
+      videoRef.current.play();
+      setIsPlaying(true);
+      toast.success(`Jumping to ${timestamp}`);
     }
   };
 
@@ -101,21 +143,57 @@ const CCTVSearch = () => {
               Upload CCTV Footage
             </h3>
             
-            <div className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center">
-              {videoFile ? (
-                <div>
-                  <Play className="text-[#00FFB3] mx-auto mb-2" size={32} />
-                  <p className="text-white font-medium">{videoFile.name}</p>
-                  <p className="text-white/50 text-sm">
-                    {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
-                  </p>
+            <div className="border-2 border-dashed border-white/20 rounded-xl p-4 text-center">
+              {videoFile && videoUrl ? (
+                <div className="space-y-3">
+                  {/* Video Preview with Thumbnail */}
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-black">
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      className="w-full h-full object-contain"
+                      muted={isMuted}
+                      onEnded={() => setIsPlaying(false)}
+                      data-testid="cctv-video-preview"
+                    />
+                    {/* Play/Pause Overlay */}
+                    <div 
+                      className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity cursor-pointer"
+                      onClick={togglePlayPause}
+                    >
+                      {isPlaying ? (
+                        <Pause className="text-white" size={48} />
+                      ) : (
+                        <Play className="text-white" size={48} />
+                      )}
+                    </div>
+                    {/* Mute Toggle */}
+                    <button
+                      onClick={() => setIsMuted(!isMuted)}
+                      className="absolute bottom-2 right-2 p-1.5 rounded bg-black/50 hover:bg-black/70 transition-colors"
+                    >
+                      {isMuted ? (
+                        <VolumeX className="text-white" size={16} />
+                      ) : (
+                        <Volume2 className="text-white" size={16} />
+                      )}
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <p className="text-white font-medium text-sm truncate">{videoFile.name}</p>
+                    <p className="text-white/50 text-xs">
+                      {(videoFile.size / (1024 * 1024)).toFixed(1)} MB
+                    </p>
+                  </div>
+                  
                   <Button
-                    onClick={() => setVideoFile(null)}
+                    onClick={removeVideo}
                     variant="outline"
                     size="sm"
-                    className="mt-3 border-white/20 text-white/60"
+                    className="border-white/20 text-white/60"
                   >
-                    Remove
+                    Remove Video
                   </Button>
                 </div>
               ) : (
@@ -245,9 +323,33 @@ const CCTVSearch = () => {
           </div>
         </div>
 
-        {/* Right Panel - Results */}
-        <div className="lg:col-span-2">
-          <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10 h-full">
+        {/* Right Panel - Video Player + Results */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Main Video Player */}
+          {videoUrl && (
+            <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
+              <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <Camera className="text-[#00C2FF]" size={18} />
+                Video Player
+              </h3>
+              <div className="relative aspect-video rounded-lg overflow-hidden bg-black">
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  className="w-full h-full object-contain"
+                  muted={isMuted}
+                  controls
+                  onEnded={() => setIsPlaying(false)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  data-testid="cctv-main-video"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Search Results */}
+          <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white font-semibold flex items-center gap-2">
                 <ImageIcon className="text-[#00FFB3]" size={18} />
@@ -308,6 +410,8 @@ const CCTVSearch = () => {
                         variant="outline"
                         size="sm"
                         className="flex-1 border-white/20 text-white/60 hover:text-white text-xs"
+                        onClick={() => jumpToTimestamp(result.timestamp)}
+                        data-testid={`jump-to-${idx}`}
                       >
                         <SkipForward size={12} className="mr-1" />
                         Jump to

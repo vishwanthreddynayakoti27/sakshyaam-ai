@@ -95,6 +95,7 @@ Central data model sharing information across all tools:
 - [x] **Dashboard UI update**: WING 2 moved to right side
 - [x] **Active Investigations section removed from dashboard**
 - [x] **User name/designation replaced with "SAAKSHYAM AI Command Center"**
+- [x] **CCTV Search video fixes**: Added video thumbnail preview, main video player, and working "Jump to" timestamp feature
 
 ## Removed Modules
 - SENTICEL Investigation Diary
