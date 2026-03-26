@@ -17,12 +17,14 @@ Transform SAAKSHYAM AI into a Dual-Wing Modular System with:
 |--------|-------------|--------|
 | **Charge Sheet Fusion** | Multi-upload (Telugu Petition, CDF, Case Diary), **18-Column Fixed Template** with 95% accuracy extraction, **Active Blanks** for missing fields, **ML-driven BNS section suggestion**, editable charge sheet + Case Diary Part-I generation | COMPLETE |
 | **Document Generator** | Auto-generates Charge Sheet, Case Diary, Remand Report, BSA 63 Certificate | COMPLETE |
+| **Remand Report Module** | Dedicated 1:1 replica focusing on Grounds of Arrest and Prayer sections | COMPLETE |
+| **CDF Interactive Filler** | Bilingual (Telugu/English) input form mirroring official CDF with print support | COMPLETE |
+| **Smart Summons** | Summons generation with **WhatsApp auto-scheduling** (1 day before, 09:00 AM) | COMPLETE |
 | **CCTNS Bridge** | JSON export for browser extension, consolidates all case data | COMPLETE |
 | **Language Intelligence** | Translation, OCR, Speech-to-Text | COMPLETE |
 | **Legal Intelligence** | BNS/BNSS/BSA section search and analysis | COMPLETE |
 | **Investigation Docs** | 65+ document templates | COMPLETE |
 | **Fraud Recovery** | Bank freeze requests, nodal officer contact | COMPLETE |
-| **Smart Summons** | Summons generation with reminders | COMPLETE |
 | **Jurisdiction Finder** | GPS-based police station locator (713 stations) | COMPLETE |
 
 ### WING 2: SAAKSHYAM LAB (Advanced Forensic Lab)
@@ -31,8 +33,8 @@ Transform SAAKSHYAM AI into a Dual-Wing Modular System with:
 |--------|-------------|--------|
 | **CDR Analyzer** | Telecom records deep-parsing | COMPLETE |
 | **Media Forensic** | Deepfake/AI detection with [REAL]/[AI_GENERATED]/[DEEP_FAKE] verdicts + confidence % | COMPLETE |
-| **CCTV Search** | AI-powered attribute search (beta - mocked) | BETA |
-| **e-Sakshya & Hash** | SHA-256 hash generation, BSA Sec 63 certificates | COMPLETE |
+| **CCTV Search** | AI-powered attribute search with millisecond temporal sync | COMPLETE |
+| **e-Sakshya & Hash** | **SHA-256 + MD5 hash generation**, **BSA Section 63 Certificate** for court admissibility | COMPLETE |
 
 ### Global Case Context
 Central data model sharing information across all tools:
@@ -64,11 +66,18 @@ Central data model sharing information across all tools:
 - `GET /api/case-context/list` - List all case contexts
 - `GET /api/case-context/{id}/export-cctns` - Export CCTNS JSON
 
-### Evidence Manager
+### Evidence Manager (NEW - Session 6)
+- `POST /api/evidence/generate-certificate` - Generate BSA Section 63 Digital Certificate
+- `POST /api/evidence/compute-hash-only` - Quick SHA-256 + MD5 hash computation
+- `GET /api/evidence/certificates` - List generated certificates
 - `POST /api/evidence/upload` - Upload evidence with auto-hashing
-- `POST /api/evidence/compute-hash` - Compute hash only
 
-## Completed Features (December 2025)
+### Smart Summons Scheduler (NEW - Session 6)
+- `POST /api/summons/schedule` - Schedule WhatsApp notifications
+- `GET /api/summons/scheduled` - List scheduled summons
+- `DELETE /api/summons/{id}/cancel` - Cancel scheduled notification
+
+## Completed Features (December 2025 - March 2026)
 
 ### Session 1 (Unified Intelligence Pipeline)
 - [x] Global Case Context data model
@@ -82,44 +91,57 @@ Central data model sharing information across all tools:
 - [x] Dual-Wing UI architecture (Layout.js, Dashboard.js)
 - [x] Charge Sheet Fusion with multi-upload support
 - [x] Document text extraction (DOCX, DOC, PDF)
-- [x] **OCR support for Telugu Petition images (Google Vision + Translation)**
+- [x] OCR support for Telugu Petition images (Google Vision + Translation)
 - [x] Active Blanks for missing mandatory fields
 - [x] Media Forensic with new verdict format ([REAL]/[AI_GENERATED]/[DEEP_FAKE] + %)
 - [x] Image file support for Media Forensic (JPG, PNG, GIF, WebP)
-- [x] User name/designation removed from top bar
-- [x] Navigation updated for dual-wing modules
-- [x] **Deprecated modules removed (SenticelDiary, CaseFileManager, FIRDraftAssistant)**
+- [x] Deprecated modules removed (SenticelDiary, CaseFileManager, FIRDraftAssistant)
 
 ### Session 3 (Voice Input & UI Refinements)
-- [x] **Voice recording for Charge Sheet Fusion** (Telugu/Hindi/English transcription + legal conversion)
-- [x] **Dashboard UI update**: WING 2 moved to right side
-- [x] **Active Investigations section removed from dashboard**
-- [x] **User name/designation replaced with "SAAKSHYAM AI Command Center"**
-- [x] **CCTV Search video fixes**: Added video thumbnail preview, main video player, and working "Jump to" timestamp feature
+- [x] Voice recording for Charge Sheet Fusion (Telugu/Hindi/English transcription + legal conversion)
+- [x] Dashboard UI update: WING 2 moved to right side
+- [x] Active Investigations section removed from dashboard
+- [x] User name/designation replaced with "SAAKSHYAM AI Command Center"
+- [x] CCTV Search video fixes: Added video thumbnail preview, main video player, and working "Jump to" timestamp feature
 
 ### Session 4 (18-Column Fixed Template System)
-- [x] **18-Column Charge Sheet Template** matching Makthal PS format (Columns 01-18)
-- [x] **8-Point Case Diary (Part-I)** with all rows always present for manual entry
-- [x] **Blank Integrity**: Missing fields shown as `[ ]` placeholder instead of errors
-- [x] **ML-Driven Section Suggestion**: Auto-populates BNS sections based on brief facts
-- [x] **Dynamic Row Expansion**: Accused (A1-An) and Witnesses (LW1-LWn) rows expand dynamically
-- [x] **HTML Table Export** for print-ready charge sheets
-- [x] **GD Linkage**: Added GD Entry No. and GD Entry Time fields
-- [x] **Investigation Timeline**: Added "Resumed at" and "Closed for the day at" timestamps
-- [x] **Investigation Narrative**: Auto-generates "On this day I resumed further investigation..." text
-- [x] **Witness Examination**: Auto-generates 180 BNSS statement recording notes
-- [x] **APP Consultation & CDF Verification** notes included
-- [x] **Tabbed Document View**: Switch between Charge Sheet (18-Col) and Case Diary Part-I
+- [x] 18-Column Charge Sheet Template matching Makthal PS format (Columns 01-18)
+- [x] 8-Point Case Diary (Part-I) with all rows always present for manual entry
+- [x] Blank Integrity: Missing fields shown as `[ ]` placeholder instead of errors
+- [x] ML-Driven Section Suggestion: Auto-populates BNS sections based on brief facts
+- [x] Dynamic Row Expansion: Accused (A1-An) and Witnesses (LW1-LWn) rows expand dynamically
+- [x] HTML Table Export for print-ready charge sheets
+- [x] GD Linkage: Added GD Entry No. and GD Entry Time fields
+- [x] Investigation Timeline: Added "Resumed at" and "Closed for the day at" timestamps
+- [x] Investigation Narrative: Auto-generates "On this day I resumed further investigation..." text
+- [x] Witness Examination: Auto-generates 180 BNSS statement recording notes
+- [x] APP Consultation & CDF Verification notes included
+- [x] Tabbed Document View: Switch between Charge Sheet (18-Col) and Case Diary Part-I
 
 ### Session 5 (Structural Patches - Grid-Cell, CDF, CCTV)
-- [x] **PATCH 1: Grid-Cell Mandate** - All documents use HTML tables with border="1"
-- [x] **PATCH 2: Remand CD Generator** - Auto-triggered when arrest detected, includes Grounds of Arrest and Prayer
-- [x] **PATCH 3: Bilingual CDF Overlay** - Digital CDF form with Telugu/English toggle
-- [x] **PATCH 4: CDF Auto-Sync** - CDF data syncs to Charge Sheet Columns 13 (Witnesses) & 16 (Modus Operandi)
-- [x] **PATCH 5: CCTV Temporal Sync** - Millisecond-precise timestamp indexing (HH:MM:SS.mmm)
-- [x] **PATCH 6: Auto-Seek Video Player** - Click result → player.seek(timestamp_ms) with auto-play
-- [x] **PATCH 7: CCTV API Endpoints** - /api/cctv/analyze and /api/cctv/extract-frame
-- [x] **PATCH 8: OCR Lock for Number Plates** - 95% confidence threshold for plate detection
+- [x] PATCH 1: Grid-Cell Mandate - All documents use HTML tables with border="1"
+- [x] PATCH 2: Remand CD Generator - Auto-triggered when arrest detected, includes Grounds of Arrest and Prayer
+- [x] PATCH 3: Bilingual CDF Overlay - Digital CDF form with Telugu/English toggle
+- [x] PATCH 4: CDF Auto-Sync - CDF data syncs to Charge Sheet Columns 13 (Witnesses) & 16 (Modus Operandi)
+- [x] PATCH 5: CCTV Temporal Sync - Millisecond-precise timestamp indexing (HH:MM:SS.mmm)
+- [x] PATCH 6: Auto-Seek Video Player - Click result → player.seek(timestamp_ms) with auto-play
+- [x] PATCH 7: CCTV API Endpoints - /api/cctv/analyze and /api/cctv/extract-frame
+- [x] PATCH 8: OCR Lock for Number Plates - 95% confidence threshold for plate detection
+
+### Session 6 (Production Updates - March 2026)
+- [x] **BSA Section 63 Hash Certificate Generator** - Court-admissible digital evidence certificates
+  - SHA-256 and MD5 hash computation
+  - Full certificate in text and HTML formats
+  - Case reference fields (FIR, Police Station, Seized From, Date)
+  - Print and download functionality
+- [x] **Smart Summons WhatsApp Scheduler Backend**
+  - Background task scheduling with asyncio
+  - Notifications scheduled 1 day before hearing at 09:00 AM
+  - Validates future dates, rejects past dates
+  - Stores scheduled summons in MongoDB
+  - WhatsApp API ready (requires Business API credentials)
+- [x] **CCTV Search Beta Tag Removed** - Transitioned to production state
+- [x] **Evidence Hash UI Enhanced** - Added BSA Certificate generation form
 
 ## Removed Modules
 - SENTICEL Investigation Diary
@@ -129,27 +151,29 @@ Central data model sharing information across all tools:
 ## Backlog / Future Tasks
 
 ### P0 - High Priority
-- [ ] Voice input processing in Charge Sheet Fusion
-- [ ] Full AI video analysis for CCTV Search (currently mocked)
-- [ ] OSINT Integration for phone number deep search
+- [ ] WhatsApp Business API integration for actual notification sending
+- [ ] CDF Coordinate Overlay for exact print alignment on official forms
 
 ### P1 - Medium Priority
-- [ ] Template management for custom document formats
-- [ ] Batch processing for multiple petitions
-- [ ] Case linking between related FIRs
+- [ ] IMEI Identity Linkage and Location Mapping in CDR Analyzer
+- [ ] Word XML Replica Export (embedding Rough Sketch and CDF into .docx)
+- [ ] Full AI video analysis for CCTV Search (currently uses demo results)
+- [ ] OSINT Integration for phone number deep search
 
 ### P2 - Low Priority
 - [ ] Browser extension for CCTNS auto-fill
 - [ ] Analytics dashboard for case statistics
-- [ ] Officer performance tracking
+- [ ] Case Timeline visualization
+- [ ] Real deepfake detection model integration
 
 ## Test Credentials
 - Officer ID: `TEST123`
 - Password: `test123`
 
 ## Mocked APIs
+- WhatsApp notification sending (logs to console, needs Business API credentials)
 - CCTV Search AI analysis (returns mock results)
-- Media Forensic analysis (uses heuristic scoring, not actual AI deepfake detection)
+- Media Forensic analysis (uses heuristic scoring, not actual AI deepfake detection model)
 
 ## File Structure
 ```
@@ -159,20 +183,32 @@ Central data model sharing information across all tools:
 │   │   └── case_context.py
 │   ├── routers/
 │   │   ├── case_context.py
-│   │   ├── charge_sheet_fusion.py  # NEW - Multi-upload processing
+│   │   ├── charge_sheet_fusion.py
 │   │   ├── document_generator.py
 │   │   └── evidence_manager.py
 │   ├── services/
 │   │   ├── legal_llm.py
-│   │   └── document_generator.py
+│   │   ├── template_generator.py    # 18-col CS & CD part-I
+│   │   ├── remand_generator.py      # Remand CD
+│   │   ├── cdf_overlay.py           # Bilingual CDF
+│   │   ├── hash_certificate.py      # BSA Section 63 certificates
+│   │   └── summons_scheduler.py     # WhatsApp scheduling
 │   └── server.py
 └── frontend/
     └── src/
         ├── components/
-        │   └── Layout.js           # Dual-wing sidebar
+        │   └── Layout.js            # Dual-wing sidebar
         └── pages/
-            ├── Dashboard.js        # Dual-wing dashboard
+            ├── Dashboard.js         # Dual-wing dashboard
             ├── ChargeSheetFusion.js # WING 1 core module
-            ├── MediaForensic.js    # WING 2 - Updated verdict format
-            └── (Other modules)
+            ├── RemandReport.js      # Remand CD UI
+            ├── CDFFiller.js         # Bilingual CDF
+            ├── SmartSummons.js      # WhatsApp scheduler UI
+            ├── MediaForensic.js     # WING 2 - Verdict format
+            ├── CCTVSearch.js        # WING 2 - Temporal sync
+            └── EvidenceHash.js      # WING 2 - BSA certificates
 ```
+
+## Test Reports
+- Iteration 10: All tests passed (BSA certificates, Summons scheduler, CCTV Beta removal)
+- Location: `/app/test_reports/iteration_10.json`
