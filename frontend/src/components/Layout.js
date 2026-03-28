@@ -181,6 +181,19 @@ const Layout = ({ children }) => {
           </nav>
 
           <div className="p-3 border-t border-white/10 space-y-1">
+            {/* Admin Dashboard - only show if admin */}
+            <Link
+              to="/admin"
+              data-testid="sidebar-admin"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                location.pathname === '/admin'
+                  ? 'bg-gradient-to-r from-[#FF3B3B]/20 to-[#FFB800]/20 text-[#FFB800] border border-[#FFB800]/30'
+                  : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
+              }`}
+            >
+              <Shield size={18} strokeWidth={1.5} />
+              {sidebarOpen && <span className="font-medium text-sm">Admin Panel</span>}
+            </Link>
             <Link
               to="/profile"
               data-testid="sidebar-profile"

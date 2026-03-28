@@ -2933,6 +2933,244 @@ async def list_certificates(officer_id: str = Depends(get_current_officer)):
     return {"certificates": certificates, "count": len(certificates)}
 
 
+# =============================================================================
+# CDF TEMPLATE ENGINE - BILINGUAL OVERLAY SYSTEM
+# =============================================================================
+
+from services.cdf_template_engine import generate_cdf_overlay_html, generate_correlation_id
+
+
+class CDFGenerationRequest(BaseModel):
+    district: str = "Narayanpet"
+    police_station: str = "Makthal"
+    year: str = "2026"
+    fir_number: str = ""
+    fir_date: str = ""
+    sections: str = ""
+    scene_informant_name: str = ""
+    scene_informant_father: str = ""
+    scene_informant_address: str = ""
+    crime_heading: str = ""
+    modus_operandi: list = []
+    vehicle_used: str = ""
+    approach_method: str = ""
+    language_used: str = ""
+    special_marks: list = []
+    crime_location_type: str = ""
+    victims: list = []
+    crime_purpose: str = ""
+    evidence_details: str = ""
+    property_details: str = ""
+    scene_visit_date: str = ""
+    scene_visit_time: str = ""
+    scene_description: str = ""
+    scene_sketch_data: str = ""
+    witnesses: list = []
+    officer_name: str = ""
+    officer_designation: str = ""
+    officer_number: str = ""
+
+
+@api_router.post("/cdf/generate")
+async def generate_cdf(
+    request: CDFGenerationRequest,
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    Generate Bilingual CDF (Crime Details Form) with overlay system.
+    Uses Telugu template as background with interactive overlay fields.
+    """
+    correlation_id = generate_correlation_id()
+    
+    try:
+        # Get officer details if not provided
+        if not request.officer_name:
+            officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+            if officer:
+                request.officer_name = officer.get("name", "")
+                request.officer_designation = officer.get("rank", "")
+        
+        html_content = generate_cdf_overlay_html(
+            data=request.model_dump(),
+            correlation_id=correlation_id
+        )
+        
+        # Log successful generation
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "CDF_GENERATE",
+            "credit_cost": 2,
+            "status": "SUCCESS",
+            "correlation_id": correlation_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "fir_number": request.fir_number
+        })
+        
+        return {
+            "success": True,
+            "correlation_id": correlation_id,
+            "html_content": html_content,
+            "message": "CDF generated successfully"
+        }
+        
+    except Exception as e:
+        # Log failed generation with correlation ID
+        error_correlation_id = f"ERR-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "CDF_GENERATE",
+            "credit_cost": 0,
+            "status": "FAILED",
+            "correlation_id": error_correlation_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": str(e)
+        })
+        
+        logger.error(f"CDF generation failed [{error_correlation_id}]: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"CDF generation failed. Reference ID: {error_correlation_id}"
+        )
+
+
+# =============================================================================
+# ADMIN DASHBOARD - USER APPROVAL, LOGS, ISSUE TRACKING
+# =============================================================================
+
+import logging
+import os
+from pathlib import Path
+
+# System log file
+LOG_DIR = Path("/app/backend/admin/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+SYSTEM_LOG_FILE = LOG_DIR / "system.log"
+
+
+def log_action(user: str, action: str, credit_cost: int, status: str, correlation_id: str = None):
+    """Log action to system log file."""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    corr_id = correlation_id or "-"
+    log_entry = f"[{timestamp}] | {user} | {action} | {credit_cost} | {status} | {corr_id}\n"
+    
+    with open(SYSTEM_LOG_FILE, "a") as f:
+        f.write(log_entry)
+
+
+# Admin authentication dependency
+async def verify_admin(officer_id: str = Depends(get_current_officer)):
+    """Verify if user is admin."""
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+    if not officer or not officer.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return officer_id
+
+
+@api_router.get("/admin/pending-users")
+async def get_pending_users(admin_id: str = Depends(verify_admin)):
+    """Get users pending approval."""
+    pending = await db.officers.find(
+        {"approval_status": "PENDING"},
+        {"_id": 0, "password": 0}
+    ).to_list(100)
+    
+    return {"pending_users": pending, "count": len(pending)}
+
+
+@api_router.post("/admin/approve-user/{user_id}")
+async def approve_user(user_id: str, admin_id: str = Depends(verify_admin)):
+    """Approve a pending user."""
+    result = await db.officers.update_one(
+        {"officer_id": user_id, "approval_status": "PENDING"},
+        {"$set": {"approval_status": "APPROVED", "approved_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="User not found or already processed")
+    
+    log_action(admin_id, "APPROVE_USER", 0, "SUCCESS", f"USER-{user_id}")
+    return {"success": True, "message": f"User {user_id} approved"}
+
+
+@api_router.post("/admin/reject-user/{user_id}")
+async def reject_user(user_id: str, admin_id: str = Depends(verify_admin)):
+    """Reject a pending user."""
+    result = await db.officers.update_one(
+        {"officer_id": user_id, "approval_status": "PENDING"},
+        {"$set": {"approval_status": "REJECTED", "rejected_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="User not found or already processed")
+    
+    log_action(admin_id, "REJECT_USER", 0, "SUCCESS", f"USER-{user_id}")
+    return {"success": True, "message": f"User {user_id} rejected"}
+
+
+@api_router.get("/admin/logs")
+async def get_system_logs(limit: int = 100, admin_id: str = Depends(verify_admin)):
+    """Get system logs (last N entries)."""
+    if not SYSTEM_LOG_FILE.exists():
+        return {"logs": [], "count": 0}
+    
+    with open(SYSTEM_LOG_FILE, "r") as f:
+        lines = f.readlines()
+    
+    # Get last N lines
+    recent_logs = lines[-limit:] if len(lines) > limit else lines
+    
+    parsed_logs = []
+    for line in recent_logs:
+        parts = line.strip().split(" | ")
+        if len(parts) >= 5:
+            parsed_logs.append({
+                "timestamp": parts[0].strip("[]"),
+                "user": parts[1],
+                "action": parts[2],
+                "credits": parts[3],
+                "status": parts[4],
+                "correlation_id": parts[5] if len(parts) > 5 else "-"
+            })
+    
+    return {"logs": parsed_logs[::-1], "count": len(parsed_logs)}
+
+
+@api_router.get("/admin/issues")
+async def get_issues(admin_id: str = Depends(verify_admin)):
+    """Get failed actions/issues from logs."""
+    if not SYSTEM_LOG_FILE.exists():
+        return {"issues": [], "count": 0}
+    
+    with open(SYSTEM_LOG_FILE, "r") as f:
+        lines = f.readlines()
+    
+    issues = []
+    for line in lines:
+        if "FAILED" in line:
+            parts = line.strip().split(" | ")
+            if len(parts) >= 5:
+                issues.append({
+                    "timestamp": parts[0].strip("[]"),
+                    "user": parts[1],
+                    "action": parts[2],
+                    "status": parts[4],
+                    "correlation_id": parts[5] if len(parts) > 5 else "-"
+                })
+    
+    return {"issues": issues[::-1], "count": len(issues)}
+
+
+@api_router.get("/admin/action-logs")
+async def get_action_logs_db(limit: int = 100, admin_id: str = Depends(verify_admin)):
+    """Get action logs from database."""
+    logs = await db.action_logs.find(
+        {},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(limit).to_list(limit)
+    
+    return {"logs": logs, "count": len(logs)}
+
+
 # Import new routers for Unified Intelligence Pipeline
 from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion
 

@@ -22,6 +22,7 @@ import CCTNSBridge from './pages/CCTNSBridge';
 // New Modules
 import RemandReport from './pages/RemandReport';
 import CDFFiller from './pages/CDFFiller';
+import AdminDashboard from './pages/AdminDashboard';
 import './App.css';
 
 function App() {
@@ -66,6 +67,8 @@ function App() {
           <Route path="/evidence-hash" element={<ProtectedRoute><EvidenceHash /></ProtectedRoute>} />
           {/* Profile */}
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          {/* Admin */}
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           {/* Redirects for old routes */}
           <Route path="/unified-pipeline" element={<Navigate to="/charge-sheet-fusion" replace />} />
         </Routes>

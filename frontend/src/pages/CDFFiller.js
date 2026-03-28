@@ -147,8 +147,60 @@ const CDFFiller = () => {
     }
   };
 
-  const printCDF = () => {
-    // Generate coordinate overlay HTML for printing
+  const [correlationId, setCorrelationId] = useState(null);
+
+  const printCDF = async () => {
+    // Call backend API to generate CDF with coordinate overlay
+    try {
+      const response = await api.post('/cdf/generate', {
+        district: formData.district || 'Narayanpet',
+        police_station: formData.police_station || 'Makthal',
+        year: formData.fir_date?.split('/')[2] || '2026',
+        fir_number: formData.fir_number,
+        fir_date: formData.fir_date,
+        sections: formData.sections,
+        scene_informant_name: formData.complainant_name,
+        scene_informant_father: formData.complainant_father,
+        scene_informant_address: formData.complainant_address,
+        crime_heading: formData.modus_operandi?.split('\n')[0] || '',
+        modus_operandi: formData.modus_operandi?.split('\n') || [],
+        crime_purpose: formData.brief_facts?.substring(0, 100) || '',
+        evidence_details: formData.property_recovered || '',
+        property_details: formData.property_lost || '',
+        scene_visit_date: formData.occurrence_date,
+        scene_visit_time: formData.occurrence_time,
+        scene_description: formData.brief_facts,
+        witnesses: formData.witnesses.slice(0, 2).map(w => ({
+          name: w.name,
+          father: w.father,
+          age: w.age,
+          caste: w.caste,
+          occupation: w.occupation || '',
+          address: w.address,
+          phone: w.phone
+        }))
+      });
+
+      if (response.data.success) {
+        setCorrelationId(response.data.correlation_id);
+        
+        // Open print window with the generated HTML
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(response.data.html_content);
+        printWindow.document.close();
+        printWindow.print();
+        
+        toast.success(`CDF generated! ID: ${response.data.correlation_id}`);
+      }
+    } catch (error) {
+      console.error('Print error:', error);
+      const errorId = error.response?.data?.detail || 'Print failed';
+      toast.error(errorId);
+    }
+  };
+
+  const printCDFLocal = () => {
+    // Fallback: Generate coordinate overlay HTML for printing locally
     const printHtml = `
       <!DOCTYPE html>
       <html>
