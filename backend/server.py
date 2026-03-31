@@ -3172,19 +3172,39 @@ async def get_action_logs_db(limit: int = 100, admin_id: str = Depends(verify_ad
 
 
 # Import new routers for Unified Intelligence Pipeline
-from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion
+from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion, staged_upload
 
 # Set database for new routers
 case_context.set_database(db)
 document_generator.set_database(db)
 evidence_manager.set_database(db)
 charge_sheet_fusion.set_database(db)
+staged_upload.set_database(db)
 
 # Include new routers under /api prefix
 api_router.include_router(case_context.router)
 api_router.include_router(document_generator.router)
 api_router.include_router(evidence_manager.router)
 api_router.include_router(charge_sheet_fusion.router)
+api_router.include_router(staged_upload.router)
+
+# Static file download for generated documents
+from fastapi.responses import FileResponse
+from pathlib import Path
+
+STAGING_DIR = Path("/app/backend/staging")
+
+@api_router.get("/download/docx/{filename}")
+async def download_docx_file(filename: str):
+    """Download generated Word document from staging."""
+    file_path = STAGING_DIR / filename
+    if file_path.exists() and filename.endswith('.docx'):
+        return FileResponse(
+            path=str(file_path),
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    raise HTTPException(status_code=404, detail="File not found")
 
 app.include_router(api_router)
 
