@@ -533,7 +533,7 @@ Return ONLY valid JSON."""
         suggested_sections = ml_suggest_sections(brief_facts) if brief_facts else []
         
         # Step 4: Generate Word Documents (.docx)
-        from services.docx_generator import generate_chargesheet_docx, generate_case_diary_docx
+        from services.docx_generator import generate_chargesheet_docx, generate_case_diary_docx, generate_remand_case_diary_docx
         
         fir_safe = metadata.get("fir_number", "case").replace("/", "-")
         
@@ -549,8 +549,8 @@ Return ONLY valid JSON."""
         with open(casediary_path, "wb") as f:
             f.write(casediary_bytes)
         
-        # Generate Remand CD DOCX (using same generator for now)
-        remand_bytes = generate_case_diary_docx(extracted_data, {**case_info, "doc_type": "remand"})
+        # Generate Remand CD DOCX
+        remand_bytes = generate_remand_case_diary_docx(extracted_data, case_info)
         remand_path = STAGING_BASE / f"{fir_safe}_RemandCD.docx"
         with open(remand_path, "wb") as f:
             f.write(remand_bytes)
@@ -578,7 +578,7 @@ Return ONLY valid JSON."""
             "status": "completed"
         }
         
-        if db:
+        if db is not None:
             await db.triple_fusions.insert_one(fusion_record)
             
             # Log action
@@ -627,7 +627,7 @@ Return ONLY valid JSON."""
         # ROLLBACK: No credits deducted on failure
         logger.error(f"Triple Fusion FAILED for case {case_id} (Transaction: {transaction_id}): {e}")
         
-        if db:
+        if db is not None:
             await db.action_logs.insert_one({
                 "officer_id": officer.get("officer_id"),
                 "action": "TRIPLE_FUSION_GENERATE",
@@ -654,7 +654,7 @@ async def get_fusion_result(
     Get previously generated Triple Fusion result.
     COST: 0 CREDITS
     """
-    if db:
+    if db is not None:
         result = await db.triple_fusions.find_one(
             {"case_id": case_id, "officer_id": officer.get("officer_id")},
             {"_id": 0}
