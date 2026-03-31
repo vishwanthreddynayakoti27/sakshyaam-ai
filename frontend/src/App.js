@@ -49,7 +49,7 @@ function App() {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           {/* WING 1: ADMIN */}
           <Route path="/charge-sheet-fusion" element={<ProtectedRoute><ChargeSheetFusion /></ProtectedRoute>} />
-          <Route path="/remand-report" element={<ProtectedRoute><RemandReport /></ProtectedRoute>} />
+          <Route path="/remand-report" element={<Navigate to="/charge-sheet-fusion" replace />} />
           <Route path="/cdf-filler" element={<ProtectedRoute><CDFFiller /></ProtectedRoute>} />
           <Route path="/document-generator" element={<ProtectedRoute><DocumentGenerator /></ProtectedRoute>} />
           <Route path="/cctns-bridge" element={<ProtectedRoute><CCTNSBridge /></ProtectedRoute>} />

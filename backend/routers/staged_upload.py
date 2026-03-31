@@ -532,7 +532,32 @@ Return ONLY valid JSON."""
         brief_facts = extracted_data.get("brief_facts", "")
         suggested_sections = ml_suggest_sections(brief_facts) if brief_facts else []
         
-        # Step 4: Save to database
+        # Step 4: Generate Word Documents (.docx)
+        from services.docx_generator import generate_chargesheet_docx, generate_case_diary_docx
+        
+        fir_safe = metadata.get("fir_number", "case").replace("/", "-")
+        
+        # Generate Charge Sheet DOCX
+        chargesheet_bytes = generate_chargesheet_docx(extracted_data, case_info)
+        chargesheet_path = STAGING_BASE / f"{fir_safe}_ChargeSheet.docx"
+        with open(chargesheet_path, "wb") as f:
+            f.write(chargesheet_bytes)
+        
+        # Generate Case Diary DOCX
+        casediary_bytes = generate_case_diary_docx(extracted_data, case_info)
+        casediary_path = STAGING_BASE / f"{fir_safe}_CaseDiary.docx"
+        with open(casediary_path, "wb") as f:
+            f.write(casediary_bytes)
+        
+        # Generate Remand CD DOCX (using same generator for now)
+        remand_bytes = generate_case_diary_docx(extracted_data, {**case_info, "doc_type": "remand"})
+        remand_path = STAGING_BASE / f"{fir_safe}_RemandCD.docx"
+        with open(remand_path, "wb") as f:
+            f.write(remand_bytes)
+        
+        logger.info(f"Generated Word documents: {chargesheet_path}, {casediary_path}, {remand_path}")
+        
+        # Step 5: Save to database
         fusion_record = {
             "case_id": case_id,
             "transaction_id": transaction_id,
