@@ -3,7 +3,45 @@
 ## Overview
 SAAKSHYAM AI is a comprehensive police investigation command console implementing a **Dual-Wing Modular System** architecture with a shared Global Case Context.
 
-## Latest Update: Triple Fusion Generator (March 2026)
+## Latest Update: Modular Document Pipeline (April 2026)
+
+### Production-Ready Pipeline Architecture ✅
+- **Modular Services**: OCR → Classification → Extraction → Aggregation → Validation → DOCX Generation
+- **Template-Based DOCX**: Using `docxtpl` with Jinja2 tags ({{fir_number}}, {{accused_formatted}})
+- **Regex-First Extraction**: All data extraction is rule-based (NO AI for extraction)
+- **AI Usage Strictly Limited**: ONLY for Brief Facts, Remand Narrative, Telugu Translation
+
+### Pipeline Services Implemented ✅
+| Service | Description | File |
+|---------|-------------|------|
+| **OCRService** | Text extraction from PDF/DOCX/DOC/Images | `pipeline/ocr_service.py` |
+| **FileClassifier** | Document type detection (FIR, CD, Witness, Medical) | `pipeline/file_classifier.py` |
+| **ExtractionService** | Regex-based data extraction (persons, dates, sections) | `pipeline/extraction_service.py` |
+| **WitnessService** | Witness role classification (Complainant, Eyewitness, Panch) | `pipeline/witness_service.py` |
+| **AggregatorService** | Unified JSON schema builder with deduplication | `pipeline/aggregator_service.py` |
+| **ValidationService** | Required field validation with completeness score | `pipeline/validation_service.py` |
+| **TemplateService** | Template-based DOCX generation using docxtpl | `pipeline/template_service.py` |
+
+### Unified JSON Schema ✅
+```json
+{
+  "fir": {"number": "", "date": "", "police_station": "", "district": "", "sections": []},
+  "complainant": {"name": "", "father_name": "", "age": null, "caste": "", "occupation": "", "address": "", "phone": ""},
+  "accused": [{"serial": "A1", "name": "", ...}],
+  "witnesses": [{"serial": "LW-1", "name": "", "role": "Complainant/Eyewitness/Panch", ...}],
+  "incident": {"date": "", "time": "", "place": ""},
+  "medical": {"findings": ""},
+  "property": {"lost": "", "recovered": ""},
+  "facts": {"raw": "", "ai_generated": ""},
+  "notices": {"section_35_3_dates": []}
+}
+```
+
+### CCTNS Export JSON ✅
+- Flat JSON structure for browser extension autofill
+- Fields: fir_number, police_station, district, sections, complainant_name, accused_1_name, witness_count, etc.
+
+## Triple Fusion Generator (March 2026)
 
 ### UI Restructure Complete ✅
 - **Triple-Tab Interface**: [Charge Sheet] | [Case Diary 1] | [Remand Case Diary]
@@ -17,8 +55,8 @@ SAAKSHYAM AI is a comprehensive police investigation command console implementin
 - **Rollback on failure**: No credits deducted if generation fails
 
 ### Word Document Output ✅
-- **Stable tables**: Using python-docx (no text-rendered ┌───┐ tables)
-- **Template-based**: Uses 156.2025 CS format as skeleton
+- **Template-based generation**: Using docxtpl with Jinja2 tags
+- **Templates location**: `/app/backend/templates/`
 - **Three .DOCX downloads**: Charge Sheet, Case Diary, Remand CD
 
 ## Architecture: Dual-Wing Modular System
@@ -27,7 +65,7 @@ SAAKSHYAM AI is a comprehensive police investigation command console implementin
 
 | Module | Description | Status |
 |--------|-------------|--------|
-| **Triple Fusion Generator** | Charge Sheet + Case Diary + Remand CD in one window with tabs | COMPLETE |
+| **Triple Fusion Generator** | Charge Sheet + Case Diary + Remand CD with modular pipeline | COMPLETE |
 | **CDF Interactive Filler** | Bilingual (Telugu/English) with coordinate overlay print | COMPLETE |
 | **Smart Summons** | WhatsApp auto-scheduling 1 day before court date | COMPLETE |
 | **Admin Dashboard** | User approval, logs, issue tracking | COMPLETE |
@@ -50,23 +88,33 @@ SAAKSHYAM AI is a comprehensive police investigation command console implementin
 - `GET /api/staging/case/{case_id}` - List staged files (0 credits)
 - `DELETE /api/staging/case/{case_id}/file/{filename}` - Remove file (0 credits)
 - `POST /api/staging/generate-triple-fusion/{case_id}` - Generate all 3 docs (CREDITS HERE)
+  - Returns: documents, cctns_json, pipeline_stats, validation
 - `GET /api/download/docx/{filename}` - Download Word document
-
-### FIR 57/2026 Test Data
-Pre-generated documents available:
-- `57-2026_ChargeSheet.docx`
-- `57-2026_CaseDiary.docx`
+- `GET /api/staging/my-cases` - List all staging cases for officer
 
 ## File Structure
 ```
 /app/
 ├── backend/
 │   ├── routers/
-│   │   └── staged_upload.py     # Staging system with batch upload
+│   │   └── staged_upload.py       # Staging + Pipeline integration
 │   ├── services/
-│   │   └── docx_generator.py    # Word document generator
-│   └── staging/                 # Staged files storage
-│       └── *.docx               # Generated documents
+│   │   ├── pipeline/              # NEW: Modular pipeline services
+│   │   │   ├── __init__.py
+│   │   │   ├── ocr_service.py
+│   │   │   ├── file_classifier.py
+│   │   │   ├── extraction_service.py
+│   │   │   ├── witness_service.py
+│   │   │   ├── aggregator_service.py
+│   │   │   ├── validation_service.py
+│   │   │   ├── template_service.py
+│   │   │   └── pipeline.py        # Main orchestrator
+│   │   └── docx_generator.py      # Legacy generator (fallback)
+│   ├── templates/                 # NEW: DOCX templates with Jinja2 tags
+│   │   ├── chargesheet_template.docx
+│   │   ├── casediary_template.docx
+│   │   └── remand_template.docx
+│   └── staging/                   # Staged files storage
 └── frontend/
     └── src/
         └── pages/
@@ -86,6 +134,12 @@ Pre-generated documents available:
 
 ## Verification Checklist
 - [x] Three tabs visible (Charge Sheet, CD-I, Remand)?
-- [x] Can upload more than 4 files?
-- [x] Output is .docx Word file (not text box)?
+- [x] Can upload more than 4 files (30+ supported)?
+- [x] Output is .docx Word file (template-based)?
 - [x] Credits show 0 while uploading?
+- [x] CCTNS JSON returned in response?
+- [x] Pipeline stats (files_classified, extraction_stats) returned?
+- [x] Validation completeness score returned?
+
+## Test Reports
+- `/app/test_reports/iteration_11.json` - Modular pipeline testing (100% pass rate)
