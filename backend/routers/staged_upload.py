@@ -379,18 +379,20 @@ async def generate_triple_fusion(
     """
     Generate Triple Fusion (Charge Sheet + Case Diary 1 + Remand CD) from all staged files.
     
+    PIPELINE FLOW:
+    Upload → OCR → Classification → Extraction → Aggregation → Validation → AI Facts → DOCX → CCTNS
+    
     COST: CREDITS DEDUCTED HERE ONLY
-    - Processes all files in the case folder
-    - Merges data and generates all three documents
-    - Uses Word templates for stable table output
+    - Processes all files in the case folder using MODULAR PIPELINE
+    - Merges data via regex/rules (AI ONLY for Brief Facts & Remand Narrative)
+    - Uses DOCX TEMPLATES for stable table output (no code-generated layouts)
     - ROLLBACK: If generation fails, no credits are deducted
     """
-    from services.legal_llm import translate_to_legal_english, extract_entities, suggest_bns_sections
+    from services.pipeline import DocumentPipeline
     from services.template_generator import (
         generate_18_column_charge_sheet,
         generate_case_diary_part1,
-        generate_html_table_charge_sheet,
-        suggest_bns_sections as ml_suggest_sections
+        generate_html_table_charge_sheet
     )
     from services.remand_generator import generate_remand_case_diary_html
     
@@ -417,98 +419,23 @@ async def generate_triple_fusion(
     credits_to_deduct = 5  # Charge for Triple Fusion
     
     try:
-        logger.info(f"Starting Triple Fusion for case {case_id} (Transaction: {transaction_id})")
+        logger.info(f"Starting Triple Fusion Pipeline for case {case_id} (Transaction: {transaction_id})")
+        logger.info(f"Files to process: {len(metadata['files'])}")
         
-        # Step 1: Extract text from all files
-        all_texts = []
-        extraction_logs = []
+        # Initialize the modular pipeline
+        pipeline = DocumentPipeline(emergent_llm_key=EMERGENT_LLM_KEY)
         
+        # Collect file paths
+        file_paths = []
         for file_info in metadata["files"]:
             file_path = folder / file_info["saved_name"]
             if file_path.exists():
-                text = await extract_text_from_staged_file(file_path)
-                all_texts.append({
-                    "filename": file_info["original_name"],
-                    "text": text,
-                    "type": file_info["type"]
-                })
-                extraction_logs.append(f"{file_info['original_name']}: {len(text)} chars")
+                file_paths.append(file_path)
         
-        # Step 2: Process with LLM to extract structured data
-        combined_text = "\n\n---\n\n".join([f"[{t['filename']}]\n{t['text']}" for t in all_texts])
+        if not file_paths:
+            raise HTTPException(status_code=400, detail="No valid files found in staging folder")
         
-        extracted_data = {
-            "complainant": {},
-            "accused_persons": [],
-            "witnesses": [],
-            "offense_details": {},
-            "sections_of_law": metadata.get("sections", "").split(",") if metadata.get("sections") else [],
-            "brief_facts": "",
-            "property_lost": "",
-            "property_recovered": "",
-            "medical_findings": "",
-            "section_35_3_dates": []
-        }
-        
-        if EMERGENT_LLM_KEY and combined_text:
-            try:
-                from emergentintegrations.llm.chat import LlmChat, UserMessage
-                
-                system_prompt = """You are a Legal Document Processor for Indian Police documents.
-                
-Extract ALL data from the provided documents and return JSON:
-{
-  "complainant": {"name": "", "father_name": "", "age": null, "caste": "", "occupation": "", "address": "", "phone": ""},
-  "accused_persons": [{"serial": "A1", "name": "", "father_name": "", "age": null, "caste": "", "occupation": "", "address": ""}],
-  "witnesses": [{"serial": "LW-1", "name": "", "father_name": "", "age": "", "caste": "", "occupation": "", "address": "", "phone": "", "role": ""}],
-  "offense_details": {"type": "", "date": "", "time": "", "place": ""},
-  "sections_of_law": [],
-  "brief_facts": "",
-  "property_lost": "",
-  "property_recovered": "",
-  "medical_findings": "",
-  "section_35_3_dates": [],
-  "arrest_details": {"date": "", "time": "", "place": ""}
-}
-
-Extract ALL witnesses (LW-1 to LW-13+), all accused (A1 to A5+), and all details.
-Return ONLY valid JSON."""
-
-                chat = LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
-                    session_id=f"fusion-{transaction_id}",
-                    system_message=system_prompt
-                ).with_model("openai", "gpt-5.2")
-                
-                user_message = UserMessage(text=f"Extract all data from these {len(all_texts)} documents:\n\n{combined_text[:50000]}")
-                response = await chat.send_message(user_message)
-                
-                # Parse JSON response
-                clean_response = response.strip()
-                if clean_response.startswith("```json"):
-                    clean_response = clean_response[7:]
-                if clean_response.startswith("```"):
-                    clean_response = clean_response[3:]
-                if clean_response.endswith("```"):
-                    clean_response = clean_response[:-3]
-                
-                llm_data = json.loads(clean_response.strip())
-                
-                # Merge LLM data with extracted_data
-                for key in extracted_data:
-                    if key in llm_data and llm_data[key]:
-                        if isinstance(extracted_data[key], list):
-                            extracted_data[key].extend(llm_data[key])
-                        elif isinstance(extracted_data[key], dict):
-                            extracted_data[key].update(llm_data[key])
-                        else:
-                            extracted_data[key] = llm_data[key]
-                
-            except Exception as e:
-                logger.error(f"LLM processing error: {e}")
-                extraction_logs.append(f"LLM Error: {str(e)}")
-        
-        # Step 3: Generate all three documents
+        # Prepare case info for pipeline
         case_info = {
             "police_station": metadata.get("police_station", ""),
             "district": metadata.get("district", ""),
@@ -518,46 +445,94 @@ Return ONLY valid JSON."""
             "io_rank": officer.get("rank", "Sub Inspector of Police")
         }
         
-        # Generate 18-Column Charge Sheet
+        # Run the full pipeline
+        pipeline_result = await pipeline.process(
+            file_paths=file_paths,
+            case_info=case_info,
+            generate_ai_facts=bool(EMERGENT_LLM_KEY)
+        )
+        
+        # Extract data from pipeline result
+        unified_schema = pipeline_result.unified_schema
+        
+        # Convert unified schema to legacy format for HTML generators
+        extracted_data = {
+            "complainant": {
+                "name": unified_schema.complainant.name,
+                "father_name": unified_schema.complainant.father_name,
+                "age": unified_schema.complainant.age,
+                "caste": unified_schema.complainant.caste,
+                "occupation": unified_schema.complainant.occupation,
+                "address": unified_schema.complainant.address,
+                "phone": unified_schema.complainant.phone
+            } if unified_schema.complainant else {},
+            "accused_persons": [
+                {
+                    "serial": a.serial,
+                    "name": a.name,
+                    "father_name": a.father_name,
+                    "age": a.age,
+                    "caste": a.caste,
+                    "occupation": a.occupation,
+                    "address": a.address,
+                    "phone": a.phone
+                } for a in unified_schema.accused
+            ],
+            "witnesses": [
+                {
+                    "serial": w.serial,
+                    "name": w.name,
+                    "father_name": w.father_name,
+                    "age": w.age,
+                    "caste": w.caste,
+                    "occupation": w.occupation,
+                    "address": w.address,
+                    "phone": w.phone,
+                    "role": w.role
+                } for w in unified_schema.witnesses
+            ],
+            "offense_details": {
+                "type": unified_schema.incident.type,
+                "date": unified_schema.incident.date,
+                "time": unified_schema.incident.time,
+                "place": unified_schema.incident.place
+            },
+            "sections_of_law": unified_schema.fir.sections,
+            "brief_facts": unified_schema.facts.ai_generated or unified_schema.facts.raw[:3000],
+            "property_lost": unified_schema.property.lost,
+            "property_recovered": unified_schema.property.recovered,
+            "medical_findings": unified_schema.medical.findings,
+            "section_35_3_dates": unified_schema.notices.section_35_3_dates,
+            "notice_date": unified_schema.notices.section_35_3_dates[0] if unified_schema.notices.section_35_3_dates else ""
+        }
+        
+        # Generate HTML previews (for UI display)
         charge_sheet_html = generate_18_column_charge_sheet(extracted_data, case_info)
         charge_sheet_table = generate_html_table_charge_sheet(extracted_data, case_info)
-        
-        # Generate Case Diary Part-I
         case_diary_html = generate_case_diary_part1(extracted_data, case_info)
-        
-        # Generate Remand Case Diary
         remand_cd_html = generate_remand_case_diary_html(extracted_data, case_info)
         
-        # ML-suggested sections
-        brief_facts = extracted_data.get("brief_facts", "")
-        suggested_sections = ml_suggest_sections(brief_facts) if brief_facts else []
-        
-        # Step 4: Generate Word Documents (.docx)
-        from services.docx_generator import generate_chargesheet_docx, generate_case_diary_docx, generate_remand_case_diary_docx
-        
+        # Save DOCX files from pipeline (template-based)
         fir_safe = metadata.get("fir_number", "case").replace("/", "-")
         
-        # Generate Charge Sheet DOCX
-        chargesheet_bytes = generate_chargesheet_docx(extracted_data, case_info)
-        chargesheet_path = STAGING_BASE / f"{fir_safe}_ChargeSheet.docx"
-        with open(chargesheet_path, "wb") as f:
-            f.write(chargesheet_bytes)
+        if pipeline_result.documents.get('chargesheet'):
+            chargesheet_path = STAGING_BASE / f"{fir_safe}_ChargeSheet.docx"
+            with open(chargesheet_path, "wb") as f:
+                f.write(pipeline_result.documents['chargesheet'])
         
-        # Generate Case Diary DOCX
-        casediary_bytes = generate_case_diary_docx(extracted_data, case_info)
-        casediary_path = STAGING_BASE / f"{fir_safe}_CaseDiary.docx"
-        with open(casediary_path, "wb") as f:
-            f.write(casediary_bytes)
+        if pipeline_result.documents.get('casediary'):
+            casediary_path = STAGING_BASE / f"{fir_safe}_CaseDiary.docx"
+            with open(casediary_path, "wb") as f:
+                f.write(pipeline_result.documents['casediary'])
         
-        # Generate Remand CD DOCX
-        remand_bytes = generate_remand_case_diary_docx(extracted_data, case_info)
-        remand_path = STAGING_BASE / f"{fir_safe}_RemandCD.docx"
-        with open(remand_path, "wb") as f:
-            f.write(remand_bytes)
+        if pipeline_result.documents.get('remand'):
+            remand_path = STAGING_BASE / f"{fir_safe}_RemandCD.docx"
+            with open(remand_path, "wb") as f:
+                f.write(pipeline_result.documents['remand'])
         
-        logger.info(f"Generated Word documents: {chargesheet_path}, {casediary_path}, {remand_path}")
+        logger.info(f"Generated template-based Word documents for {fir_safe}")
         
-        # Step 5: Save to database
+        # Save to database
         fusion_record = {
             "case_id": case_id,
             "transaction_id": transaction_id,
@@ -567,12 +542,18 @@ Return ONLY valid JSON."""
             "fir_number": metadata.get("fir_number"),
             "documents_processed": len(metadata["files"]),
             "extracted_data": extracted_data,
+            "unified_schema": pipeline_result.unified_schema.to_dict() if pipeline_result.unified_schema else None,
+            "cctns_json": pipeline_result.cctns_json,
+            "validation": pipeline_result.validation.to_dict() if pipeline_result.validation else None,
             "charge_sheet_html": charge_sheet_html,
             "charge_sheet_table": charge_sheet_table,
             "case_diary_html": case_diary_html,
             "remand_cd_html": remand_cd_html,
-            "suggested_sections": suggested_sections,
-            "extraction_logs": extraction_logs,
+            "processing_log": pipeline_result.processing_log,
+            "pipeline_stats": {
+                "files_classified": pipeline_result.files_classified,
+                "extraction_stats": pipeline_result.extraction_stats
+            },
             "credits_used": credits_to_deduct,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "completed"
@@ -590,7 +571,8 @@ Return ONLY valid JSON."""
                 "correlation_id": transaction_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "case_id": case_id,
-                "files_processed": len(metadata["files"])
+                "files_processed": len(metadata["files"]),
+                "pipeline_used": True
             })
         
         # Update case status
@@ -599,7 +581,7 @@ Return ONLY valid JSON."""
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
         
-        logger.info(f"Triple Fusion completed for case {case_id} ({credits_to_deduct} credits)")
+        logger.info(f"Triple Fusion Pipeline completed for case {case_id} ({credits_to_deduct} credits)")
         
         return {
             "success": True,
@@ -608,24 +590,36 @@ Return ONLY valid JSON."""
             "documents_processed": len(metadata["files"]),
             "credits_used": credits_to_deduct,
             "extracted_data": {
-                "accused_count": len(extracted_data.get("accused_persons", [])),
-                "witness_count": len(extracted_data.get("witnesses", [])),
-                "complainant": extracted_data.get("complainant", {})
+                "accused_count": len(unified_schema.accused),
+                "witness_count": len(unified_schema.witnesses),
+                "complainant": {
+                    "name": unified_schema.complainant.name,
+                    "father_name": unified_schema.complainant.father_name
+                } if unified_schema.complainant else {}
             },
-            "suggested_sections": suggested_sections,
+            "cctns_json": pipeline_result.cctns_json,
+            "validation": {
+                "is_valid": pipeline_result.validation.is_valid if pipeline_result.validation else False,
+                "completeness_score": pipeline_result.validation.completeness_score if pipeline_result.validation else 0
+            },
+            "pipeline_stats": {
+                "files_classified": pipeline_result.files_classified,
+                "extraction_stats": pipeline_result.extraction_stats
+            },
             "documents": {
                 "charge_sheet": charge_sheet_html,
                 "charge_sheet_table": charge_sheet_table,
                 "case_diary": case_diary_html,
                 "remand_cd": remand_cd_html
             },
-            "extraction_logs": extraction_logs,
-            "message": "Triple Fusion generated successfully!"
+            "processing_log": pipeline_result.processing_log[:20],  # Limit log entries
+            "warnings": pipeline_result.warnings,
+            "message": "Triple Fusion generated successfully with modular pipeline!"
         }
         
     except Exception as e:
         # ROLLBACK: No credits deducted on failure
-        logger.error(f"Triple Fusion FAILED for case {case_id} (Transaction: {transaction_id}): {e}")
+        logger.error(f"Triple Fusion Pipeline FAILED for case {case_id} (Transaction: {transaction_id}): {e}")
         
         if db is not None:
             await db.action_logs.insert_one({

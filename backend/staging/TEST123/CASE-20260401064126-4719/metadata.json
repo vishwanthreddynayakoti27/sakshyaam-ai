@@ -1,0 +1,19 @@
+{
+  "case_id": "CASE-20260401064126-4719",
+  "officer_id": "TEST123",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "UPLOAD-064126/2026",
+  "sections": "118(2) BNS",
+  "created_at": "2026-04-01T06:41:26.385860+00:00",
+  "status": "staging",
+  "files": [
+    {
+      "original_name": "test_doc.docx",
+      "saved_name": "bbbe2194_test_doc.docx",
+      "size": 61,
+      "type": ".docx",
+      "uploaded_at": "2026-04-01T06:41:26.483625+00:00"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "case_id": "CASE-20260401063958-6D73",
+  "officer_id": "TEST123",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "CCTNS-063958/2026",
+  "sections": "118(2) BNS",
+  "created_at": "2026-04-01T06:39:58.239885+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "test.docx",
+      "saved_name": "b098a515_test.docx",
+      "size": 64,
+      "type": ".docx",
+      "uploaded_at": "2026-04-01T06:39:58.344459+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260401063958-dbbd"
+}
