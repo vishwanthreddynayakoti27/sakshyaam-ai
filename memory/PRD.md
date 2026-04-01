@@ -14,13 +14,19 @@ SAAKSHYAM AI is a comprehensive police investigation command console implementin
 ### Pipeline Services Implemented ✅
 | Service | Description | File |
 |---------|-------------|------|
-| **OCRService** | Text extraction from PDF/DOCX/DOC/Images | `pipeline/ocr_service.py` |
+| **OCRService** | Local Tesseract OCR (Telugu+English+Hindi, NO API key needed) | `pipeline/ocr_service.py` |
 | **FileClassifier** | Document type detection (FIR, CD, Witness, Medical) | `pipeline/file_classifier.py` |
 | **ExtractionService** | Regex-based data extraction (persons, dates, sections) | `pipeline/extraction_service.py` |
 | **WitnessService** | Witness role classification (Complainant, Eyewitness, Panch) | `pipeline/witness_service.py` |
 | **AggregatorService** | Unified JSON schema builder with deduplication | `pipeline/aggregator_service.py` |
 | **ValidationService** | Required field validation with completeness score | `pipeline/validation_service.py` |
 | **TemplateService** | Template-based DOCX generation using docxtpl | `pipeline/template_service.py` |
+
+### OCR Configuration ✅
+- **Engine**: Tesseract 5.3.0 (local, no API keys)
+- **Languages**: English (eng) + Telugu (tel) + Hindi (hin)
+- **Formats**: PDF, JPG, PNG, DOCX, DOC
+- **PDF Processing**: pdf2image + Tesseract (falls back to PyPDF2 for text PDFs)
 
 ### Unified JSON Schema ✅
 ```json

@@ -1,13 +1,15 @@
 """
-OCR Service - Text Extraction from Multiple File Formats
-=========================================================
+OCR Service - Local Tesseract-Based Text Extraction
+=====================================================
 Extracts text from: PDF, DOCX, DOC, JPG, PNG, JPEG, WEBP, GIF
 
 Uses:
-  - PyPDF2 for PDF text extraction
+  - pytesseract for image OCR (Telugu + English support)
+  - pdf2image for PDF to image conversion
   - python-docx for DOCX parsing
   - antiword for legacy DOC files
-  - pytesseract for image OCR
+
+NO external API dependencies - fully local processing.
 """
 import io
 import os
@@ -15,8 +17,11 @@ import tempfile
 import subprocess
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, List
 from dataclasses import dataclass
+
+import pytesseract
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -35,38 +40,44 @@ class OCRResult:
 
 class OCRService:
     """
-    Multi-format text extraction service.
-    Handles PDF, DOCX, DOC, and images with OCR.
+    Multi-format text extraction service using local Tesseract OCR.
+    Handles PDF, DOCX, DOC, and images with Telugu + English support.
+    NO external API keys required.
     """
     
     SUPPORTED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png', '.gif', '.webp'}
     
-    def __init__(self, google_vision_credentials: Optional[str] = None, 
-                 google_translate_credentials: Optional[str] = None):
-        """
-        Initialize OCR service.
-        
-        Args:
-            google_vision_credentials: Path to Google Vision API credentials JSON
-            google_translate_credentials: Path to Google Translate API credentials JSON
-        """
-        self.google_vision_credentials = google_vision_credentials or os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
-        self.google_translate_credentials = google_translate_credentials or os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')
-        
-        # Check if tesseract is available as fallback
-        self.tesseract_available = self._check_tesseract()
+    # Tesseract language configuration
+    # eng = English, tel = Telugu, hin = Hindi
+    TESSERACT_LANG = 'eng+tel+hin'
     
-    def _check_tesseract(self) -> bool:
-        """Check if tesseract OCR is available."""
+    # Tesseract configuration for better accuracy
+    TESSERACT_CONFIG = '--oem 3 --psm 6'
+    # OEM 3 = Default (LSTM + Legacy)
+    # PSM 6 = Assume uniform block of text
+    
+    def __init__(self):
+        """Initialize OCR service with Tesseract."""
+        self._verify_tesseract()
+    
+    def _verify_tesseract(self) -> bool:
+        """Verify Tesseract is installed and available."""
         try:
-            result = subprocess.run(['tesseract', '--version'], capture_output=True, timeout=5)
-            return result.returncode == 0
-        except Exception:
+            version = pytesseract.get_tesseract_version()
+            logger.info(f"Tesseract OCR version: {version}")
+            
+            # Check available languages
+            langs = pytesseract.get_languages()
+            logger.info(f"Available languages: {langs}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Tesseract not available: {e}")
             return False
     
     def extract_text(self, file_path: Path, contents: Optional[bytes] = None) -> OCRResult:
         """
-        Extract text from a file.
+        Extract text from a file using local Tesseract OCR.
         
         Args:
             file_path: Path to the file
@@ -104,7 +115,7 @@ class OCRService:
         # Route to appropriate extractor
         try:
             if ext == '.pdf':
-                text = self._extract_pdf(contents)
+                text = self._extract_pdf(contents, filename)
             elif ext == '.docx':
                 text = self._extract_docx(contents)
             elif ext == '.doc':
@@ -119,7 +130,8 @@ class OCRService:
                 source_file=filename,
                 file_type=ext,
                 success=True,
-                char_count=len(text)
+                char_count=len(text),
+                language_detected="eng+tel"
             )
             
         except Exception as e:
@@ -132,19 +144,62 @@ class OCRService:
                 error=str(e)
             )
     
-    def _extract_pdf(self, contents: bytes) -> str:
-        """Extract text from PDF using PyPDF2."""
-        from PyPDF2 import PdfReader
-        
-        reader = PdfReader(io.BytesIO(contents))
+    def _extract_pdf(self, contents: bytes, filename: str) -> str:
+        """
+        Extract text from PDF using pdf2image + Tesseract OCR.
+        Falls back to PyPDF2 for text-based PDFs.
+        """
         text_parts = []
         
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
+        # First try PyPDF2 for text extraction (faster for text-based PDFs)
+        try:
+            from PyPDF2 import PdfReader
+            reader = PdfReader(io.BytesIO(contents))
+            
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text and len(page_text.strip()) > 50:
+                    text_parts.append(page_text)
+            
+            # If we got substantial text, return it
+            combined = "\n\n".join(text_parts)
+            if len(combined.strip()) > 100:
+                logger.info(f"Extracted {len(combined)} chars from PDF using PyPDF2")
+                return combined
+        except Exception as e:
+            logger.debug(f"PyPDF2 extraction failed, falling back to OCR: {e}")
         
-        return "\n\n".join(text_parts) if text_parts else ""
+        # Fall back to OCR using pdf2image + Tesseract
+        try:
+            from pdf2image import convert_from_bytes
+            
+            # Convert PDF pages to images
+            images = convert_from_bytes(
+                contents,
+                dpi=300,  # Higher DPI for better OCR accuracy
+                fmt='PNG'
+            )
+            
+            logger.info(f"Converting {len(images)} PDF pages to images for OCR")
+            
+            for i, image in enumerate(images):
+                # Apply OCR to each page
+                page_text = pytesseract.image_to_string(
+                    image,
+                    lang=self.TESSERACT_LANG,
+                    config=self.TESSERACT_CONFIG
+                )
+                
+                if page_text.strip():
+                    text_parts.append(f"--- Page {i+1} ---\n{page_text}")
+            
+            combined = "\n\n".join(text_parts)
+            logger.info(f"OCR extracted {len(combined)} chars from PDF ({len(images)} pages)")
+            return combined
+            
+        except Exception as e:
+            logger.error(f"PDF OCR extraction failed: {e}")
+            return f"[PDF extraction failed: {str(e)}]"
     
     def _extract_docx(self, contents: bytes) -> str:
         """Extract text from DOCX including tables."""
@@ -190,83 +245,56 @@ class OCRService:
             os.unlink(tmp_path)
     
     def _extract_image(self, contents: bytes, filename: str) -> str:
-        """Extract text from image using Google Vision or Tesseract."""
-        
-        # Try Google Vision first (higher quality)
-        if self.google_vision_credentials and os.path.exists(self.google_vision_credentials):
-            try:
-                return self._google_vision_ocr(contents)
-            except Exception as e:
-                logger.warning(f"Google Vision failed, falling back to Tesseract: {e}")
-        
-        # Fallback to Tesseract
-        if self.tesseract_available:
-            return self._tesseract_ocr(contents)
-        
-        return f"[OCR not configured for image: {filename}]"
-    
-    def _google_vision_ocr(self, contents: bytes) -> str:
-        """OCR using Google Cloud Vision API."""
-        from google.cloud import vision
-        from google.oauth2 import service_account
-        
-        credentials = service_account.Credentials.from_service_account_file(
-            self.google_vision_credentials
-        )
-        client = vision.ImageAnnotatorClient(credentials=credentials)
-        
-        image = vision.Image(content=contents)
-        response = client.text_detection(image=image)
-        
-        if response.text_annotations:
-            text = response.text_annotations[0].description
-            
-            # Auto-translate if Telugu/Hindi detected
-            if self.google_translate_credentials and os.path.exists(self.google_translate_credentials):
-                text = self._translate_if_needed(text)
-            
-            return text
-        
-        return ""
-    
-    def _tesseract_ocr(self, contents: bytes) -> str:
-        """OCR using Tesseract (fallback)."""
-        import pytesseract
-        from PIL import Image
-        
-        image = Image.open(io.BytesIO(contents))
-        
-        # Try multiple languages
+        """
+        Extract text from image using Tesseract OCR.
+        Supports Telugu + English + Hindi.
+        """
         try:
-            text = pytesseract.image_to_string(image, lang='eng+tel+hin')
-        except Exception:
-            text = pytesseract.image_to_string(image, lang='eng')
-        
-        return text
-    
-    def _translate_if_needed(self, text: str) -> str:
-        """Translate non-English text to English."""
-        try:
-            from google.cloud import translate_v2 as translate
-            from google.oauth2 import service_account
+            # Open image with PIL
+            image = Image.open(io.BytesIO(contents))
             
-            credentials = service_account.Credentials.from_service_account_file(
-                self.google_translate_credentials
+            # Convert to RGB if necessary (for PNG with transparency)
+            if image.mode in ('RGBA', 'P'):
+                image = image.convert('RGB')
+            
+            # Preprocess for better OCR
+            image = self._preprocess_image(image)
+            
+            # Run Tesseract OCR
+            text = pytesseract.image_to_string(
+                image,
+                lang=self.TESSERACT_LANG,
+                config=self.TESSERACT_CONFIG
             )
-            client = translate.Client(credentials=credentials)
             
-            # Detect language
-            detection = client.detect_language(text[:500])
+            logger.info(f"OCR extracted {len(text)} chars from image {filename}")
+            return text.strip()
             
-            if detection['language'] not in ['en', 'und']:
-                result = client.translate(text, target_language='en')
-                return result['translatedText']
         except Exception as e:
-            logger.warning(f"Translation failed: {e}")
-        
-        return text
+            logger.error(f"Image OCR failed for {filename}: {e}")
+            return f"[OCR failed for image: {str(e)}]"
     
-    def batch_extract(self, file_paths: list[Path]) -> list[OCRResult]:
+    def _preprocess_image(self, image: Image.Image) -> Image.Image:
+        """
+        Preprocess image for better OCR accuracy.
+        - Resize if too small
+        - Convert to grayscale
+        - Increase contrast
+        """
+        # Resize if too small (minimum 300px width)
+        min_width = 300
+        if image.width < min_width:
+            ratio = min_width / image.width
+            new_size = (int(image.width * ratio), int(image.height * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # Convert to grayscale for better OCR
+        if image.mode != 'L':
+            image = image.convert('L')
+        
+        return image
+    
+    def batch_extract(self, file_paths: List[Path]) -> List[OCRResult]:
         """
         Extract text from multiple files.
         
@@ -283,3 +311,43 @@ class OCRService:
             logger.info(f"Extracted {result.char_count} chars from {result.source_file}")
         
         return results
+    
+    def extract_from_image_bytes(self, image_bytes: bytes, lang: str = None) -> str:
+        """
+        Direct OCR from image bytes.
+        
+        Args:
+            image_bytes: Raw image bytes
+            lang: Language code (default: eng+tel+hin)
+            
+        Returns:
+            Extracted text
+        """
+        lang = lang or self.TESSERACT_LANG
+        
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            if image.mode in ('RGBA', 'P'):
+                image = image.convert('RGB')
+            
+            image = self._preprocess_image(image)
+            
+            text = pytesseract.image_to_string(
+                image,
+                lang=lang,
+                config=self.TESSERACT_CONFIG
+            )
+            
+            return text.strip()
+            
+        except Exception as e:
+            logger.error(f"Direct image OCR failed: {e}")
+            return ""
+    
+    def get_supported_languages(self) -> List[str]:
+        """Get list of installed Tesseract languages."""
+        try:
+            return pytesseract.get_languages()
+        except Exception:
+            return ['eng']
