@@ -1,0 +1,20 @@
+{
+  "case_id": "CASE-20260402132638-FEDD",
+  "officer_id": "TEST123",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "SCREENSHOT-TEST/2026",
+  "sections": "",
+  "created_at": "2026-04-02T13:26:38.301416+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "test_upload_fir.pdf",
+      "saved_name": "36e42264_test_upload_fir.pdf",
+      "size": 1645,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-02T13:26:38.361987+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260402132643-bc96"
+}

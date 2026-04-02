@@ -711,3 +711,147 @@ def generate_html_table_charge_sheet(data: Dict, case_info: Dict, embedded_image
     """
     
     return html
+
+
+
+def generate_case_diary_html(data: Dict, case_info: Dict) -> str:
+    """
+    Generate Case Diary Part-I as HTML table for frontend display.
+    Proper styling for browser rendering.
+    """
+    comp = data.get("complainant", {})
+    accused = data.get("accused_persons", [])
+    witnesses = data.get("witnesses", [])
+    offense = data.get("offense_details", {})
+    
+    # Build accused HTML
+    accused_html = ""
+    if accused:
+        for acc in accused:
+            accused_html += f"""
+            <tr>
+                <td colspan="2" style="padding: 5px; border: 1px solid #333;">
+                    <strong>{acc.get('serial', 'A1')}.</strong> {acc.get('name', '[ ]')}<br/>
+                    S/o: {acc.get('father_name', '[ ]')}, Age: {acc.get('age', '[ ]')}<br/>
+                    R/o: {acc.get('address', '[ ]')}
+                </td>
+            </tr>
+            """
+    else:
+        accused_html = '<tr><td colspan="2">[ ] - No accused details</td></tr>'
+    
+    # Build witness HTML
+    witness_html = ""
+    if witnesses:
+        for wit in witnesses:
+            witness_html += f"""
+            <tr>
+                <td colspan="2" style="padding: 5px; border: 1px solid #333;">
+                    <strong>{wit.get('serial', 'LW-1')}.</strong> {wit.get('name', '[ ]')} - {wit.get('role', '[ ]')}
+                </td>
+            </tr>
+            """
+    else:
+        witness_html = '<tr><td colspan="2">[ ] - No witnesses</td></tr>'
+    
+    sections = ", ".join(data.get("sections_of_law", [])) or case_info.get("sections", "[ ]")
+    brief_facts = data.get("brief_facts", "[ ] - To be filled")
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Times New Roman', serif; font-size: 12px; margin: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
+            th, td {{ border: 1px solid #000; padding: 8px; text-align: left; vertical-align: top; }}
+            th {{ background-color: #f0f0f0; font-weight: bold; }}
+            .header {{ text-align: center; font-size: 16px; font-weight: bold; margin-bottom: 15px; }}
+            .row-num {{ width: 30px; text-align: center; font-weight: bold; }}
+            .signature-block {{ margin-top: 30px; text-align: right; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">CASE DIARY Part - I</div>
+        
+        <table>
+            <tr>
+                <td colspan="2">
+                    <strong>Police Station:</strong> {case_info.get('police_station', '[ ]')} &nbsp;&nbsp;
+                    <strong>Dist:</strong> {case_info.get('district', '[ ]')} &nbsp;&nbsp;
+                    <strong>F.I.R. No.:</strong> {case_info.get('fir_number', '[ ]')}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <strong>Date, Time & Place:</strong> {offense.get('date', '[ ]')} at {offense.get('time', '[ ]')}, {offense.get('place', '[ ]')}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2"><strong>Offence u/s:</strong> {sections}</td>
+            </tr>
+        </table>
+        
+        <table>
+            <tr>
+                <td class="row-num">1</td>
+                <td>
+                    <strong>Date and time of report:</strong><br/>
+                    {case_info.get('fir_date', datetime.now().strftime('%d.%m.%Y'))}
+                </td>
+            </tr>
+            <tr>
+                <td class="row-num">2</td>
+                <td>
+                    <strong>Name of the Complainant/Informant:</strong><br/>
+                    Name: {comp.get('name', '[ ]')}<br/>
+                    S/o: {comp.get('father_name', '[ ]')}<br/>
+                    Age: {comp.get('age', '[ ]')}, Caste: {comp.get('caste', '[ ]')}, Occ: {comp.get('occupation', '[ ]')}<br/>
+                    R/o: {comp.get('address', '[ ]')}<br/>
+                    Ph: {comp.get('phone', '[ ]')}
+                </td>
+            </tr>
+            <tr>
+                <td class="row-num">3</td>
+                <td><strong>Name and address of accused:</strong></td>
+            </tr>
+            {accused_html}
+            <tr>
+                <td class="row-num">4</td>
+                <td><strong>Property Lost:</strong> {data.get('property_lost', '---')}</td>
+            </tr>
+            <tr>
+                <td class="row-num">5</td>
+                <td><strong>Property Recovered:</strong> {data.get('property_recovered', '---')}</td>
+            </tr>
+            <tr>
+                <td class="row-num">6</td>
+                <td><strong>Date of Last Case Diary:</strong> First CD</td>
+            </tr>
+            <tr>
+                <td class="row-num">7</td>
+                <td><strong>Name of the deceased:</strong> ---</td>
+            </tr>
+            <tr>
+                <td class="row-num">8</td>
+                <td><strong>Witnesses examined:</strong></td>
+            </tr>
+            {witness_html}
+        </table>
+        
+        <div style="margin-top: 20px;">
+            <strong>INVESTIGATION NARRATIVE:</strong><br/>
+            <p>{brief_facts}</p>
+            <p>Closed the C.D. for the day. Further progress follows through my next CD.</p>
+        </div>
+        
+        <div class="signature-block">
+            ({case_info.get('io_name', '[ ]')})<br/>
+            {case_info.get('io_rank', '[ ]')}<br/>
+            PS {case_info.get('police_station', '[ ]')}
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html

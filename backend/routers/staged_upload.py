@@ -392,7 +392,8 @@ async def generate_triple_fusion(
     from services.template_generator import (
         generate_18_column_charge_sheet,
         generate_case_diary_part1,
-        generate_html_table_charge_sheet
+        generate_html_table_charge_sheet,
+        generate_case_diary_html
     )
     from services.remand_generator import generate_remand_case_diary_html
     
@@ -509,7 +510,7 @@ async def generate_triple_fusion(
         # Generate HTML previews (for UI display)
         charge_sheet_html = generate_18_column_charge_sheet(extracted_data, case_info)
         charge_sheet_table = generate_html_table_charge_sheet(extracted_data, case_info)
-        case_diary_html = generate_case_diary_part1(extracted_data, case_info)
+        case_diary_html = generate_case_diary_html(extracted_data, case_info)
         remand_cd_html = generate_remand_case_diary_html(extracted_data, case_info)
         
         # Save DOCX files from pipeline (template-based)
@@ -607,7 +608,7 @@ async def generate_triple_fusion(
                 "extraction_stats": pipeline_result.extraction_stats
             },
             "documents": {
-                "charge_sheet": charge_sheet_html,
+                "charge_sheet": charge_sheet_table,  # Use HTML table version for frontend
                 "charge_sheet_table": charge_sheet_table,
                 "case_diary": case_diary_html,
                 "remand_cd": remand_cd_html
