@@ -4,8 +4,9 @@ Staged Upload System for Charge Sheet Fusion
 - Single credit deduction on "Generate Triple Fusion" trigger
 - Supports unlimited batch uploads
 - Roll-back on failure (no credits deducted)
+- ASYNC BACKGROUND PROCESSING for large batches
 """
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -19,6 +20,7 @@ import json
 import io
 import tempfile
 import subprocess
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,9 @@ STAGING_BASE.mkdir(parents=True, exist_ok=True)
 # Database connection
 db = None
 JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
+
+# In-memory job status tracking (for background processing)
+processing_jobs = {}
 
 
 def set_database(database):
@@ -445,6 +450,64 @@ async def generate_triple_fusion(
                 "message": "Triple Fusion retrieved from cache (0 credits used)"
             }
     
+    # CHECK FOR IN-PROGRESS PROCESSING
+    job_key = f"{officer.get('officer_id')}_{case_id}"
+    if job_key in processing_jobs:
+        job_status = processing_jobs[job_key]
+        if job_status.get("status") == "processing":
+            # Return processing status for frontend to poll
+            return {
+                "success": False,
+                "status": "processing",
+                "case_id": case_id,
+                "message": f"Triple Fusion is being generated. Please wait... ({job_status.get('progress', 0)}%)",
+                "progress": job_status.get("progress", 0),
+                "started_at": job_status.get("started_at"),
+                "estimated_time_remaining": job_status.get("estimated_time_remaining", "2-3 minutes")
+            }
+        elif job_status.get("status") == "completed":
+            # Processing completed, return result
+            result = job_status.get("result")
+            del processing_jobs[job_key]  # Clear job
+            return result
+        elif job_status.get("status") == "failed":
+            error = job_status.get("error", "Unknown error")
+            del processing_jobs[job_key]  # Clear job
+            raise HTTPException(status_code=500, detail=f"Processing failed: {error}")
+    
+    # LARGE BATCH HANDLING: For 6+ files, return immediately and process in background
+    num_files = len(metadata.get("files", []))
+    if num_files >= 6:
+        logger.info(f"Large batch ({num_files} files) - starting background processing for case {case_id}")
+        
+        # Mark as processing
+        processing_jobs[job_key] = {
+            "status": "processing",
+            "progress": 0,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "estimated_time_remaining": f"{num_files * 15} seconds",
+            "case_id": case_id
+        }
+        
+        # Start background task
+        asyncio.create_task(_process_triple_fusion_background(
+            case_id=case_id,
+            officer=officer,
+            metadata=metadata,
+            folder=folder,
+            job_key=job_key
+        ))
+        
+        # Return immediately with processing status
+        return {
+            "success": False,
+            "status": "processing",
+            "case_id": case_id,
+            "message": f"Processing {num_files} files in background. Click 'Generate' again in 30-60 seconds to check status.",
+            "progress": 5,
+            "estimated_time_remaining": f"{num_files * 10} seconds"
+        }
+    
     # Transaction tracking (for rollback)
     transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
     credits_to_deduct = 5  # Charge for Triple Fusion
@@ -728,3 +791,229 @@ async def download_fusion_document(
         )
     
     raise HTTPException(status_code=404, detail="Document not found")
+
+
+
+async def _process_triple_fusion_background(
+    case_id: str,
+    officer: dict,
+    metadata: dict,
+    folder: Path,
+    job_key: str
+):
+    """
+    Background task to process Triple Fusion for large batches.
+    Updates processing_jobs status as it progresses.
+    """
+    from services.pipeline import DocumentPipeline
+    from services.template_generator import (
+        generate_18_column_charge_sheet,
+        generate_case_diary_part1,
+        generate_html_table_charge_sheet,
+        generate_case_diary_html
+    )
+    from services.remand_generator import generate_remand_case_diary_html
+    
+    EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+    
+    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    credits_to_deduct = 5
+    
+    try:
+        logger.info(f"[BACKGROUND] Starting Triple Fusion for case {case_id}")
+        processing_jobs[job_key]["progress"] = 10
+        
+        # Initialize pipeline
+        pipeline = DocumentPipeline(emergent_llm_key=EMERGENT_LLM_KEY)
+        
+        # Collect file paths
+        file_paths = []
+        for file_info in metadata["files"]:
+            file_path = folder / file_info["saved_name"]
+            if file_path.exists():
+                file_paths.append(file_path)
+        
+        processing_jobs[job_key]["progress"] = 20
+        
+        # Prepare case info
+        case_info = {
+            "police_station": metadata.get("police_station", ""),
+            "district": metadata.get("district", ""),
+            "fir_number": metadata.get("fir_number", ""),
+            "sections": metadata.get("sections", ""),
+            "io_name": officer.get("name", ""),
+            "io_rank": officer.get("rank", "Sub Inspector of Police")
+        }
+        
+        # Run pipeline
+        processing_jobs[job_key]["progress"] = 30
+        pipeline_result = await pipeline.process(
+            file_paths=file_paths,
+            case_info=case_info,
+            generate_ai_facts=bool(EMERGENT_LLM_KEY)
+        )
+        
+        processing_jobs[job_key]["progress"] = 60
+        
+        # Extract data
+        unified_schema = pipeline_result.unified_schema
+        
+        extracted_data = {
+            "complainant": {
+                "name": unified_schema.complainant.name if unified_schema.complainant else "",
+                "father_name": unified_schema.complainant.father_name if unified_schema.complainant else "",
+                "age": unified_schema.complainant.age if unified_schema.complainant else "",
+                "caste": unified_schema.complainant.caste if unified_schema.complainant else "",
+                "occupation": unified_schema.complainant.occupation if unified_schema.complainant else "",
+                "address": unified_schema.complainant.address if unified_schema.complainant else "",
+                "phone": unified_schema.complainant.phone if unified_schema.complainant else ""
+            } if unified_schema.complainant else {},
+            "accused_persons": [
+                {"serial": a.serial, "name": a.name, "father_name": a.father_name, "age": a.age, "caste": a.caste, "occupation": a.occupation, "address": a.address, "phone": a.phone}
+                for a in unified_schema.accused
+            ],
+            "witnesses": [
+                {"serial": w.serial, "name": w.name, "father_name": w.father_name, "age": w.age, "caste": w.caste, "occupation": w.occupation, "address": w.address, "role": w.role}
+                for w in unified_schema.witnesses
+            ],
+            "fir_number": unified_schema.fir_number or metadata.get("fir_number", ""),
+            "police_station": unified_schema.police_station or metadata.get("police_station", ""),
+            "district": unified_schema.district or metadata.get("district", ""),
+            "sections": unified_schema.sections if unified_schema.sections else metadata.get("sections", "").split(","),
+            "act_type": unified_schema.act_type or "BNS",
+            "io_name": unified_schema.io_name or officer.get("name", ""),
+            "io_rank": "Sub Inspector of Police",
+            "incident_date": unified_schema.incident_date or "",
+            "incident_time": unified_schema.incident_time or "",
+            "incident_place": unified_schema.incident_place or "",
+            "brief_facts": unified_schema.brief_facts or "",
+        }
+        
+        processing_jobs[job_key]["progress"] = 70
+        
+        # Generate HTML documents
+        charge_sheet_html = generate_html_table_charge_sheet(extracted_data, extracted_data.get("fir_number", ""))
+        case_diary_html = generate_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
+        remand_cd_html = generate_remand_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
+        
+        processing_jobs[job_key]["progress"] = 85
+        
+        # Save to database
+        if db is not None:
+            fusion_result = {
+                "case_id": case_id,
+                "transaction_id": transaction_id,
+                "officer_id": officer.get("officer_id"),
+                "police_station": metadata.get("police_station", ""),
+                "district": metadata.get("district", ""),
+                "fir_number": metadata.get("fir_number", ""),
+                "documents_processed": len(file_paths),
+                "extracted_data": extracted_data,
+                "charge_sheet_html": charge_sheet_html,
+                "case_diary_html": case_diary_html,
+                "remand_cd_html": remand_cd_html,
+                "pipeline_stats": pipeline_result.stats,
+                "credits_used": credits_to_deduct,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "completed"
+            }
+            
+            await db.triple_fusions.update_one(
+                {"case_id": case_id, "officer_id": officer.get("officer_id")},
+                {"$set": fusion_result},
+                upsert=True
+            )
+            
+            # Update officer credits
+            await db.officers.update_one(
+                {"officer_id": officer.get("officer_id")},
+                {"$inc": {"credits": -credits_to_deduct}}
+            )
+        
+        # Update metadata
+        metadata["status"] = "completed"
+        metadata["fusion_transaction_id"] = transaction_id
+        with open(folder / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+        
+        processing_jobs[job_key]["progress"] = 100
+        
+        # Store successful result
+        processing_jobs[job_key] = {
+            "status": "completed",
+            "progress": 100,
+            "result": {
+                "success": True,
+                "transaction_id": transaction_id,
+                "case_id": case_id,
+                "documents_processed": len(file_paths),
+                "credits_used": credits_to_deduct,
+                "documents": {
+                    "charge_sheet": charge_sheet_html,
+                    "case_diary": case_diary_html,
+                    "remand_cd": remand_cd_html
+                },
+                "extracted_data": extracted_data,
+                "message": "Triple Fusion completed successfully!"
+            }
+        }
+        
+        logger.info(f"[BACKGROUND] Triple Fusion completed for case {case_id}")
+        
+    except Exception as e:
+        logger.error(f"[BACKGROUND] Triple Fusion failed for case {case_id}: {e}")
+        processing_jobs[job_key] = {
+            "status": "failed",
+            "error": str(e),
+            "progress": 0
+        }
+
+
+@router.get("/job-status/{case_id}")
+async def get_job_status(
+    case_id: str,
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Check the status of a background processing job.
+    """
+    job_key = f"{officer.get('officer_id')}_{case_id}"
+    
+    if job_key in processing_jobs:
+        job = processing_jobs[job_key]
+        
+        if job.get("status") == "completed":
+            result = job.get("result")
+            del processing_jobs[job_key]
+            return result
+        elif job.get("status") == "failed":
+            error = job.get("error")
+            del processing_jobs[job_key]
+            raise HTTPException(status_code=500, detail=f"Processing failed: {error}")
+        else:
+            return {
+                "success": False,
+                "status": "processing",
+                "progress": job.get("progress", 0),
+                "message": f"Processing... {job.get('progress', 0)}%"
+            }
+    
+    # Check if already completed in database
+    if db is not None:
+        existing = await db.triple_fusions.find_one(
+            {"case_id": case_id, "officer_id": officer.get("officer_id")},
+            {"_id": 0}
+        )
+        if existing and existing.get("status") == "completed":
+            return {
+                "success": True,
+                "status": "completed",
+                "message": "Triple Fusion already completed. Click Generate to view.",
+                "cached": True
+            }
+    
+    return {
+        "success": False,
+        "status": "not_found",
+        "message": "No processing job found for this case"
+    }
