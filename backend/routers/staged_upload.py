@@ -855,38 +855,94 @@ async def _process_triple_fusion_background(
         
         processing_jobs[job_key]["progress"] = 60
         
-        # Extract data
+        # Extract data from unified schema with defensive checks
         unified_schema = pipeline_result.unified_schema
         
+        # Safely extract complainant data
+        comp_data = {}
+        if unified_schema.complainant:
+            comp_data = {
+                "name": getattr(unified_schema.complainant, 'name', '') or '',
+                "father_name": getattr(unified_schema.complainant, 'father_name', '') or '',
+                "age": getattr(unified_schema.complainant, 'age', '') or '',
+                "caste": getattr(unified_schema.complainant, 'caste', '') or '',
+                "occupation": getattr(unified_schema.complainant, 'occupation', '') or '',
+                "address": getattr(unified_schema.complainant, 'address', '') or '',
+                "phone": getattr(unified_schema.complainant, 'phone', '') or ''
+            }
+        
+        # Safely extract FIR data
+        fir_number = metadata.get("fir_number", "")
+        police_station = metadata.get("police_station", "")
+        district = metadata.get("district", "")
+        sections = metadata.get("sections", "").split(",") if metadata.get("sections") else []
+        
+        if unified_schema.fir:
+            fir_number = getattr(unified_schema.fir, 'number', '') or fir_number
+            police_station = getattr(unified_schema.fir, 'police_station', '') or police_station
+            district = getattr(unified_schema.fir, 'district', '') or district
+            if hasattr(unified_schema.fir, 'sections') and unified_schema.fir.sections:
+                sections = unified_schema.fir.sections
+        
+        # Safely extract incident data
+        incident_date = ""
+        incident_time = ""
+        incident_place = ""
+        if unified_schema.incident:
+            incident_date = getattr(unified_schema.incident, 'date', '') or ''
+            incident_time = getattr(unified_schema.incident, 'time', '') or ''
+            incident_place = getattr(unified_schema.incident, 'place', '') or ''
+        
+        # Safely extract brief facts
+        brief_facts = ""
+        if unified_schema.facts:
+            brief_facts = getattr(unified_schema.facts, 'ai_generated', '') or getattr(unified_schema.facts, 'raw', '') or ''
+        
+        # Safely extract IO details
+        io_name = officer.get("name", "")
+        if isinstance(unified_schema.io_details, dict):
+            io_name = unified_schema.io_details.get("name", "") or io_name
+        
+        # Build extracted_data
         extracted_data = {
-            "complainant": {
-                "name": unified_schema.complainant.name if unified_schema.complainant else "",
-                "father_name": unified_schema.complainant.father_name if unified_schema.complainant else "",
-                "age": unified_schema.complainant.age if unified_schema.complainant else "",
-                "caste": unified_schema.complainant.caste if unified_schema.complainant else "",
-                "occupation": unified_schema.complainant.occupation if unified_schema.complainant else "",
-                "address": unified_schema.complainant.address if unified_schema.complainant else "",
-                "phone": unified_schema.complainant.phone if unified_schema.complainant else ""
-            } if unified_schema.complainant else {},
+            "complainant": comp_data,
             "accused_persons": [
-                {"serial": a.serial, "name": a.name, "father_name": a.father_name, "age": a.age, "caste": a.caste, "occupation": a.occupation, "address": a.address, "phone": a.phone}
-                for a in unified_schema.accused
+                {
+                    "serial": getattr(a, 'serial', ''),
+                    "name": getattr(a, 'name', ''),
+                    "father_name": getattr(a, 'father_name', ''),
+                    "age": getattr(a, 'age', ''),
+                    "caste": getattr(a, 'caste', ''),
+                    "occupation": getattr(a, 'occupation', ''),
+                    "address": getattr(a, 'address', ''),
+                    "phone": getattr(a, 'phone', '')
+                }
+                for a in (unified_schema.accused or [])
             ],
             "witnesses": [
-                {"serial": w.serial, "name": w.name, "father_name": w.father_name, "age": w.age, "caste": w.caste, "occupation": w.occupation, "address": w.address, "role": w.role}
-                for w in unified_schema.witnesses
+                {
+                    "serial": getattr(w, 'serial', ''),
+                    "name": getattr(w, 'name', ''),
+                    "father_name": getattr(w, 'father_name', ''),
+                    "age": getattr(w, 'age', ''),
+                    "caste": getattr(w, 'caste', ''),
+                    "occupation": getattr(w, 'occupation', ''),
+                    "address": getattr(w, 'address', ''),
+                    "role": getattr(w, 'role', '')
+                }
+                for w in (unified_schema.witnesses or [])
             ],
-            "fir_number": unified_schema.fir_number or metadata.get("fir_number", ""),
-            "police_station": unified_schema.police_station or metadata.get("police_station", ""),
-            "district": unified_schema.district or metadata.get("district", ""),
-            "sections": unified_schema.sections if unified_schema.sections else metadata.get("sections", "").split(","),
-            "act_type": unified_schema.act_type or "BNS",
-            "io_name": unified_schema.io_name or officer.get("name", ""),
+            "fir_number": fir_number,
+            "police_station": police_station,
+            "district": district,
+            "sections": sections,
+            "act_type": "BNS",
+            "io_name": io_name,
             "io_rank": "Sub Inspector of Police",
-            "incident_date": unified_schema.incident_date or "",
-            "incident_time": unified_schema.incident_time or "",
-            "incident_place": unified_schema.incident_place or "",
-            "brief_facts": unified_schema.brief_facts or "",
+            "incident_date": incident_date,
+            "incident_time": incident_time,
+            "incident_place": incident_place,
+            "brief_facts": brief_facts,
         }
         
         processing_jobs[job_key]["progress"] = 70
@@ -912,7 +968,10 @@ async def _process_triple_fusion_background(
                 "charge_sheet_html": charge_sheet_html,
                 "case_diary_html": case_diary_html,
                 "remand_cd_html": remand_cd_html,
-                "pipeline_stats": pipeline_result.stats,
+                "pipeline_stats": {
+                    "files_processed": pipeline_result.files_processed,
+                    "files_classified": pipeline_result.files_classified
+                },
                 "credits_used": credits_to_deduct,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "status": "completed"
