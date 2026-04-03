@@ -182,7 +182,11 @@ const ChargeSheetFusion = () => {
     } catch (error) {
       const errorMsg = error.response?.data?.detail || 'Fusion failed';
       toast.error(errorMsg);
-      toast.info('NO CREDITS DEDUCTED (Rollback on failure)');
+      // Use success toast for reassurance (green color)
+      toast.success('✓ No credits deducted - Automatic rollback on failure', {
+        duration: 5000,
+        description: 'You can safely try again'
+      });
       console.error(error);
     } finally {
       setIsGenerating(false);
