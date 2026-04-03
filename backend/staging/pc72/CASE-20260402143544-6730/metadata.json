@@ -1,0 +1,20 @@
+{
+  "case_id": "CASE-20260402143544-6730",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "144",
+  "sections": "",
+  "created_at": "2026-04-02T14:35:44.762772+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "IMG-20260323-WA0026(1).jpg",
+      "saved_name": "16f11b94_IMG-20260323-WA0026(1).jpg",
+      "size": 112806,
+      "type": ".jpg",
+      "uploaded_at": "2026-04-02T14:35:45.486815+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260402143547-d1c2"
+}

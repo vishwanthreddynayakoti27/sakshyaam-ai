@@ -23,10 +23,28 @@ SAAKSHYAM AI is a comprehensive police investigation command console implementin
 | **TemplateService** | Template-based DOCX generation using docxtpl | `pipeline/template_service.py` |
 
 ### OCR Configuration ✅
-- **Engine**: Tesseract 5.3.0 (local, no API keys)
+- **Primary Engine**: Azure Document Intelligence (90%+ table accuracy)
+- **Fallback Engine**: Google Vision API (Telugu/English support)
+- **Emergency Fallback**: Tesseract OCR (local, no API)
 - **Languages**: English (eng) + Telugu (tel) + Hindi (hin)
-- **Formats**: PDF, JPG, PNG, DOCX, DOC
-- **PDF Processing**: pdf2image + Tesseract (falls back to PyPDF2 for text PDFs)
+- **Formats**: PDF, JPG, PNG, DOCX, DOC, TIFF
+
+### Azure Document Intelligence Pipeline ✅
+| Stage | Description | File |
+|-------|-------------|------|
+| **Pre-processing** | OpenCV deskew, denoise, CLAHE, binarize, sharpen | `document_intelligence_service.py` |
+| **Azure Analysis** | Layout + Table extraction with cell structure | `document_intelligence_service.py` |
+| **Table Reconstruction** | DBSCAN clustering, merged cell handling | `document_intelligence_service.py` |
+| **Legal Parsing** | Regex rules for Indian legal formats (FIR, Accused, Witnesses) | `document_intelligence_service.py` |
+| **Confidence Validation** | Auto-accept >90%, flag low-confidence for review | `document_intelligence_service.py` |
+
+### Document Intelligence API Endpoints ✅
+- `POST /api/document-intelligence/analyze` - Single document analysis
+- `POST /api/document-intelligence/batch-analyze` - Batch processing (up to 10 files)
+- `POST /api/document-intelligence/preprocess-image` - OpenCV preprocessing
+- `POST /api/document-intelligence/detect-tables` - Table boundary detection
+- `GET /api/document-intelligence/status` - Service status and configuration
+- `POST /api/document-intelligence/extract-for-fusion` - Optimized for Triple Fusion
 
 ### Unified JSON Schema ✅
 ```json
