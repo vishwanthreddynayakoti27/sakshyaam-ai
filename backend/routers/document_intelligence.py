@@ -18,7 +18,8 @@ from fastapi.responses import JSONResponse
 from services.document_intelligence_service import (
     DocumentIntelligenceService,
     DocumentIntelligenceResult,
-    ImagePreprocessor
+    OpenCVPreprocessor,
+    get_document_intelligence_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -239,8 +240,8 @@ async def preprocess_image(
     try:
         contents = await file.read()
         
-        preprocessor = ImagePreprocessor()
-        processed_bytes, metadata = preprocessor.preprocess(contents)
+        preprocessor = OpenCVPreprocessor()
+        processed_bytes, metadata = preprocessor.preprocess_image(contents)
         
         return JSONResponse({
             "success": True,
@@ -272,7 +273,7 @@ async def detect_table_regions(
     try:
         contents = await file.read()
         
-        regions = ImagePreprocessor.detect_table_regions(contents)
+        regions = OpenCVPreprocessor.detect_table_regions(contents)
         
         return {
             "success": True,
