@@ -46,7 +46,6 @@ from services.enhanced_legal_parser import (
     ExtractedField,
     BoundingBox,
     OpenCVPreprocessor,
-    SpatialClusterer,
     VisualDiffGenerator,
     ConfidenceColors,
     get_legal_parser,

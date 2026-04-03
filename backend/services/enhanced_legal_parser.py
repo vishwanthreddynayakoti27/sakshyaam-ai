@@ -1,16 +1,24 @@
 """
-Enhanced Legal Document Parser - Production Ready with Visual Diff
-===================================================================
+Enhanced Legal Document Parser - Production Ready v4.0
+=======================================================
 High-accuracy (90%+) tabular OCR pipeline for Indian legal documents.
 Calibrated on real samples: 57-26 Chargesheet.pdf and 236 remand.pdf
 
+KEY IMPROVEMENTS in v4.0:
+1. LINE-BASED PARSING - More robust to OCR errors
+2. STRICT TABLE ROW DETECTION - Column alignment rules
+3. HALLUCINATION FILTERING - Remove garbage text like "tances from you"
+4. POST-PROCESSING VALIDATION - Filter invalid entries
+5. CLEANED OUTPUT - Structured JSON with null for missing fields
+
 Pipeline:
 1. OpenCV Pre-processing (deskew, denoise, binarize, sharpen)
-2. Spatial Clustering (DBSCAN for table detection)
+2. Line-based Text Segmentation
 3. Rule-based Legal Extraction (Accused A1-A9, Witness LW-1+)
-4. Confidence Filtering (auto-accept >90%, flag low-confidence)
-5. Visual Diff Overlay (color-coded bounding boxes)
-6. Annotated PDF Generation
+4. Post-processing Validation & Cleaning
+5. Confidence Filtering (auto-accept >90%, flag low-confidence)
+6. Visual Diff Overlay (color-coded bounding boxes)
+7. Annotated PDF Generation
 
 Color Coding:
 - GREEN: High-confidence fields (>90%)
@@ -18,7 +26,7 @@ Color Coding:
 - RED: Detected but unextracted regions
 
 Author: Nyaya Prahari Pipeline
-Version: 3.0.0
+Version: 4.0.0
 """
 import re
 import io
@@ -67,6 +75,106 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================
+# GARBAGE TEXT PATTERNS TO REMOVE
+# ============================================
+
+GARBAGE_PATTERNS = [
+    r'\btances?\s+from\s+you\b',
+    r'\bAge:\s*2\s*years?\b',
+    r'\bAge:\s*[01]\s*years?\b',
+    r'\b[0-9]{15,}\b',  # Very long numbers
+    r'^[\s\W]+$',  # Only whitespace/symbols
+    r'\b(?:tances|ances|nces)\b',
+    r'\bcir\.\s*witness.*?injured',
+    r'\bwitness.*?tances\b',
+]
+
+GARBAGE_RE = [re.compile(p, re.IGNORECASE) for p in GARBAGE_PATTERNS]
+
+
+def is_garbage_text(text: str) -> bool:
+    """Check if text is garbage/hallucinated."""
+    if not text or len(text.strip()) < 2:
+        return True
+    for pattern in GARBAGE_RE:
+        if pattern.search(text):
+            return True
+    # Check for too many numbers relative to text
+    num_digits = sum(c.isdigit() for c in text)
+    num_alpha = sum(c.isalpha() for c in text)
+    if num_alpha > 0 and num_digits / (num_alpha + num_digits) > 0.7:
+        return True
+    return False
+
+
+def clean_name(text: str) -> str:
+    """Clean extracted name field."""
+    if not text:
+        return ""
+    # Remove garbage patterns
+    text = re.sub(r'\btances?\s+from\s+you\b', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\b(?:tances|ances|nces)\b', '', text, flags=re.IGNORECASE)
+    # Remove leading numbers, symbols
+    text = re.sub(r'^[\d\s\.\-:@]+', '', text)
+    # Remove trailing garbage
+    text = re.sub(r'[\d\-@]+$', '', text)
+    # Clean whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Remove if too short or mostly symbols
+    if len(text) < 2 or sum(c.isalpha() for c in text) < 2:
+        return ""
+    return text
+
+
+def clean_age(text: str) -> Optional[int]:
+    """Extract and validate age."""
+    if not text:
+        return None
+    match = re.search(r'(\d{1,3})', str(text))
+    if match:
+        age = int(match.group(1))
+        # Valid age range
+        if 1 <= age <= 120 and age != 2:  # Age 2 is often garbage
+            return age
+    return None
+
+
+def clean_phone(text: str) -> str:
+    """Extract valid phone number."""
+    if not text:
+        return ""
+    # Find 10-digit number
+    match = re.search(r'(\d{10})', str(text))
+    if match:
+        phone = match.group(1)
+        # Basic validation
+        if phone[0] in '6789':  # Indian mobile numbers
+            return phone
+    return ""
+
+
+def clean_address(address: str) -> str:
+    """Clean extracted address."""
+    if not address:
+        return ""
+    # Remove phone numbers from address
+    address = re.sub(r'[-–]?\s*\d{10}\s*$', '', address)
+    address = re.sub(r'(?:Ph\.?|cell\s*No\.?)\s*\d{10}', '', address, flags=re.IGNORECASE)
+    # Remove garbage
+    address = re.sub(r'\btances?\s+from\s+you\b', '', address, flags=re.IGNORECASE)
+    # Remove role descriptions that leaked into address
+    address = re.sub(r'(?:Complainant|Injured|Eyewitness|Panch|Cir\.?\s*witness|IO|Investigating).*$', '', address, flags=re.IGNORECASE | re.DOTALL)
+    # Remove "father of LW-X" references
+    address = re.sub(r'(?:father|mother)\s+of\s+LW[\-\s]*\d+.*$', '', address, flags=re.IGNORECASE | re.DOTALL)
+    # Remove "Late." prefix that might leak
+    address = re.sub(r'\bLate\.?\s*$', '', address, flags=re.IGNORECASE)
+    # Clean
+    address = re.sub(r'\s+', ' ', address).strip()
+    address = address.strip(',.-:')
+    return address
+
+
+# ============================================
 # COLOR DEFINITIONS FOR VISUAL DIFF
 # ============================================
 
@@ -76,7 +184,7 @@ class ConfidenceColors:
     MEDIUM_CONFIDENCE = (255, 200, 0)  # Yellow - 70-90% confidence
     LOW_CONFIDENCE = (255, 100, 100)   # Red/Orange - <70% or unextracted
     
-    # Category-specific colors (for labeling)
+    # Category-specific colors
     FIR_COLOR = (0, 100, 255)          # Blue
     ACCUSED_COLOR = (255, 0, 100)      # Magenta
     WITNESS_COLOR = (0, 180, 0)        # Green
@@ -86,7 +194,6 @@ class ConfidenceColors:
     
     @staticmethod
     def get_confidence_color(confidence: float) -> Tuple[int, int, int]:
-        """Get color based on confidence level."""
         if confidence >= 0.90:
             return ConfidenceColors.HIGH_CONFIDENCE
         elif confidence >= 0.70:
@@ -96,7 +203,6 @@ class ConfidenceColors:
     
     @staticmethod
     def get_category_color(category: str) -> Tuple[int, int, int]:
-        """Get color based on field category."""
         colors = {
             'fir': ConfidenceColors.FIR_COLOR,
             'accused': ConfidenceColors.ACCUSED_COLOR,
@@ -141,22 +247,17 @@ class BoundingBox:
     @property
     def area(self) -> float:
         return self.width * self.height
-    
-    def as_tuple(self) -> Tuple[int, int, int, int]:
-        """Return as (x1, y1, x2, y2) tuple."""
-        return (int(self.x), int(self.y), 
-                int(self.x + self.width), int(self.y + self.height))
 
 
 @dataclass
 class ExtractedField:
-    """Single extracted field with metadata and bounding box."""
+    """Single extracted field with metadata."""
     name: str
     value: str
     confidence: float
-    category: str = "default"  # fir, accused, witness, section, date, facts
+    category: str = "default"
     bounding_box: Optional[BoundingBox] = None
-    validation_status: str = "valid"  # valid, low_confidence, missing
+    validation_status: str = "valid"
     raw_text: str = ""
     
     def to_dict(self) -> Dict:
@@ -166,7 +267,6 @@ class ExtractedField:
             "confidence": self.confidence,
             "category": self.category,
             "validation_status": self.validation_status,
-            "bounding_box": self.bounding_box.to_dict() if self.bounding_box else None
         }
 
 
@@ -192,30 +292,39 @@ class PersonRecord:
     raw_text: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to clean dict with null for empty fields."""
         return {
-            "serial": self.serial,
-            "name": self.name,
-            "father_name": self.relative_name,
-            "relation": self.relation,
+            "serial": self.serial or None,
+            "name": self.name or None,
+            "father_name": self.relative_name or None,
+            "relation": self.relation or None,
             "age": self.age,
-            "caste": self.caste,
-            "occupation": self.occupation,
-            "address": self.address,
-            "house_no": self.house_no,
-            "village": self.village,
-            "mandal": self.mandal,
-            "district": self.district,
-            "phone": self.phone,
-            "role": self.role,
+            "caste": self.caste or None,
+            "occupation": self.occupation or None,
+            "address": self.address or None,
+            "phone": self.phone or None,
+            "role": self.role or None,
             "confidence": round(self.confidence, 2),
-            "bounding_box": self.bounding_box.to_dict() if self.bounding_box else None
         }
+    
+    def is_valid(self) -> bool:
+        """Check if this record is valid (not garbage)."""
+        # Must have a name
+        if not self.name or len(self.name) < 2:
+            return False
+        # Name should not be garbage
+        if is_garbage_text(self.name):
+            return False
+        # Must have a serial number
+        if not self.serial:
+            return False
+        return True
 
 
 @dataclass 
 class LegalDocumentData:
-    """Complete extracted legal document data with visual diff info."""
-    document_type: str = ""  # chargesheet, remand, casediary
+    """Complete extracted legal document data."""
+    document_type: str = ""
     
     # FIR Details
     fir_number: str = ""
@@ -223,7 +332,7 @@ class LegalDocumentData:
     police_station: str = ""
     district: str = ""
     sections: List[str] = field(default_factory=list)
-    act_type: str = ""  # BNS, IPC, BNSS
+    act_type: str = ""
     
     # Case Numbers
     chargesheet_number: str = ""
@@ -274,43 +383,39 @@ class LegalDocumentData:
     
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "document_type": self.document_type,
-            "fir_number": self.fir_number,
-            "fir_date": self.fir_date,
-            "police_station": self.police_station,
-            "district": self.district,
-            "sections": self.sections,
-            "act_type": self.act_type,
-            "chargesheet_number": self.chargesheet_number,
-            "chargesheet_date": self.chargesheet_date,
-            "court_name": self.court_name,
-            "court_location": self.court_location,
-            "complainant": self.complainant.to_dict() if self.complainant else {},
-            "accused_persons": [a.to_dict() for a in self.accused_persons],
-            "witnesses": [w.to_dict() for w in self.witnesses],
-            "io_name": self.io_name,
-            "io_rank": self.io_rank,
-            "io_phone": self.io_phone,
-            "incident_date": self.incident_date,
-            "incident_time": self.incident_time,
-            "incident_place": self.incident_place,
-            "brief_facts": self.brief_facts,
+            "document_type": self.document_type or None,
+            "fir_number": self.fir_number or None,
+            "fir_date": self.fir_date or None,
+            "police_station": self.police_station or None,
+            "district": self.district or None,
+            "sections": list(dict.fromkeys(self.sections)),  # Remove duplicates
+            "act_type": self.act_type or None,
+            "chargesheet_number": self.chargesheet_number or None,
+            "chargesheet_date": self.chargesheet_date or None,
+            "court_name": self.court_name or None,
+            "court_location": self.court_location or None,
+            "complainant": self.complainant.to_dict() if self.complainant and self.complainant.is_valid() else None,
+            "accused_persons": [a.to_dict() for a in self.accused_persons if a.is_valid()],
+            "witnesses": [w.to_dict() for w in self.witnesses if w.is_valid()],
+            "io_name": self.io_name or None,
+            "io_rank": self.io_rank or None,
+            "incident_date": self.incident_date or None,
+            "incident_time": self.incident_time or None,
+            "incident_place": self.incident_place or None,
+            "brief_facts": self.brief_facts or None,
             "reasons_for_arrest": self.reasons_for_arrest,
-            "property_lost": self.property_lost,
-            "property_recovered": self.property_recovered,
-            "arrest_date": self.arrest_date,
-            "section_35_3_dates": self.section_35_3_dates,
-            "remand_date": self.remand_date,
+            "arrest_date": self.arrest_date or None,
+            "remand_date": self.remand_date or None,
             "overall_confidence": round(self.overall_confidence, 2),
-            "low_confidence_fields": self.low_confidence_fields,
             "parsing_notes": self.parsing_notes,
             "extraction_time_ms": self.extraction_time_ms,
             "visual_diff_summary": {
                 "extracted_fields_count": len(self.extracted_fields),
-                "detected_regions_count": len(self.detected_regions),
-                "unextracted_regions_count": len(self.unextracted_regions),
                 "high_confidence_count": sum(1 for f in self.extracted_fields if f.confidence >= 0.90),
-                "low_confidence_count": sum(1 for f in self.extracted_fields if f.confidence < 0.70)
+                "medium_confidence_count": sum(1 for f in self.extracted_fields if 0.70 <= f.confidence < 0.90),
+                "low_confidence_count": sum(1 for f in self.extracted_fields if f.confidence < 0.70),
+                "accused_extracted": len([a for a in self.accused_persons if a.is_valid()]),
+                "witnesses_extracted": len([w for w in self.witnesses if w.is_valid()]),
             }
         }
 
@@ -320,29 +425,11 @@ class LegalDocumentData:
 # ============================================
 
 class OpenCVPreprocessor:
-    """
-    Advanced image pre-processing using OpenCV.
-    Optimized for scanned Indian legal documents with tables.
-    """
+    """Advanced image pre-processing using OpenCV."""
     
     @staticmethod
-    def preprocess_image(image_bytes: bytes, 
-                        apply_all: bool = True) -> Tuple[bytes, Dict[str, Any]]:
-        """
-        Full preprocessing pipeline for document images.
-        
-        Steps:
-        1. Grayscale conversion
-        2. Deskewing (Hough line detection)
-        3. Denoising (Non-local means)
-        4. Contrast enhancement (CLAHE)
-        5. Adaptive binarization
-        6. Morphological cleanup
-        7. Sharpening
-        
-        Returns:
-            Tuple of (processed_image_bytes, metadata)
-        """
+    def preprocess_image(image_bytes: bytes, apply_all: bool = True) -> Tuple[bytes, Dict[str, Any]]:
+        """Full preprocessing pipeline for document images."""
         metadata = {
             "steps_applied": [],
             "original_size": None,
@@ -353,7 +440,6 @@ class OpenCVPreprocessor:
         
         start_time = datetime.now()
         
-        # Decode image
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
@@ -363,42 +449,32 @@ class OpenCVPreprocessor:
         h, w = img.shape[:2]
         metadata["original_size"] = {"width": w, "height": h}
         
-        # 1. Grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         metadata["steps_applied"].append("grayscale")
         
         if apply_all:
-            # 2. Deskew
             gray, skew = OpenCVPreprocessor._deskew(gray)
             metadata["skew_angle"] = round(skew, 2)
             if abs(skew) > 0.5:
                 metadata["steps_applied"].append(f"deskew({skew:.2f}deg)")
             
-            # 3. Denoise
             gray = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
             metadata["steps_applied"].append("denoise")
             
-            # 4. CLAHE (Contrast Limited Adaptive Histogram Equalization)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             gray = clahe.apply(gray)
             metadata["steps_applied"].append("clahe")
             
-            # 5. Adaptive Binarization
             binary = cv2.adaptiveThreshold(
-                gray, 255, 
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY, 
-                blockSize=11, 
-                C=2
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY, blockSize=11, C=2
             )
             metadata["steps_applied"].append("binarize")
             
-            # 6. Morphological Close (fix broken characters)
             kernel = np.ones((1, 1), np.uint8)
             binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
             metadata["steps_applied"].append("morph_close")
             
-            # 7. Sharpen
             kernel_sharpen = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
             sharpened = cv2.filter2D(binary, -1, kernel_sharpen)
             metadata["steps_applied"].append("sharpen")
@@ -407,7 +483,6 @@ class OpenCVPreprocessor:
         else:
             output = gray
         
-        # Encode result
         _, buffer = cv2.imencode('.png', output)
         processed_bytes = buffer.tobytes()
         
@@ -419,21 +494,16 @@ class OpenCVPreprocessor:
     @staticmethod
     def _deskew(image: np.ndarray, max_angle: float = 10.0) -> Tuple[np.ndarray, float]:
         """Detect and correct document skew using Hough line transform."""
-        # Edge detection
         edges = cv2.Canny(image, 50, 150, apertureSize=3)
-        
-        # Hough lines
         lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=100)
         
         if lines is None or len(lines) == 0:
             return image, 0.0
         
-        # Calculate angles
         angles = []
         for line in lines[:30]:
             rho, theta = line[0]
             angle_deg = np.degrees(theta) - 90
-            
             if -max_angle < angle_deg < max_angle:
                 angles.append(angle_deg)
         
@@ -445,7 +515,6 @@ class OpenCVPreprocessor:
         if abs(median_angle) < 0.5:
             return image, 0.0
         
-        # Rotate
         h, w = image.shape[:2]
         center = (w // 2, h // 2)
         rotation_matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
@@ -456,337 +525,25 @@ class OpenCVPreprocessor:
         )
         
         return rotated, median_angle
-    
-    @staticmethod
-    def detect_table_regions(image_bytes: bytes) -> List[BoundingBox]:
-        """
-        Detect table boundaries using contours and line detection.
-        Returns bounding boxes of detected table regions.
-        """
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-        
-        if img is None:
-            return []
-        
-        h, w = img.shape
-        
-        # Detect horizontal and vertical lines
-        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 30, 1))
-        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // 30))
-        
-        # Binary threshold
-        _, binary = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY_INV)
-        
-        # Detect lines
-        horizontal = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
-        vertical = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel, iterations=2)
-        
-        # Combine
-        table_mask = cv2.add(horizontal, vertical)
-        
-        # Find contours
-        contours, _ = cv2.findContours(table_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        regions = []
-        min_area = (w * h) * 0.005
-        
-        for i, contour in enumerate(contours):
-            x, y, cw, ch = cv2.boundingRect(contour)
-            area = cw * ch
-            
-            if area > min_area and cw > 50 and ch > 30:
-                regions.append(BoundingBox(
-                    x=x, y=y, width=cw, height=ch,
-                    page=1, category="table",
-                    label=f"Table Region {i+1}"
-                ))
-        
-        # Sort by Y position
-        regions.sort(key=lambda r: r.y)
-        
-        return regions
-    
-    @staticmethod
-    def detect_text_regions(image_bytes: bytes) -> List[BoundingBox]:
-        """
-        Detect text block regions using morphological operations.
-        Used to identify potentially unextracted regions.
-        """
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-        
-        if img is None:
-            return []
-        
-        # Threshold
-        _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        
-        # Dilate to connect text
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 3))
-        dilated = cv2.dilate(binary, kernel, iterations=2)
-        
-        # Find contours
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        regions = []
-        h, w = img.shape
-        min_area = 500
-        
-        for contour in contours:
-            x, y, cw, ch = cv2.boundingRect(contour)
-            area = cw * ch
-            
-            # Filter by size
-            if area > min_area and cw > 30 and ch > 10:
-                regions.append(BoundingBox(
-                    x=x, y=y, width=cw, height=ch,
-                    page=1, category="text_block"
-                ))
-        
-        return regions
 
 
 # ============================================
-# SPATIAL CLUSTERING
-# ============================================
-
-class SpatialClusterer:
-    """
-    Spatial clustering for table cell grouping and reconstruction.
-    Uses DBSCAN or custom row/column clustering.
-    """
-    
-    @staticmethod
-    def cluster_text_blocks(blocks: List[Dict], 
-                           row_tolerance: float = 15.0) -> List[List[Dict]]:
-        """Cluster text blocks into rows based on Y-coordinate similarity."""
-        if not blocks:
-            return []
-        
-        sorted_blocks = sorted(blocks, key=lambda b: b.get("y", 0))
-        
-        rows = []
-        current_row = [sorted_blocks[0]]
-        current_y = sorted_blocks[0].get("y", 0)
-        
-        for block in sorted_blocks[1:]:
-            block_y = block.get("y", 0)
-            
-            if abs(block_y - current_y) <= row_tolerance:
-                current_row.append(block)
-            else:
-                current_row.sort(key=lambda b: b.get("x", 0))
-                rows.append(current_row)
-                current_row = [block]
-                current_y = block_y
-        
-        if current_row:
-            current_row.sort(key=lambda b: b.get("x", 0))
-            rows.append(current_row)
-        
-        return rows
-    
-    @staticmethod
-    def cluster_with_dbscan(coordinates: List[Tuple[float, float]], 
-                           eps: float = 20.0,
-                           min_samples: int = 1) -> List[int]:
-        """Cluster coordinates using DBSCAN algorithm."""
-        if not SKLEARN_AVAILABLE or not coordinates:
-            return [-1] * len(coordinates)
-        
-        X = np.array(coordinates)
-        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
-        return clustering.labels_.tolist()
-    
-    @staticmethod
-    def find_table_cells(text_regions: List[BoundingBox],
-                        row_threshold: float = 20.0,
-                        col_threshold: float = 30.0) -> List[List[BoundingBox]]:
-        """
-        Group text regions into table rows and columns.
-        Returns list of rows, each containing cells sorted by X position.
-        """
-        if not text_regions:
-            return []
-        
-        # Sort by Y first
-        sorted_regions = sorted(text_regions, key=lambda r: r.y)
-        
-        rows = []
-        current_row = [sorted_regions[0]]
-        current_y = sorted_regions[0].y
-        
-        for region in sorted_regions[1:]:
-            if abs(region.y - current_y) <= row_threshold:
-                current_row.append(region)
-            else:
-                # Sort row by X and add
-                current_row.sort(key=lambda r: r.x)
-                rows.append(current_row)
-                current_row = [region]
-                current_y = region.y
-        
-        if current_row:
-            current_row.sort(key=lambda r: r.x)
-            rows.append(current_row)
-        
-        return rows
-
-
-# ============================================
-# RULE-BASED LEGAL EXTRACTION
+# ENHANCED LINE-BASED LEGAL PARSER
 # ============================================
 
 class EnhancedLegalParser:
     """
     Production-ready parser for Indian legal documents.
+    Uses LINE-BASED parsing for robustness against OCR errors.
+    
     Calibrated on:
     - 57-26 Chargesheet.pdf (FIR 57/2026)
     - 236 remand.pdf (FIR 236/2021)
     
     Targets 90%+ field-level accuracy.
-    Includes bounding box tracking for visual diff.
     """
     
-    # ============================================
-    # REGEX PATTERNS - Calibrated from real samples
-    # ============================================
-    
-    # FIR Number - Multiple formats
-    FIR_PATTERNS = [
-        r'FIR\.\s*No\s*[:.]?\s*(\d{1,4}\s*/\s*\d{4})',
-        r'FIR\s*(?:No\.?|Number)?\s*[:.]?\s*(\d{1,4}\s*/\s*\d{4})',
-        r'FIR\s+No\.?\s*[:.]?\s*(\d+/\d{4})',
-        r'Cr\.?\s*No\.?\s*[:.]?\s*(\d+\s*/\s*\d{4})',
-        r'Crime\s*No\.?\s*[:.]?\s*(\d+/\d{4})',
-        r'FIR\s+No\s*[:.]?\s*(\d+)/(\d{4})',
-    ]
-    
-    # Police Station
-    PS_PATTERNS = [
-        r'(?:P\.?S\.?|Police\s*Station)\s*[:.]?\s*([A-Z][A-Za-z]+)',
-        r'PS\s*[:.]?\s*([A-Z][A-Za-z]+)',
-        r'PS:\s*([A-Z][A-Za-z]+)',
-    ]
-    
-    # District
-    DISTRICT_PATTERNS = [
-        r'Dist\.?\s*[-:.]?\s*([A-Z][A-Za-z]+)',
-        r'District\s*[:.-]?\s*([A-Z][A-Za-z]+)',
-    ]
-    
-    # Sections - BNS/IPC/BNSS
-    SECTION_PATTERNS = [
-        r'(?:U/[Ss]|Offence\s+U/s|Act/Sections\.?)\s*[:.]?\s*([\d,\s\(\)]+(?:\s*(?:r/w|R/W|read\s+with)?\s*[\d\(\)]+)*)\s*(?:of\s+)?(BNS|IPC|BNSS)?',
-        r'U/s\s*([\d,\s]+(?:\s*r/w\s*\d+)?)\s*(IPC|BNS)',
-        r'Sec\.?\s*([\d,\s\(\)]+)',
-    ]
-    
-    # Accused Patterns
-    ACCUSED_PATTERNS = [
-        # Full format
-        r'''(?:A|Accused)\s*[-.]?\s*(\d+)\s*[:.]\s*
-            ([A-Z][a-zA-Z\s@]+?)
-            \s+[sSwWdD]/[oO]\s+
-            (?:(?:Late\.?\s*)?([A-Z][a-zA-Z\s]+?))
-            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?\.?\s*
-            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)\s*
-            ,?\s*[Oo]cc\.?\s*[:.]?\s*([A-Za-z\s\(\),]+?)\s*
-            [Rr]/[Oo]\s+(.+?)
-            (?:[-–.\s]*(?:Ph\.?\s*|cell\s*(?:No\.?)?\s*)?(\d{10}))?
-            (?=\s*(?:A\d|$|Particulars|Date|LW|\(The))''',
-        # OCR error: "Al" instead of "A1"
-        r'''Al\s*[:.]?\s*
-            ([A-Z][a-zA-Z\s@]+?)
-            \s+[sS]/[oO]\s+
-            ([A-Z][a-zA-Z\s]+?)
-            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?\s*
-            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z]+)\s*
-            ,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z]+)\s*
-            ,?\s*[Rr]/[Oo]\s+
-            (?:H\s*No\.?\s*([\d\-/]+)\s*,?\s*)?
-            ([A-Za-z]+)\s+[Vv]illage\s+(?:(?:and|of)\s+)?([A-Za-z]+)\s*[Mm]andal
-            (?:\s*[-–]\s*(\d{10}))?''',
-        # Remand format
-        r'''(?:A|Accused)\s*(\d+)\s*[:.]?\s*
-            ([A-Z][a-zA-Z\s@]+?)
-            \s+[sSwW]/[oO]\s+
-            ([A-Z][a-zA-Z\s]+?)
-            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?\s*
-            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z]+)\s*
-            ,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z]+)\s*
-            ,?\s*[Rr]/[Oo]\s+
-            (?:H\s*No\.?\s*([\d\-/]+)\s*,?\s*)?
-            ([A-Za-z]+)\s+[Vv]illage\s+(?:(?:and|of)\s+)?([A-Za-z]+)\s*[Mm]andal
-            (?:\s*[-–]\s*(\d{10}))?''',
-    ]
-    
-    # Witness Patterns
-    WITNESS_PATTERNS = [
-        # Chargesheet format
-        r'''(?:LW|L\.?W\.?)\s*[-.]?\s*(\d+)\s*
-            (?:Sri\.?\s*|Smt\.?\s*)?
-            ([A-Z][a-zA-Z\s@\.]+?)
-            \s+[sSwWdD]/[oO8]\s+
-            (?:(?:Late\.?\s*)?([A-Z][a-zA-Z\s\.]+?))
-            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?\.?\s*
-            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)\s*
-            ,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z\s\(\),\.]+?)\s*
-            [Rr]/[Oo]\s+(.+?)
-            (?:[-–,.\s]*(?:Ph\.?\s*|cell\s*(?:No\.?)?\s*)?(\d{10}))?''',
-        # Remand format: numbered list
-        r'''(\d+)\.\s*
-            (?:Sri\.?\s*|Smt\.?\s*)?
-            ([A-Z][a-zA-Z\s\.]+?)
-            \s+[sS]/[oO]\s+
-            ([A-Z][a-zA-Z\s\.]+?)
-            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*
-            [Yy](?:ea)?rs?\s*
-            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)\s*
-            ,?\s*[Oo]cc\s*[;:]?\s*([A-Za-z\s,\.0-9]+?)\s*
-            ,?\s*[Rr]/[Oo]\s+(.+?)
-            (?:,?\s*(?:cell\s*No\.?|Ph\.?)\s*(\d{10}))?''',
-        # Simplified pattern
-        r'''(\d+)\.\s+
-            ([A-Z][a-zA-Z\s]+?)
-            \s+[sS5]/[oO0]\s+
-            ([A-Z][a-zA-Z\s]+?)
-            ,\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?
-            ,\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s]+?)
-            ,\s*[Oo]cc\s*[:;]?\s*([A-Za-z\s,]+?)
-            ,\s*[Rr]/[Oo]\s+(.+?)
-            (?:,?\s*cell\s*No\.?\s*(\d{10}))?''',
-    ]
-    
-    # Complainant Pattern
-    COMPLAINANT_PATTERN = r'''
-        (?:[Cc]omplainant|[Ii]nformant)\s*
-        (?:with\s+father'?s?/husband'?s?\s+name\.?)?\s*
-        (?:[:|]|\s+)\s*
-        (?:Sri\.?\s*|Smt\.?\s*)?
-        ([A-Z][a-zA-Z\s]+?)
-        \s+[sSwWdD]/[oO]\s+
-        (?:(?:Late\.?\s*)?([A-Z][a-zA-Z\s]+?))
-        ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?
-        ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)
-        ,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z\s\(\)]+?)
-        ,?\s*[Rr]/[Oo]\s+(.+?)
-        (?:[-–,]\s*(?:Ph\.?\s*|cell\s*(?:No\.?)?\s*)?(\d{10}))?
-    '''
-    
-    # IO Pattern
-    IO_PATTERN = r'''
-        (?:IO|Investigating\s+Officer|filed\s+charge\s*sheet)\s*
-        [:|]?\s*
-        (?:Sri\.?\s*)?
-        ([A-Z][a-zA-Z\s\.]+?)\s*,?\s*
-        (S\.?I\.?|SI|Sub\s*Inspector|Inspector|ASI|HC)
-        \s+(?:of\s+)?(?:Police\s*)?
-        (?:PS\s+)?([A-Za-z]+)
-    '''
-    
-    # Witness Roles
+    # Witness Roles Mapping
     WITNESS_ROLES = {
         "complainant": ["complainant", "informant"],
         "injured": ["injured", "victim"],
@@ -798,87 +555,61 @@ class EnhancedLegalParser:
     }
     
     def __init__(self, confidence_threshold: float = 0.75):
-        """Initialize parser."""
         self.confidence_threshold = confidence_threshold
-        self._compile_patterns()
-    
-    def _compile_patterns(self):
-        """Pre-compile regex patterns for performance."""
-        self.accused_re = [
-            re.compile(p, re.VERBOSE | re.IGNORECASE | re.MULTILINE | re.DOTALL)
-            for p in self.ACCUSED_PATTERNS
-        ]
-        self.witness_re = [
-            re.compile(p, re.VERBOSE | re.IGNORECASE | re.MULTILINE | re.DOTALL)
-            for p in self.WITNESS_PATTERNS
-        ]
-        self.complainant_re = re.compile(
-            self.COMPLAINANT_PATTERN, 
-            re.VERBOSE | re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        self.io_re = re.compile(self.IO_PATTERN, re.VERBOSE | re.IGNORECASE)
     
     def parse(self, text: str, document_type: str = "auto") -> LegalDocumentData:
-        """
-        Parse legal document text into structured data with visual diff info.
-        """
+        """Parse legal document text into structured data."""
         start_time = datetime.now()
         result = LegalDocumentData()
+        
+        # Normalize text
+        text = self._normalize_text(text)
         
         # Auto-detect document type
         if document_type == "auto":
             document_type = self._detect_document_type(text)
         result.document_type = document_type
         
-        # Extract and track fields
-        result.fir_number, fir_field = self._extract_with_tracking(
-            text, self.FIR_PATTERNS, "fir_number", "fir"
-        )
-        if fir_field:
-            result.extracted_fields.append(fir_field)
+        # Extract fields
+        result.fir_number = self._extract_fir_number(text)
+        if result.fir_number:
+            result.extracted_fields.append(ExtractedField(
+                name="fir_number", value=result.fir_number,
+                confidence=0.95, category="fir"
+            ))
         
         result.fir_date = self._extract_fir_date(text)
-        result.police_station, ps_field = self._extract_with_tracking(
-            text, self.PS_PATTERNS, "police_station", "fir"
-        )
-        if ps_field:
-            result.extracted_fields.append(ps_field)
-        
-        result.district, dist_field = self._extract_with_tracking(
-            text, self.DISTRICT_PATTERNS, "district", "fir"
-        )
-        if dist_field:
-            result.extracted_fields.append(dist_field)
-        
+        result.police_station = self._extract_police_station(text)
+        result.district = self._extract_district(text)
         result.sections, result.act_type = self._extract_sections(text)
         
         # Extract IO
-        io_name, io_rank, io_ps = self._extract_io(text)
-        result.io_name = io_name
-        result.io_rank = io_rank
+        result.io_name, result.io_rank, _ = self._extract_io(text)
         
         # Extract complainant
         result.complainant = self._extract_complainant(text)
         
-        # Extract accused
-        result.accused_persons = self._extract_accused_list(text, document_type)
+        # Extract accused - LINE-BASED
+        result.accused_persons = self._extract_accused_line_based(text, document_type)
         for acc in result.accused_persons:
-            result.extracted_fields.append(ExtractedField(
-                name=f"accused_{acc.serial}",
-                value=acc.name,
-                confidence=acc.confidence,
-                category="accused"
-            ))
+            if acc.is_valid():
+                result.extracted_fields.append(ExtractedField(
+                    name=f"accused_{acc.serial}",
+                    value=acc.name,
+                    confidence=acc.confidence,
+                    category="accused"
+                ))
         
-        # Extract witnesses
-        result.witnesses = self._extract_witness_list(text, document_type)
+        # Extract witnesses - LINE-BASED
+        result.witnesses = self._extract_witnesses_line_based(text, document_type)
         for wit in result.witnesses:
-            result.extracted_fields.append(ExtractedField(
-                name=f"witness_{wit.serial}",
-                value=wit.name,
-                confidence=wit.confidence,
-                category="witness"
-            ))
+            if wit.is_valid():
+                result.extracted_fields.append(ExtractedField(
+                    name=f"witness_{wit.serial}",
+                    value=f"{wit.name} - {wit.role}",
+                    confidence=wit.confidence,
+                    category="witness"
+                ))
         
         # Extract incident details
         result.incident_date, result.incident_time, result.incident_place = self._extract_incident_details(text)
@@ -901,7 +632,6 @@ class EnhancedLegalParser:
         elif document_type == "chargesheet":
             result.chargesheet_number = self._extract_chargesheet_number(text)
             result.chargesheet_date = self._extract_chargesheet_date(text)
-            result.section_35_3_dates = self._extract_sec_35_3_dates(text)
         
         # Court details
         result.court_name, result.court_location = self._extract_court_details(text)
@@ -909,15 +639,30 @@ class EnhancedLegalParser:
         # Calculate confidence
         result.overall_confidence = self._calculate_confidence(result)
         
-        # Record time
         result.extraction_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
         
         return result
     
+    def _normalize_text(self, text: str) -> str:
+        """Normalize OCR text for better parsing."""
+        # Fix common OCR errors
+        text = re.sub(r'\bAl\s*:', 'A1:', text)  # Al -> A1
+        text = re.sub(r'\bA2\s*:', 'A2:', text)
+        text = re.sub(r'\b5/o\b', 'S/o', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bs/0\b', 'S/o', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bR/0\b', 'R/o', text, flags=re.IGNORECASE)
+        text = re.sub(r'\br/0\b', 'R/o', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bOcc\s*\.', 'Occ:', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bOcc\s*;', 'Occ:', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bYrs\b', 'Years', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bYr\b', 'Years', text, flags=re.IGNORECASE)
+        # Normalize whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        return text
+    
     def _detect_document_type(self, text: str) -> str:
-        """Auto-detect document type from content."""
+        """Auto-detect document type."""
         text_lower = text.lower()
-        
         if "charge-sheet" in text_lower or "charge sheet" in text_lower or "section 193 bnss" in text_lower:
             return "chargesheet"
         elif "remand case diary" in text_lower or "remand" in text_lower:
@@ -926,59 +671,77 @@ class EnhancedLegalParser:
             return "casediary"
         elif "fir" in text_lower:
             return "fir"
-        else:
-            return "unknown"
+        return "unknown"
     
-    def _extract_with_tracking(self, text: str, patterns: List[str], 
-                              field_name: str, category: str) -> Tuple[str, Optional[ExtractedField]]:
-        """Extract field value and create tracking info."""
+    def _extract_fir_number(self, text: str) -> str:
+        """Extract FIR number."""
+        patterns = [
+            r'FIR\.?\s*No\.?\s*[:.]?\s*(\d{1,4}\s*/\s*\d{4})',
+            r'FIR\s+No\.?\s*[:.]?\s*(\d+/\d{4})',
+            r'Cr\.?\s*No\.?\s*[:.]?\s*(\d+\s*/\s*\d{4})',
+            r'Crime\s*No\.?\s*[:.]?\s*(\d+/\d{4})',
+        ]
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                groups = match.groups()
-                if len(groups) == 2 and all(g and g.isdigit() for g in groups if g):
-                    value = f"{groups[0]}/{groups[1]}"
-                else:
-                    value = match.group(1).strip()
-                value = re.sub(r'\s+', ' ', value)
-                
-                field = ExtractedField(
-                    name=field_name,
-                    value=value,
-                    confidence=0.90,
-                    category=category
-                )
-                return value, field
-        return "", None
+                fir = match.group(1).strip()
+                # Normalize format
+                fir = re.sub(r'\s*/\s*', '/', fir)
+                return fir
+        return ""
     
-    def _extract_pattern(self, text: str, patterns: List[str]) -> str:
-        """Extract first match from patterns."""
+    def _extract_police_station(self, text: str) -> str:
+        """Extract police station name."""
+        patterns = [
+            r'P\.?S\.?\s*[:.]?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+            r'Police\s+Station\s*[:.]?\s*([A-Z][a-z]+)',
+            r'PS:\s*([A-Z][a-z]+)',
+        ]
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            match = re.search(pattern, text)
             if match:
-                groups = match.groups()
-                if len(groups) == 2 and all(g and g.isdigit() for g in groups if g):
-                    return f"{groups[0]}/{groups[1]}"
-                result = match.group(1).strip()
-                result = re.sub(r'\s+', ' ', result)
-                return result
+                ps = match.group(1).strip()
+                if len(ps) > 2 and ps.lower() not in ['the', 'and', 'for']:
+                    return ps
+        return ""
+    
+    def _extract_district(self, text: str) -> str:
+        """Extract district name."""
+        patterns = [
+            r'Dist\.?\s*[-:.]?\s*([A-Z][a-z]+)',
+            r'District\s*[:.-]?\s*([A-Z][a-z]+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
         return ""
     
     def _extract_fir_date(self, text: str) -> str:
         """Extract FIR date."""
         patterns = [
             r'FIR\s*(?:No\.?\s*)?[\d/]+\s+Dated?\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-            r'Dated?\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
             r'FIR\s+Dt\.?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
+            r'Dated?\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
         ]
-        return self._extract_pattern(text, patterns)
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return ""
     
     def _extract_sections(self, text: str) -> Tuple[List[str], str]:
-        """Extract sections and act type."""
+        """Extract sections and act type with duplicate removal."""
         sections = []
         act_type = ""
         
-        for pattern in self.SECTION_PATTERNS:
+        patterns = [
+            r'U/[Ss]\s*[:.]?\s*([\d,\s\(\)]+(?:\s*(?:r/w|R/W|read\s+with)?\s*[\d\(\)]+)*)\s*(?:of\s+)?(BNS|IPC|BNSS)?',
+            r'Act/Sections\.?\s*[:.]?\s*([\d,\s\(\)]+)',
+            r'Sec\.?\s*([\d,\s\(\)]+)',
+        ]
+        
+        for pattern in patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
             for match in matches:
                 if isinstance(match, tuple):
@@ -988,10 +751,17 @@ class EnhancedLegalParser:
                 else:
                     sec_text = str(match)
                 
+                # Extract section numbers
                 sec_nums = re.findall(r'\d+(?:\s*\(\d+\))?', sec_text)
                 sections.extend(sec_nums)
         
-        sections = list(dict.fromkeys(sections))[:15]
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_sections = []
+        for s in sections:
+            if s not in seen:
+                seen.add(s)
+                unique_sections.append(s)
         
         if not act_type:
             if "BNS" in text.upper():
@@ -999,54 +769,64 @@ class EnhancedLegalParser:
             elif "IPC" in text.upper():
                 act_type = "IPC"
         
-        return sections, act_type
+        return unique_sections[:15], act_type
     
     def _extract_io(self, text: str) -> Tuple[str, str, str]:
         """Extract IO details."""
-        match = self.io_re.search(text)
-        if match:
-            name = self._clean_text(match.group(1))
-            rank = match.group(2).strip() if match.group(2) else ""
-            ps = match.group(3).strip() if match.group(3) else ""
-            return name, rank, ps
-        
-        alt_patterns = [
-            r'(?:IO\s+&\s+Arrested|IO\s*and\s*Arrested|2IO)\s*[:|]?\s*(?:Sri\.?\s*)?([A-Z][a-zA-Z\s\.]+?)\s*[,.]?\s*(S\.?I\.?|SI|Sub\s*Inspector)',
-            r'([A-Z][a-zA-Z\s\.]+?),?\s*(S\.?I\.?|SI)\s+of\s+Police,?\s+(?:PS\s+)?([A-Za-z]+)',
+        patterns = [
+            r'(?:IO|Investigating\s+Officer)\s*[:|]?\s*(?:Sri\.?\s*)?([A-Z][a-zA-Z\s\.]+?)\s*,?\s*(S\.?I\.?|SI|Sub\s*Inspector|Inspector|ASI)',
+            r'([A-Z][a-zA-Z\s\.]+?),?\s*(S\.?I\.?|SI)\s+of\s+Police',
         ]
-        
-        for pattern in alt_patterns:
+        for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                return (
-                    self._clean_text(match.group(1)),
-                    match.group(2).strip() if match.lastindex >= 2 else "",
-                    match.group(3).strip() if match.lastindex >= 3 else ""
-                )
-        
+                name = clean_name(match.group(1))
+                rank = match.group(2).strip() if match.lastindex >= 2 else ""
+                return name, rank, ""
         return "", "", ""
     
     def _extract_complainant(self, text: str) -> Optional[PersonRecord]:
         """Extract complainant details."""
-        match = self.complainant_re.search(text)
+        # Look for complainant section
+        pattern = r'''
+            (?:[Cc]omplainant|[Ii]nformant)\s*
+            (?:with\s+father'?s?/husband'?s?\s+name\.?)?\s*
+            [:|,\s]+\s*
+            (?:Sri\.?\s*|Smt\.?\s*)?
+            ([A-Z][a-zA-Z\s]+?)
+            \s+[sSwWdD]/[oO]\s+
+            ([A-Z][a-zA-Z\s]+?)
+            ,?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?
+            ,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)
+            ,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z\s\(\)]+?)
+            ,?\s*[Rr]/[Oo]\s+(.+?)
+            (?:[-–,]\s*(?:Ph\.?\s*|cell\s*(?:No\.?)?\s*)?(\d{10}))?
+        '''
+        
+        match = re.search(pattern, text, re.VERBOSE | re.IGNORECASE | re.DOTALL)
         if match:
-            return PersonRecord(
-                serial="Complainant",
-                name=self._clean_text(match.group(1)),
-                relation="S/o",
-                relative_name=self._clean_text(match.group(2)),
-                age=int(match.group(3)) if match.group(3) else None,
-                caste=self._clean_text(match.group(4)),
-                occupation=self._clean_text(match.group(5)),
-                address=self._clean_address(match.group(6)),
-                phone=match.group(7).strip() if match.group(7) else "",
-                role="Complainant",
-                confidence=0.85
-            )
+            name = clean_name(match.group(1))
+            if name and not is_garbage_text(name):
+                return PersonRecord(
+                    serial="Complainant",
+                    name=name,
+                    relation="S/o",
+                    relative_name=clean_name(match.group(2)),
+                    age=clean_age(match.group(3)),
+                    caste=clean_name(match.group(4)),
+                    occupation=clean_name(match.group(5)),
+                    address=clean_address(match.group(6)),
+                    phone=clean_phone(match.group(7)) if match.group(7) else "",
+                    role="Complainant",
+                    confidence=0.85
+                )
         return None
     
-    def _extract_accused_list(self, text: str, doc_type: str) -> List[PersonRecord]:
-        """Extract all accused persons."""
+    def _extract_accused_line_based(self, text: str, doc_type: str) -> List[PersonRecord]:
+        """
+        Extract accused persons using LINE-BASED parsing.
+        This is more robust than multi-line regex.
+        """
         accused = []
         seen_serials = set()
         seen_names = set()
@@ -1056,12 +836,10 @@ class EnhancedLegalParser:
             start_markers=[
                 r'Particulars\s+of\s+(?:charge\s+sheeted\s+)?(?:accused|person)',
                 r'Name\s+of\s+the\s+accused',
-                r'accused\s*persons?\s*:',
                 r'3\.\s*Name\s+of\s+the\s+accused',
             ],
             end_markers=[
                 r'Date\s+of\s+arrest',
-                r'Particulars\s+of\s+sureties',
                 r'witnesses?\s+to\s+be\s+examined',
                 r'Property\s+lost',
                 r'\(The\s+accused',
@@ -1072,86 +850,76 @@ class EnhancedLegalParser:
         if not accused_section:
             accused_section = text
         
-        # Extract "Al:" pattern (OCR error for A1)
-        al_pattern = r'Al\s*[:.]?\s*([A-Z][a-zA-Z\s@]+?)\s+[sS]/[oO]\s+([A-Z][a-zA-Z\s]+?),?\s*[Aa]ge\s*[:.]?\s*(\d+)\s*[Yy](?:ea)?rs?\s*,?\s*[Cc]aste\s*[:.]?\s*([A-Za-z]+)\s*,?\s*[Oo]cc\s*[:.]?\s*([A-Za-z]+)\s*,?\s*[Rr]/[Oo]\s+(?:H\s*No\.?\s*([\d\-/]+)\s*,?\s*)?([A-Za-z]+)\s+[Vv]illage\s+(?:(?:and|of)\s+)?([A-Za-z]+)\s*[Mm]andal(?:\s*[-–]\s*(\d{10}))?'
-        al_match = re.search(al_pattern, accused_section, re.IGNORECASE | re.DOTALL)
-        if al_match:
-            name = self._clean_text(al_match.group(1))
-            name_key = name.lower().replace(' ', '')
-            
-            if name_key not in seen_names:
-                person = PersonRecord(
-                    serial="A1",
-                    name=name,
-                    relation="S/o",
-                    relative_name=self._clean_text(al_match.group(2)),
-                    age=int(al_match.group(3)) if al_match.group(3).isdigit() else None,
-                    caste=self._clean_text(al_match.group(4)),
-                    occupation=self._clean_text(al_match.group(5)),
-                    address=f"H.No. {al_match.group(6) or ''}, {al_match.group(7) or ''} Village, {al_match.group(8) or ''} Mandal",
-                    phone=al_match.group(9) or "",
-                    confidence=0.85
-                )
-                accused.append(person)
-                seen_serials.add("A1")
-                seen_names.add(name_key)
+        # Split into lines
+        lines = accused_section.split('\n')
         
-        # Try each pattern
-        for pattern_re in self.accused_re:
-            matches = pattern_re.findall(accused_section)
+        # Process each line looking for accused pattern
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or len(line) < 10:
+                continue
             
-            for match in matches:
-                if len(match) >= 7:
-                    serial = match[0]
-                    name = match[1]
-                    father = match[2]
-                    age = match[3]
-                    caste = match[4]
-                    occ = match[5]
-                    address = match[6]
-                    phone = match[7] if len(match) > 7 else ""
-                else:
+            # Look for accused marker: A1, A2, Al (OCR error), A-1, etc.
+            accused_match = re.match(
+                r'^(?:A|Accused)\s*[-.]?\s*(\d+)|^Al\s*[:.]\s*',
+                line, re.IGNORECASE
+            )
+            
+            if accused_match:
+                # Extract serial number
+                serial_num = accused_match.group(1) if accused_match.group(1) else "1"
+                serial_key = f"A{serial_num}"
+                
+                if serial_key in seen_serials:
                     continue
                 
-                if not serial.isdigit():
-                    continue
+                # Join this line with next few lines for complete record
+                full_text = line
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    next_line = lines[j].strip()
+                    # Stop if we hit next accused
+                    if re.match(r'^(?:A|Accused)\s*[-.]?\s*\d+|^Al\s*[:.]\s*', next_line, re.IGNORECASE):
+                        break
+                    if re.match(r'^(?:LW|L\.?W\.?)\s*[-.]?\s*\d+', next_line, re.IGNORECASE):
+                        break
+                    if re.match(r'^\d+\.\s+(?:Property|Brief|Date)', next_line, re.IGNORECASE):
+                        break
+                    full_text += " " + next_line
                 
-                serial_key = f"A{serial}"
-                name_cleaned = self._clean_text(name)
-                name_key = name_cleaned.lower().replace(' ', '')
+                # Parse the full accused record
+                person = self._parse_person_record(full_text, serial_key, "accused")
                 
-                if serial_key in seen_serials or name_key in seen_names:
-                    continue
-                seen_serials.add(serial_key)
-                seen_names.add(name_key)
-                
-                full_address = self._clean_address(address)
-                if len(match) > 8 and match[7]:
-                    full_address = f"H.No. {match[6]}, {match[7]} Village, {match[8]} Mandal"
-                
-                person = PersonRecord(
-                    serial=serial_key,
-                    name=name_cleaned,
-                    relation="S/o",
-                    relative_name=self._clean_text(father),
-                    age=int(age) if age and age.isdigit() else None,
-                    caste=self._clean_text(caste),
-                    occupation=self._clean_text(occ),
-                    address=full_address,
-                    phone=phone.strip() if phone else "",
-                    confidence=0.85
-                )
-                accused.append(person)
+                if person and person.is_valid():
+                    name_key = person.name.lower().replace(' ', '')
+                    if name_key not in seen_names:
+                        accused.append(person)
+                        seen_serials.add(serial_key)
+                        seen_names.add(name_key)
         
+        # Sort by serial number
         accused.sort(key=lambda x: int(re.search(r'\d+', x.serial).group()) if re.search(r'\d+', x.serial) else 0)
         
         return accused
     
-    def _extract_witness_list(self, text: str, doc_type: str) -> List[PersonRecord]:
-        """Extract all witnesses with roles."""
+    def _extract_witnesses_line_based(self, text: str, doc_type: str) -> List[PersonRecord]:
+        """
+        Extract witnesses using LINE-BASED parsing.
+        Handles both LW-X format (chargesheet) and numbered list format (remand).
+        
+        SPECIAL HANDLING for stacked serials:
+        Sometimes OCR produces:
+        LW-5
+        LW-6  
+        LW-7
+        Details for LW-5...
+        Details for LW-6...
+        etc.
+        """
         witnesses = []
         seen_serials = set()
+        seen_names = set()
         
+        # Find witness section
         witness_section = self._find_section(text,
             start_markers=[
                 r'witnesses?\s+to\s+be\s+examined',
@@ -1165,226 +933,452 @@ class EnhancedLegalParser:
                 r'Therefore',
                 r'Hence\s+charge',
                 r'IN\s+THE\s+COURT',
+                r'---\s*Page\s*\d+',
             ]
         )
         
         if not witness_section:
             witness_section = text
         
-        for pattern_re in self.witness_re:
-            matches = pattern_re.findall(witness_section)
+        # Method 1: Find all LW-X markers
+        lw_pattern = r'(?:LW|L\.?W\.?)\s*[-.]?\s*(\d+)'
+        lw_positions = []
+        
+        for match in re.finditer(lw_pattern, witness_section, re.IGNORECASE):
+            serial_num = match.group(1)
+            pos = match.start()
             
-            for match in matches:
-                if len(match) >= 7:
-                    serial = match[0]
-                    name = match[1]
-                    father = match[2]
-                    age = match[3]
-                    caste = match[4]
-                    occ = match[5]
-                    address = match[6]
-                    phone = match[7] if len(match) > 7 else ""
-                else:
-                    continue
+            # Skip reference mentions (not actual witness entries)
+            # Check if this is preceded by "father of", "injured/", etc. ON THE SAME LINE
+            line_start = witness_section.rfind('\n', 0, pos) + 1
+            before_on_line = witness_section[line_start:pos].lower()
+            
+            # Only skip if the reference is on the same line (not before a newline)
+            if any(ref in before_on_line for ref in ['father of', 'injured/', '/']):
+                continue
+            
+            lw_positions.append((pos, serial_num, match.end()))
+        
+        # Check for stacked serials (consecutive serials on consecutive lines)
+        # Group markers that are VERY close (within 10 chars) and have consecutive serial numbers
+        grouped_positions = []
+        current_group = []
+        
+        for i, (pos, serial_num, end) in enumerate(lw_positions):
+            if not current_group:
+                current_group.append((pos, serial_num, end))
+            else:
+                last_end = current_group[-1][2]
+                last_serial = int(current_group[-1][1]) if current_group[-1][1].isdigit() else 0
+                curr_serial = int(serial_num) if serial_num.isdigit() else 0
                 
-                serial_num = serial.strip()
-                if serial_num.isdigit():
-                    serial_key = f"LW-{serial_num}"
+                # Only group if:
+                # 1. Markers are within 10 chars
+                # 2. Serial numbers are consecutive (or same if OCR error)
+                is_close = (pos - last_end) < 10
+                is_consecutive = abs(curr_serial - last_serial) <= 1
+                
+                if is_close and is_consecutive:
+                    current_group.append((pos, serial_num, end))
                 else:
-                    serial_key = f"LW-{serial_num}"
+                    grouped_positions.append(current_group)
+                    current_group = [(pos, serial_num, end)]
+        
+        if current_group:
+            grouped_positions.append(current_group)
+        
+        # Process each group
+        for group in grouped_positions:
+            if len(group) == 1:
+                # Single marker - normal processing
+                pos, serial_num, marker_end = group[0]
+                serial_key = f"LW-{serial_num}"
                 
                 if serial_key in seen_serials:
                     continue
-                seen_serials.add(serial_key)
                 
-                role = self._determine_witness_role(
-                    self._clean_text(name),
-                    int(serial_num) if serial_num.isdigit() else 0,
-                    witness_section,
-                    match
-                )
+                # Find next LW marker
+                next_pos = len(witness_section)
+                for next_group in grouped_positions:
+                    if next_group[0][0] > marker_end:
+                        next_pos = next_group[0][0]
+                        break
                 
-                person = PersonRecord(
-                    serial=serial_key,
-                    name=self._clean_text(name),
-                    relation="S/o",
-                    relative_name=self._clean_text(father),
-                    age=int(age) if age and age.isdigit() else None,
-                    caste=self._clean_text(caste),
-                    occupation=self._clean_text(occ),
-                    address=self._clean_address(address),
-                    phone=phone.strip() if phone else "",
-                    role=role,
-                    confidence=0.80
-                )
-                witnesses.append(person)
+                witness_block = witness_section[marker_end:next_pos].strip()
+                
+                if len(witness_block) < 20:
+                    continue
+                
+                person = self._parse_witness_block(witness_block, serial_key)
+                
+                if person and person.is_valid():
+                    person.role = self._extract_witness_role_from_block(witness_block, serial_num)
+                    
+                    name_key = person.name.lower().replace(' ', '')
+                    if name_key not in seen_names:
+                        witnesses.append(person)
+                        seen_serials.add(serial_key)
+                        seen_names.add(name_key)
+            else:
+                # Multiple stacked markers - need to parse the content after ALL markers
+                last_marker_end = group[-1][2]
+                
+                # Find where the next group starts
+                next_pos = len(witness_section)
+                for next_group in grouped_positions:
+                    if next_group[0][0] > last_marker_end:
+                        next_pos = next_group[0][0]
+                        break
+                
+                # Get the combined content block
+                content_block = witness_section[last_marker_end:next_pos].strip()
+                
+                # Split by "Sri." or "Smt." or "Dr." to find individual witnesses
+                person_blocks = re.split(r'(?=(?:Sri\.?\s*|Smt\.?\s*|Dr\.?\s*)[A-Z])', content_block)
+                person_blocks = [b.strip() for b in person_blocks if b.strip() and len(b.strip()) > 20]
+                
+                # Assign each block to a serial in order
+                for i, (pos, serial_num, end) in enumerate(group):
+                    serial_key = f"LW-{serial_num}"
+                    
+                    if serial_key in seen_serials:
+                        continue
+                    
+                    if i < len(person_blocks):
+                        block = person_blocks[i]
+                        person = self._parse_witness_block(block, serial_key)
+                        
+                        if person and person.is_valid():
+                            person.role = self._extract_witness_role_from_block(block, serial_num)
+                            
+                            name_key = person.name.lower().replace(' ', '')
+                            if name_key not in seen_names:
+                                witnesses.append(person)
+                                seen_serials.add(serial_key)
+                                seen_names.add(name_key)
         
+        # Method 2: Numbered list format (1. Name S/o ..., 2. Name S/o ...)
+        # This is common in remand documents
+        # Try this regardless of whether LW-X format found witnesses
+        lines = witness_section.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # Skip empty or very short lines
+            if not line or len(line) < 2:
+                i += 1
+                continue
+            
+            # Pattern: "1." or "1. " at start of line
+            num_match = re.match(r'^(\d+)\.\s*$', line)  # Just number on its own line
+            num_with_content = re.match(r'^(\d+)\.\s+(.+)', line)  # Number with content
+            
+            if num_match or num_with_content:
+                serial_num = (num_match or num_with_content).group(1)
+                serial_key = f"LW-{serial_num}"
+                
+                if serial_key in seen_serials:
+                    i += 1
+                    continue
+                
+                # Collect subsequent lines until next number or end marker
+                full_text = ""
+                if num_with_content:
+                    full_text = num_with_content.group(2)
+                
+                for j in range(i + 1, min(i + 12, len(lines))):
+                    next_line = lines[j].strip()
+                    
+                    # Stop if we hit next numbered item (number alone or number with content)
+                    if re.match(r'^\d+\.\s*$', next_line) or re.match(r'^\d+\.\s+(?:Sri|Smt|[A-Z])', next_line, re.IGNORECASE):
+                        break
+                    
+                    # Stop if we hit end markers
+                    if re.match(r'^(?:Reasons?\s+for|Hence|Therefore|Accused|Prayer)', next_line, re.IGNORECASE):
+                        break
+                    
+                    # Skip "examined:-" header
+                    if re.match(r'^examined\s*[:-]', next_line, re.IGNORECASE):
+                        continue
+                    
+                    # Skip isolated colons or very short lines (table artifacts)
+                    if next_line in [':', '::', ':::'] or (len(next_line) < 3 and not re.search(r'[a-zA-Z]', next_line)):
+                        continue
+                    
+                    full_text += " " + next_line
+                
+                full_text = full_text.strip()
+                
+                # Only parse if we have substantial content
+                if len(full_text) > 20:
+                    # Try to parse
+                    person = self._parse_witness_block(full_text, serial_key)
+                    
+                    if person and person.is_valid():
+                        # Determine role
+                        person.role = self._extract_witness_role_from_block(full_text, serial_num)
+                        
+                        name_key = person.name.lower().replace(' ', '')
+                        if name_key not in seen_names:
+                            witnesses.append(person)
+                            seen_serials.add(serial_key)
+                            seen_names.add(name_key)
+            
+            i += 1
+        
+        # Sort by serial number
         witnesses.sort(key=lambda x: int(re.search(r'\d+', x.serial).group()) if re.search(r'\d+', x.serial) else 0)
         
         return witnesses
     
-    def _determine_witness_role(self, name: str, serial: int, context: str, match: tuple) -> str:
-        """Determine witness role from context and position."""
-        match_text = " ".join(str(m) for m in match if m).lower()
+    def _parse_witness_block(self, block: str, serial: str) -> Optional[PersonRecord]:
+        """
+        Parse a witness block (text between LW-X markers).
+        Format 1: Sri. Name S/o Father, Age: X Yrs., Caste: X, Occ: X, R/o Address - Phone
+        Format 2: Dr. Name, Designation, Place (for professionals without father name)
+        Format 3: Sri. Name, SI of Police, PS Station (for police officers)
+        """
+        # Clean up the block
+        block = re.sub(r'\s+', ' ', block).strip()
         
+        name = ""
+        father = ""
+        age = None
+        caste = ""
+        occupation = ""
+        address = ""
+        phone = ""
+        
+        # Try Format 1: Standard format with S/o
+        name_match = re.search(
+            r'(?:Sri\.?\s*|Smt\.?\s*)?([A-Z][a-zA-Z\s\.]+?)\s+[sSwWdD]/[oO8]',
+            block, re.IGNORECASE
+        )
+        if name_match:
+            name = clean_name(name_match.group(1))
+        
+        # Try Format 2: Doctor/Professional (Dr. Name, Designation)
+        if not name:
+            doc_match = re.search(
+                r'(?:Dr\.?\s*)([A-Z][a-zA-Z\s\.]+?)(?:,\s*(?:Civil\s+)?(?:Assistant\s+)?(?:Surgeon|Doctor|Medical|Physician))',
+                block, re.IGNORECASE
+            )
+            if doc_match:
+                name = clean_name(doc_match.group(1))
+                occupation = "Doctor"
+                # Try to extract hospital/place
+                place_match = re.search(r'(?:Hospital|Govt\.?\s*Area\s*Hospital)[,\s]+([A-Za-z\s]+?)(?:\.|$)', block, re.IGNORECASE)
+                if place_match:
+                    address = clean_address(place_match.group(1))
+        
+        # Try Format 3: Police Officer (Sri. Name, SI of Police, PS Station)
+        if not name:
+            police_match = re.search(
+                r'(?:Sri\.?\s*|Smt\.?\s*)?([A-Z][a-zA-Z\s\.]+?)(?:,\s*)?(?:SI|S\.?I\.?|Inspector|Sub[\s-]*Inspector)\s+(?:of\s+)?Police',
+                block, re.IGNORECASE
+            )
+            if police_match:
+                name = clean_name(police_match.group(1))
+                occupation = "SI of Police"
+                # Try to extract PS
+                ps_match = re.search(r'P\.?S\.?\s*[:.]?\s*([A-Za-z]+)', block, re.IGNORECASE)
+                if ps_match:
+                    address = f"PS {ps_match.group(1)}"
+        
+        # Extract father's name (if present)
+        if not father:
+            father_match = re.search(
+                r'[sSwWdD]/[oO8]\s+(?:Late\.?\s*)?([A-Z][a-zA-Z\s\.]+?)(?:,|\s*[Aa]ge)',
+                block, re.IGNORECASE
+            )
+            if father_match:
+                father = clean_name(father_match.group(1))
+        
+        # Extract age
+        age_match = re.search(r'[Aa]ge\s*[:.]?\s*(\d{1,3})\s*[Yy](?:ea)?rs?', block)
+        if age_match:
+            age = clean_age(age_match.group(1))
+        
+        # Extract caste
+        caste_match = re.search(r'[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)(?:,|\s+[Oo]cc)', block)
+        if caste_match:
+            caste = clean_name(caste_match.group(1))
+        
+        # Extract occupation (if not already set)
+        if not occupation:
+            occ_match = re.search(r'[Oo]cc\.?\s*[:;]?\s*([A-Za-z\s,\.\(\)]+?)(?:,?\s*[Rr]/[Oo]|$)', block)
+            if occ_match:
+                occupation = clean_name(occ_match.group(1))
+        
+        # Extract address (if not already set)
+        if not address:
+            addr_match = re.search(r'[Rr]/[Oo]\s+(.+?)(?:\s*[-–]\s*\d{10}|$)', block, re.DOTALL)
+            if addr_match:
+                address = clean_address(addr_match.group(1))
+        
+        # Extract phone (10 digits, often after hyphen or at end)
+        phone_match = re.search(r'[-–\s](\d{10})(?:\s|$)', block)
+        if phone_match:
+            phone = clean_phone(phone_match.group(1))
+        
+        if not name or is_garbage_text(name):
+            return None
+        
+        return PersonRecord(
+            serial=serial,
+            name=name,
+            relation="S/o" if father else "",
+            relative_name=father,
+            age=age,
+            caste=caste,
+            occupation=occupation,
+            address=address,
+            phone=phone,
+            confidence=0.80 if name and father else 0.70 if name else 0.50
+        )
+    
+    def _extract_witness_role_from_block(self, block: str, serial_num: str) -> str:
+        """Extract witness role from the block text."""
+        block_lower = block.lower()
+        
+        # Common role patterns in Indian legal documents
+        # Order matters - more specific patterns first
+        role_patterns = [
+            # Police officers (IO) - check first
+            (r'si\s+of\s+police|s\.?i\.?\s+of\s+police|inspector\s+of\s+police', "IO"),
+            (r'io\s+and\s+(?:field|filed)\s+charge|filed?\s+charge\s*sheet', "IO"),
+            (r'investigating\s+officer|investigating', "IO"),
+            # Medical
+            (r'treated\s+(?:the\s+)?injured|wound\s+certificate|civil\s+assistant\s+surgeon|doctor|dr\.|surgeon', "Medical"),
+            # Complainant/Injured
+            (r'complainant\s*(?:and|&)?\s*injured', "Complainant & Injured"),
+            (r'complainant', "Complainant"),
+            (r'informant', "Complainant"),
+            (r'injured', "Injured"),
+            # Eyewitness
+            (r'eyewitness|eye\s*witness', "Eyewitness"),
+            # Panch
+            (r'panch\s*(?:for\s+)?scene\s*(?:of\s+)?offen(?:c|s)e', "Panch for Scene of Offence"),
+            (r'panch', "Panch"),
+            # Circumstantial
+            (r'cir\.?\s*witness|circumstantial', "Circumstantial Witness"),
+            # Same as above
+            (r'-do-', "Same as above"),
+        ]
+        
+        for pattern, role in role_patterns:
+            if re.search(pattern, block_lower):
+                return role
+        
+        # Default based on serial number
+        if serial_num == "1":
+            return "Complainant"
+        
+        return "Witness"
+    
+    def _parse_person_record(self, text: str, serial: str, person_type: str) -> Optional[PersonRecord]:
+        """
+        Parse a single person record (accused or witness) from text.
+        Uses strict field extraction rules.
+        """
+        # Pattern for extracting structured fields
+        # Name S/o Father, Age X Years, Caste X, Occ: X, R/o Address
+        
+        name = ""
+        father = ""
+        age = None
+        caste = ""
+        occupation = ""
+        address = ""
+        phone = ""
+        
+        # Extract name (everything before S/o or after serial marker)
+        name_match = re.search(
+            r'(?:A\d+|Al|LW[\-\s]*\d+|\d+\.)\s*[:.]\s*(?:Sri\.?\s*|Smt\.?\s*)?([A-Z][a-zA-Z\s@]+?)(?:\s+[sSwWdD]/[oO]|\s*,\s*[Aa]ge)',
+            text, re.IGNORECASE
+        )
+        if name_match:
+            name = clean_name(name_match.group(1))
+        
+        # Extract father's name (after S/o, before age)
+        father_match = re.search(
+            r'[sSwWdD]/[oO]\s+(?:Late\.?\s*)?([A-Z][a-zA-Z\s]+?)(?:,?\s*[Aa]ge|,?\s*[Cc]aste)',
+            text, re.IGNORECASE
+        )
+        if father_match:
+            father = clean_name(father_match.group(1))
+        
+        # Extract age
+        age_match = re.search(r'[Aa]ge\s*[:.]?\s*(\d{1,3})\s*[Yy](?:ea)?rs?', text)
+        if age_match:
+            age = clean_age(age_match.group(1))
+        
+        # Extract caste
+        caste_match = re.search(r'[Cc]aste\s*[:.]?\s*([A-Za-z\s\(\)]+?)(?:,|\s+[Oo]cc)', text)
+        if caste_match:
+            caste = clean_name(caste_match.group(1))
+        
+        # Extract occupation
+        occ_match = re.search(r'[Oo]cc\.?\s*[:;]?\s*([A-Za-z\s,\.]+?)(?:,?\s*[Rr]/[Oo]|$)', text)
+        if occ_match:
+            occupation = clean_name(occ_match.group(1))
+        
+        # Extract address (after R/o)
+        addr_match = re.search(r'[Rr]/[Oo]\s+(.+?)(?:\s*[-–]\s*\d{10}|$)', text, re.DOTALL)
+        if addr_match:
+            address = clean_address(addr_match.group(1))
+        
+        # Extract phone
+        phone_match = re.search(r'[-–]\s*(\d{10})\s*$|(?:Ph\.?|cell\s*No\.?)\s*(\d{10})', text)
+        if phone_match:
+            phone = clean_phone(phone_match.group(1) or phone_match.group(2))
+        
+        # Validate minimum fields
+        if not name or is_garbage_text(name):
+            return None
+        
+        return PersonRecord(
+            serial=serial,
+            name=name,
+            relation="S/o",
+            relative_name=father,
+            age=age,
+            caste=caste,
+            occupation=occupation,
+            address=address,
+            phone=phone,
+            confidence=0.85 if name and father else 0.70
+        )
+    
+    def _determine_witness_role(self, name: str, serial: int, context: str, match_text: str) -> str:
+        """Determine witness role from context and position."""
+        text_lower = match_text.lower()
+        context_lower = context.lower()
+        
+        # LW-1 is usually complainant
         if serial == 1:
-            if "complainant" in match_text or "injured" in match_text:
-                if "injured" in match_text:
+            if "complainant" in text_lower or "informant" in text_lower:
+                if "injured" in text_lower:
                     return "Complainant & Injured"
                 return "Complainant"
         
+        # Check for role keywords in the match text
         for role, keywords in self.WITNESS_ROLES.items():
             for keyword in keywords:
-                if keyword in match_text:
+                if keyword in text_lower:
                     return role.title()
         
-        name_pos = context.lower().find(name.lower())
+        # Check surrounding context
+        name_pos = context_lower.find(name.lower())
         if name_pos >= 0:
-            local_context = context[name_pos:name_pos + 500].lower()
+            local_context = context_lower[max(0, name_pos - 100):name_pos + 300]
             for role, keywords in self.WITNESS_ROLES.items():
                 for keyword in keywords:
                     if keyword in local_context:
                         return role.title()
         
         return "Witness"
-    
-    def _extract_incident_details(self, text: str) -> Tuple[str, str, str]:
-        """Extract incident date, time, place."""
-        date = ""
-        time = ""
-        place = ""
-        
-        date_patterns = [
-            r'(?:date\s+(?:and\s+)?(?:place\s+)?of\s+occurrence|occurrence)\s*[:.]?\s*(?:On\s+)?(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-            r'on\s+(\d{1,2}[-./]\d{1,2}[-./]\d{4})\s+at',
-            r'On\s+(\d{1,2}\.\d{1,2}\.\d{4})',
-        ]
-        
-        for pattern in date_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                date = match.group(1)
-                break
-        
-        time_patterns = [
-            r'at\s+(?:about\s+)?(\d{1,2}:\d{2})\s*(?:hours?|hrs?)',
-            r'at\s+(\d{4})\s*(?:hours?|hrs)',
-            r'(\d{2}:\d{2})\s+hours',
-        ]
-        
-        for pattern in time_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                time = match.group(1)
-                break
-        
-        place_patterns = [
-            r'(?:place\s+of\s+occurrence|at)\s*[:.]?\s*(?:at\s+)?(.+?)\s+village\s+(?:of\s+)?([A-Za-z]+)\s*[Mm]andal',
-            r'at\s+(.+?)\s+[Vv]illage',
-        ]
-        
-        for pattern in place_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                place = match.group(1).strip()
-                if match.lastindex >= 2:
-                    place += f" village of {match.group(2)} Mandal"
-                break
-        
-        return date, time, place
-    
-    def _extract_brief_facts(self, text: str) -> str:
-        """Extract brief facts narrative."""
-        patterns = [
-            r'(?:brief\s+facts?\s+(?:of\s+the\s+case\s+)?(?:are\s+(?:that\s+)?)?|The\s+brief\s+facts\s+of\s+the\s+case\s+are\s+that)\s*(.+?)(?=Therefore|Hence|Prayer|Reasons?\s+for\s+arrest|17\.\s*Is|Submitted)',
-            r'The\s+evidence\s+collected\s+during\s+(?:the\s+)?investigation\s+reveals\s+that\s+(.+?)(?=Therefore|Hence|Prayer)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                facts = match.group(1).strip()
-                facts = re.sub(r'\s+', ' ', facts)
-                return facts[:5000]
-        
-        return ""
-    
-    def _extract_reasons_for_arrest(self, text: str) -> List[str]:
-        """Extract reasons for arrest (remand documents)."""
-        reasons = []
-        
-        section = self._find_section(text,
-            start_markers=[r'Reasons?\s+for\s+arrest'],
-            end_markers=[r'Hence\s+(?:the\s+)?remand', r'Therefore', r'Prayer', r'Enclosure']
-        )
-        
-        if not section:
-            return reasons
-        
-        bullet_pattern = r'(?:(?:\d+[.)]\s*)|(?:[•▪-]\s*))(.+?)(?=(?:\d+[.)]\s*)|(?:[•▪-]\s*)|$)'
-        matches = re.findall(bullet_pattern, section, re.DOTALL)
-        
-        for match in matches:
-            reason = re.sub(r'\s+', ' ', match.strip())
-            if len(reason) > 10:
-                reasons.append(reason)
-        
-        return reasons[:10]
-    
-    def _extract_arrest_date(self, text: str) -> str:
-        """Extract arrest date."""
-        patterns = [
-            r'arrested\s+on\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-            r'\(The\s+accused\s+persons?\s+A\d+\s+to\s+A\d+\s+arrested\s+on\s*[:.]?\s*(\d{1,2}\.\d{1,2}\.\d{4})\)',
-        ]
-        return self._extract_pattern(text, patterns)
-    
-    def _extract_remand_date(self, text: str) -> str:
-        """Extract remand case diary date."""
-        patterns = [
-            r'REMAND\s+CASE\s+DIARY.*?Dated\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-            r'Dated\s*[:.]?\s*(\d{1,2}-\d{1,2}-\d{4})',
-        ]
-        return self._extract_pattern(text, patterns)
-    
-    def _extract_chargesheet_number(self, text: str) -> str:
-        """Extract charge sheet number."""
-        patterns = [
-            r'(?:Charge\s*Sheet|Final\s+Report)\s*(?:No\.?)?\s*[:.]?\s*(\d+\s*/\s*\d{4})',
-            r'Final\s+Report/Charge\s+Sheet\s+No\.?\s*[\n\s]*(\d*/\d{4})',
-        ]
-        return self._extract_pattern(text, patterns)
-    
-    def _extract_chargesheet_date(self, text: str) -> str:
-        """Extract charge sheet filing date."""
-        patterns = [
-            r'Dispatched\s+on\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-            r'Date\s+(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
-        ]
-        return self._extract_pattern(text, patterns)
-    
-    def _extract_sec_35_3_dates(self, text: str) -> List[str]:
-        """Extract Section 35(3) BNSS notice dates."""
-        pattern = r'(?:notice\s+U/?[Ss]\s*35\s*\(3\)|35\s*\(3\)\s*BNSS?)\s*(?:to\s+(?:the\s+)?accused)?\s*(?:on\s+)?(\d{1,2}[-./]\d{1,2}[-./]\d{4})'
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        return list(set(matches))
-    
-    def _extract_court_details(self, text: str) -> Tuple[str, str]:
-        """Extract court name and location."""
-        patterns = [
-            r'IN\s+THE\s+COURT\s+OF\s+(.+?)\s+AT\s+([A-Za-z]+)',
-            r'COURT\s+OF\s+(.+?)\s+AT\s+([A-Za-z]+)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return (
-                    self._clean_text(match.group(1)),
-                    match.group(2).strip()
-                )
-        
-        return "", ""
     
     def _find_section(self, text: str, start_markers: List[str], end_markers: List[str]) -> str:
         """Find a section of text between markers."""
@@ -1410,87 +1404,175 @@ class EnhancedLegalParser:
         
         return text[start_pos:end_pos]
     
-    def _clean_text(self, text: str) -> str:
-        """Clean extracted text."""
-        if not text:
-            return ""
-        text = re.sub(r'\s+', ' ', text)
-        text = text.strip().strip(',').strip('.').strip(':')
-        return text
+    def _extract_incident_details(self, text: str) -> Tuple[str, str, str]:
+        """Extract incident date, time, place."""
+        date = ""
+        time = ""
+        place = ""
+        
+        date_patterns = [
+            r'(?:occurrence|offence)\s*[:.]?\s*(?:On\s+)?(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
+            r'on\s+(\d{1,2}[-./]\d{1,2}[-./]\d{4})\s+at',
+        ]
+        for pattern in date_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                date = match.group(1)
+                break
+        
+        time_patterns = [
+            r'at\s+(?:about\s+)?(\d{1,2}:\d{2})\s*(?:hours?|hrs?)',
+            r'at\s+(\d{4})\s*(?:hours?|hrs)',
+        ]
+        for pattern in time_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                time = match.group(1)
+                break
+        
+        place_patterns = [
+            r'(?:place\s+of\s+occurrence|at)\s*[:.]?\s*(?:at\s+)?(.+?)\s+village',
+        ]
+        for pattern in place_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                place = match.group(1).strip()
+                break
+        
+        return date, time, place
     
-    def _clean_address(self, address: str) -> str:
-        """Clean extracted address."""
-        if not address:
-            return ""
+    def _extract_brief_facts(self, text: str) -> str:
+        """Extract brief facts narrative."""
+        patterns = [
+            r'(?:brief\s+facts?\s+(?:of\s+the\s+case\s+)?(?:are\s+(?:that\s+)?)?)\s*(.+?)(?=Therefore|Hence|Prayer|Submitted)',
+            r'The\s+evidence\s+collected\s+during\s+investigation\s+reveals\s+that\s+(.+?)(?=Therefore|Hence)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                facts = match.group(1).strip()
+                facts = re.sub(r'\s+', ' ', facts)
+                return facts[:5000]
+        return ""
+    
+    def _extract_reasons_for_arrest(self, text: str) -> List[str]:
+        """Extract reasons for arrest (remand documents)."""
+        reasons = []
+        section = self._find_section(text,
+            start_markers=[r'Reasons?\s+for\s+arrest'],
+            end_markers=[r'Hence\s+(?:the\s+)?remand', r'Therefore', r'Prayer']
+        )
+        if not section:
+            return reasons
         
-        address = re.sub(r'\s+', ' ', address)
-        address = address.strip()
-        address = re.sub(r'[-–]\s*\d{10}\s*$', '', address)
-        address = re.sub(r'(?:Ph\.?|cell\s*No\.?)\s*\d{10}\s*$', '', address, flags=re.IGNORECASE)
-        address = address.strip().strip(',').strip('.').strip('-')
-        
-        return address
+        bullet_pattern = r'(?:\d+[.)]\s*|[•▪-]\s*)(.+?)(?=\d+[.)]\s*|[•▪-]\s*|$)'
+        matches = re.findall(bullet_pattern, section, re.DOTALL)
+        for match in matches:
+            reason = re.sub(r'\s+', ' ', match.strip())
+            if len(reason) > 10:
+                reasons.append(reason)
+        return reasons[:10]
+    
+    def _extract_arrest_date(self, text: str) -> str:
+        """Extract arrest date."""
+        patterns = [
+            r'arrested\s+on\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
+            r'\(The\s+accused.*?arrested\s+on\s*[:.]?\s*(\d{1,2}\.\d{1,2}\.\d{4})\)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_remand_date(self, text: str) -> str:
+        """Extract remand date."""
+        patterns = [
+            r'REMAND\s+CASE\s+DIARY.*?Dated\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
+            r'Dated\s*[:.]?\s*(\d{1,2}-\d{1,2}-\d{4})',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_chargesheet_number(self, text: str) -> str:
+        """Extract charge sheet number."""
+        patterns = [
+            r'(?:Charge\s*Sheet|Final\s+Report)\s*(?:No\.?)?\s*[:.]?\s*(\d+\s*/\s*\d{4})',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_chargesheet_date(self, text: str) -> str:
+        """Extract charge sheet date."""
+        patterns = [
+            r'Dispatched\s+on\s*[:.]?\s*(\d{1,2}[-./]\d{1,2}[-./]\d{4})',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_court_details(self, text: str) -> Tuple[str, str]:
+        """Extract court name and location."""
+        patterns = [
+            r'IN\s+THE\s+COURT\s+OF\s+(.+?)\s+AT\s+([A-Za-z]+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return clean_name(match.group(1)), match.group(2).strip()
+        return "", ""
     
     def _calculate_confidence(self, data: LegalDocumentData) -> float:
         """Calculate overall extraction confidence."""
         scores = []
-        low_conf_fields = []
         
-        if data.fir_number:
-            scores.append(1.0)
-        else:
-            scores.append(0.0)
-            low_conf_fields.append({"field": "fir_number", "reason": "missing"})
-            data.parsing_notes.append("Missing FIR number")
+        # FIR number (critical)
+        scores.append(1.0 if data.fir_number else 0.0)
         
-        if data.police_station:
-            scores.append(1.0)
-        else:
-            scores.append(0.3)
-            low_conf_fields.append({"field": "police_station", "reason": "missing"})
+        # Police station
+        scores.append(1.0 if data.police_station else 0.3)
         
-        if data.sections:
-            scores.append(1.0)
-        else:
-            scores.append(0.3)
-            low_conf_fields.append({"field": "sections", "reason": "missing"})
+        # Sections
+        scores.append(1.0 if data.sections else 0.3)
         
-        if data.accused_persons:
-            acc_completeness = []
-            for acc in data.accused_persons:
+        # Accused
+        valid_accused = [a for a in data.accused_persons if a.is_valid()]
+        if valid_accused:
+            completeness = []
+            for acc in valid_accused:
                 fields_present = sum([
                     1 if acc.name else 0,
                     0.5 if acc.relative_name else 0,
                     0.3 if acc.age else 0,
                     0.2 if acc.address else 0,
                 ])
-                acc_completeness.append(fields_present / 2.0)
-            
-            acc_score = sum(acc_completeness) / len(acc_completeness)
-            scores.append(acc_score)
-            
-            if acc_score < 0.7:
-                low_conf_fields.append({"field": "accused_persons", "reason": "incomplete", "score": acc_score})
+                completeness.append(min(fields_present / 2.0, 1.0))
+            scores.append(sum(completeness) / len(completeness))
         else:
             scores.append(0.0)
-            low_conf_fields.append({"field": "accused_persons", "reason": "missing"})
-            data.parsing_notes.append("No accused persons extracted")
+            data.parsing_notes.append("No valid accused persons extracted")
         
-        if data.witnesses:
-            wit_completeness = []
-            for wit in data.witnesses:
+        # Witnesses
+        valid_witnesses = [w for w in data.witnesses if w.is_valid()]
+        if valid_witnesses:
+            completeness = []
+            for wit in valid_witnesses:
                 fields_present = sum([
                     1 if wit.name else 0,
                     0.3 if wit.role else 0,
                 ])
-                wit_completeness.append(fields_present / 1.3)
-            
-            wit_score = sum(wit_completeness) / len(wit_completeness)
-            scores.append(wit_score)
+                completeness.append(min(fields_present / 1.3, 1.0))
+            scores.append(sum(completeness) / len(completeness))
         else:
             scores.append(0.3)
-        
-        data.low_confidence_fields = low_conf_fields
         
         return sum(scores) / len(scores) if scores else 0.0
 
@@ -1500,17 +1582,9 @@ class EnhancedLegalParser:
 # ============================================
 
 class VisualDiffGenerator:
-    """
-    Generates annotated diff PDFs with color-coded bounding boxes.
-    
-    Color Coding:
-    - GREEN: High-confidence fields (>90%)
-    - YELLOW: Low-confidence fields (needs review)
-    - RED: Detected but unextracted regions
-    """
+    """Generates annotated diff PDFs with color-coded bounding boxes."""
     
     def __init__(self):
-        """Initialize the visual diff generator."""
         self.colors = ConfidenceColors()
     
     async def generate_annotated_pdf(self,
@@ -1518,18 +1592,7 @@ class VisualDiffGenerator:
                                     filename: str,
                                     extracted_data: LegalDocumentData,
                                     output_path: Optional[str] = None) -> Tuple[bytes, str]:
-        """
-        Generate annotated PDF with visual diff overlay.
-        
-        Args:
-            original_bytes: Original PDF/image content
-            filename: Original filename
-            extracted_data: Extracted data with fields
-            output_path: Optional output path
-            
-        Returns:
-            Tuple of (annotated_pdf_bytes, output_filename)
-        """
+        """Generate annotated PDF with visual diff overlay."""
         ext = Path(filename).suffix.lower()
         
         if ext == '.pdf':
@@ -1537,7 +1600,6 @@ class VisualDiffGenerator:
         elif ext in {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp'}:
             return await self._annotate_image(original_bytes, filename, extracted_data, output_path)
         else:
-            # Return original if unsupported
             return original_bytes, filename
     
     async def _annotate_pdf(self,
@@ -1548,50 +1610,31 @@ class VisualDiffGenerator:
         """Annotate PDF with bounding boxes."""
         
         if not PDF2IMAGE_AVAILABLE:
-            logger.warning("pdf2image not available, using fallback annotation")
+            logger.warning("pdf2image not available, using fallback")
             return self._simple_pdf_annotation(pdf_bytes, filename, extracted_data, output_path)
         
-        # Convert PDF to images
         try:
             images = convert_from_bytes(pdf_bytes, dpi=150, fmt='RGB')
         except Exception as e:
-            logger.error(f"Failed to convert PDF to images: {e}")
+            logger.error(f"Failed to convert PDF: {e}")
             return pdf_bytes, filename
         
         annotated_images = []
         
         for page_num, img in enumerate(images, 1):
-            # Convert PIL Image to numpy for OpenCV
             img_array = np.array(img)
             img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            
-            # Draw annotations
-            img_cv = self._draw_annotations_on_image(
-                img_cv, extracted_data, page_num
-            )
-            
-            # Add legend
+            img_cv = self._draw_annotations_on_image(img_cv, extracted_data, page_num)
             img_cv = self._draw_legend(img_cv)
-            
-            # Convert back to PIL
             img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
             annotated_images.append(Image.fromarray(img_rgb))
         
-        # Convert annotated images back to PDF
         output_filename = f"annotated_diff_{Path(filename).stem}.pdf"
+        full_path = output_path or f"/tmp/{output_filename}"
         
-        if output_path:
-            full_path = output_path
-        else:
-            full_path = f"/tmp/{output_filename}"
-        
-        # Save as PDF
         if annotated_images:
             annotated_images[0].save(
-                full_path,
-                "PDF",
-                resolution=150,
-                save_all=True,
+                full_path, "PDF", resolution=150, save_all=True,
                 append_images=annotated_images[1:] if len(annotated_images) > 1 else []
             )
             
@@ -1608,21 +1651,15 @@ class VisualDiffGenerator:
                              extracted_data: LegalDocumentData,
                              output_path: Optional[str] = None) -> Tuple[bytes, str]:
         """Annotate image with bounding boxes."""
-        
-        # Decode image
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if img is None:
             return image_bytes, filename
         
-        # Draw annotations
         img = self._draw_annotations_on_image(img, extracted_data, page=1)
-        
-        # Add legend
         img = self._draw_legend(img)
         
-        # Encode as PNG
         output_filename = f"annotated_diff_{Path(filename).stem}.png"
         _, buffer = cv2.imencode('.png', img)
         result_bytes = buffer.tobytes()
@@ -1639,15 +1676,12 @@ class VisualDiffGenerator:
                                    page: int = 1) -> np.ndarray:
         """Draw all annotations on image."""
         h, w = img.shape[:2]
-        
-        # Create overlay for transparency
         overlay = img.copy()
         
-        # Draw extracted fields
         y_offset = 50
         field_height = 25
         
-        # Draw FIR Number
+        # FIR Number
         if data.fir_number:
             color = ConfidenceColors.HIGH_CONFIDENCE
             cv2.rectangle(overlay, (10, y_offset), (300, y_offset + field_height), color, 2)
@@ -1655,32 +1689,31 @@ class VisualDiffGenerator:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
             y_offset += field_height + 5
         
-        # Draw Police Station
+        # Police Station
         if data.police_station:
             color = ConfidenceColors.HIGH_CONFIDENCE
             cv2.rectangle(overlay, (10, y_offset), (300, y_offset + field_height), color, 2)
-            cv2.putText(overlay, f"PS: {data.police_station}", (15, y_offset + 18),
+            cv2.putText(overlay, f"PS: {data.police_station}, Dist: {data.district or '---'}", (15, y_offset + 18),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
             y_offset += field_height + 5
         
-        # Draw Sections
+        # Sections
         if data.sections:
             color = ConfidenceColors.HIGH_CONFIDENCE
             sections_str = ", ".join(data.sections[:5])
-            cv2.rectangle(overlay, (10, y_offset), (400, y_offset + field_height), color, 2)
-            cv2.putText(overlay, f"U/S: {sections_str}", (15, y_offset + 18),
+            cv2.rectangle(overlay, (10, y_offset), (450, y_offset + field_height), color, 2)
+            cv2.putText(overlay, f"U/S: {sections_str} {data.act_type}", (15, y_offset + 18),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
             y_offset += field_height + 10
         
-        # Draw Accused List
-        cv2.putText(overlay, f"ACCUSED ({len(data.accused_persons)}):", (10, y_offset + 15),
+        # Valid Accused
+        valid_accused = [a for a in data.accused_persons if a.is_valid()]
+        cv2.putText(overlay, f"ACCUSED ({len(valid_accused)}):", (10, y_offset + 15),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, ConfidenceColors.ACCUSED_COLOR, 2)
         y_offset += 25
         
-        for acc in data.accused_persons[:9]:
-            confidence = acc.confidence
-            color = ConfidenceColors.get_confidence_color(confidence)
-            
+        for acc in valid_accused[:9]:
+            color = ConfidenceColors.get_confidence_color(acc.confidence)
             text = f"{acc.serial}: {acc.name}"
             if acc.relative_name:
                 text += f" S/o {acc.relative_name}"
@@ -1694,15 +1727,14 @@ class VisualDiffGenerator:
         
         y_offset += 10
         
-        # Draw Witness List
-        cv2.putText(overlay, f"WITNESSES ({len(data.witnesses)}):", (10, y_offset + 15),
+        # Valid Witnesses
+        valid_witnesses = [w for w in data.witnesses if w.is_valid()]
+        cv2.putText(overlay, f"WITNESSES ({len(valid_witnesses)}):", (10, y_offset + 15),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, ConfidenceColors.WITNESS_COLOR, 2)
         y_offset += 25
         
-        for wit in data.witnesses[:8]:
-            confidence = wit.confidence
-            color = ConfidenceColors.get_confidence_color(confidence)
-            
+        for wit in valid_witnesses[:10]:
+            color = ConfidenceColors.get_confidence_color(wit.confidence)
             text = f"{wit.serial}: {wit.name}"
             if wit.role:
                 text += f" - {wit.role}"
@@ -1712,7 +1744,7 @@ class VisualDiffGenerator:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
             y_offset += field_height + 3
         
-        # Draw Brief Facts snippet
+        # Brief Facts snippet
         if data.brief_facts:
             y_offset += 15
             color = ConfidenceColors.MEDIUM_CONFIDENCE
@@ -1721,8 +1753,6 @@ class VisualDiffGenerator:
             y_offset += 25
             
             facts_snippet = data.brief_facts[:200] + "..." if len(data.brief_facts) > 200 else data.brief_facts
-            
-            # Word wrap
             words = facts_snippet.split()
             lines = []
             current_line = ""
@@ -1742,7 +1772,6 @@ class VisualDiffGenerator:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
                 y_offset += 22
         
-        # Blend overlay
         alpha = 0.9
         cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
         
@@ -1752,7 +1781,6 @@ class VisualDiffGenerator:
         """Draw color legend on image."""
         h, w = img.shape[:2]
         
-        # Legend background
         legend_h = 80
         legend_w = 250
         legend_x = w - legend_w - 10
@@ -1766,19 +1794,16 @@ class VisualDiffGenerator:
         cv2.putText(img, "CONFIDENCE LEGEND", (legend_x + 10, legend_y + 18),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
         
-        # Green - High confidence
         cv2.rectangle(img, (legend_x + 10, legend_y + 25), (legend_x + 25, legend_y + 40),
                      ConfidenceColors.HIGH_CONFIDENCE, -1)
         cv2.putText(img, "High (>90%)", (legend_x + 35, legend_y + 37),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
         
-        # Yellow - Medium confidence
         cv2.rectangle(img, (legend_x + 10, legend_y + 45), (legend_x + 25, legend_y + 60),
                      ConfidenceColors.MEDIUM_CONFIDENCE, -1)
         cv2.putText(img, "Medium (70-90%)", (legend_x + 35, legend_y + 57),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
         
-        # Red - Low confidence
         cv2.rectangle(img, (legend_x + 10, legend_y + 65), (legend_x + 25, legend_y + 80),
                      ConfidenceColors.LOW_CONFIDENCE, -1)
         cv2.putText(img, "Low/Unextracted (<70%)", (legend_x + 35, legend_y + 77),
@@ -1791,7 +1816,7 @@ class VisualDiffGenerator:
                               filename: str,
                               extracted_data: LegalDocumentData,
                               output_path: Optional[str] = None) -> Tuple[bytes, str]:
-        """Simple PDF annotation when pdf2image is not available."""
+        """Simple PDF annotation fallback."""
         
         if not REPORTLAB_AVAILABLE or not PYPDF2_AVAILABLE:
             return pdf_bytes, filename
@@ -1805,26 +1830,26 @@ class VisualDiffGenerator:
                 page_width = float(media_box.width)
                 page_height = float(media_box.height)
                 
-                # Create overlay
                 overlay_buffer = io.BytesIO()
                 c = rl_canvas.Canvas(overlay_buffer, pagesize=(page_width, page_height))
                 
-                # Draw summary text at top
                 c.setFont("Helvetica-Bold", 10)
                 y = page_height - 30
                 
-                c.setFillColorRGB(0, 0.5, 0)  # Green
-                c.drawString(20, y, f"FIR: {extracted_data.fir_number}")
+                c.setFillColorRGB(0, 0.5, 0)
+                c.drawString(20, y, f"FIR: {extracted_data.fir_number or '---'}")
                 y -= 15
                 
-                c.drawString(20, y, f"PS: {extracted_data.police_station}, Dist: {extracted_data.district}")
+                c.drawString(20, y, f"PS: {extracted_data.police_station or '---'}, Dist: {extracted_data.district or '---'}")
                 y -= 15
                 
-                c.setFillColorRGB(0, 0, 0.8)  # Blue
-                c.drawString(20, y, f"Accused: {len(extracted_data.accused_persons)}, Witnesses: {len(extracted_data.witnesses)}")
+                valid_acc = len([a for a in extracted_data.accused_persons if a.is_valid()])
+                valid_wit = len([w for w in extracted_data.witnesses if w.is_valid()])
+                c.setFillColorRGB(0, 0, 0.8)
+                c.drawString(20, y, f"Accused: {valid_acc}, Witnesses: {valid_wit}")
                 y -= 15
                 
-                c.setFillColorRGB(0.5, 0, 0.5)  # Purple
+                c.setFillColorRGB(0.5, 0, 0.5)
                 sections_str = ", ".join(extracted_data.sections[:5])
                 c.drawString(20, y, f"U/S: {sections_str}")
                 y -= 20
@@ -1859,25 +1884,13 @@ class VisualDiffGenerator:
 # ============================================
 
 class EnhancedLegalParserService:
-    """
-    Production-ready service combining all components.
-    
-    Features:
-    - OpenCV preprocessing
-    - Spatial clustering
-    - Rule-based extraction
-    - Visual diff overlay
-    - Annotated PDF generation
-    """
+    """Production-ready service combining all components."""
     
     def __init__(self, confidence_threshold: float = 0.75):
-        """Initialize service components."""
         self.preprocessor = OpenCVPreprocessor()
-        self.clusterer = SpatialClusterer()
         self.parser = EnhancedLegalParser(confidence_threshold)
         self.visual_diff = VisualDiffGenerator()
-        
-        logger.info("EnhancedLegalParserService initialized")
+        logger.info("EnhancedLegalParserService v4.0 initialized")
     
     async def process_document(self,
                               file_bytes: bytes,
@@ -1885,11 +1898,7 @@ class EnhancedLegalParserService:
                               document_type: str = "auto",
                               generate_visual_diff: bool = True,
                               preprocess: bool = True) -> Dict[str, Any]:
-        """
-        Process a legal document through the full pipeline.
-        
-        Returns both clean JSON and annotated diff PDF.
-        """
+        """Process a legal document through the full pipeline."""
         start_time = datetime.now()
         
         result = {
@@ -1905,7 +1914,6 @@ class EnhancedLegalParserService:
         }
         
         try:
-            # Get OCR text
             ocr_text = await self._get_ocr_text(file_bytes, filename)
             result["ocr_text"] = ocr_text[:1000]
             
@@ -1913,11 +1921,9 @@ class EnhancedLegalParserService:
                 result["errors"].append("OCR extraction failed or produced insufficient text")
                 return result
             
-            # Parse with rule-based extractor
             extracted = self.parser.parse(ocr_text, document_type)
             result["extracted_data"] = extracted.to_dict()
             
-            # Generate visual diff PDF
             if generate_visual_diff:
                 try:
                     annotated_bytes, annotated_filename = await self.visual_diff.generate_annotated_pdf(
@@ -1945,7 +1951,6 @@ class EnhancedLegalParserService:
             from services.pipeline.ocr_service import OCRService
             
             ocr = OCRService(prefer_azure=False)
-            
             ext = Path(filename).suffix.lower() or '.pdf'
             
             with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
@@ -1998,9 +2003,13 @@ __all__ = [
     'ExtractedField',
     'BoundingBox',
     'OpenCVPreprocessor',
-    'SpatialClusterer',
     'VisualDiffGenerator',
     'ConfidenceColors',
     'get_legal_parser',
     'get_legal_parser_service',
+    'is_garbage_text',
+    'clean_name',
+    'clean_age',
+    'clean_phone',
+    'clean_address',
 ]
