@@ -1,6 +1,6 @@
 """
-Azure Document Intelligence Service - Integrated Pipeline
-==========================================================
+Azure Document Intelligence Service - Integrated Pipeline with Visual Diff
+============================================================================
 High-accuracy document OCR pipeline for Indian legal documents.
 Targets 90%+ field-level accuracy on Charge Sheets, Case Diaries, and Remand Reports.
 
@@ -8,21 +8,19 @@ Integrated Pipeline:
 1. Advanced Pre-processing (OpenCV) - deskew, denoise, enhance, binarize
 2. OCR Engine (Azure Document Intelligence / Google Vision fallback)
 3. Enhanced Legal Parser - rule-based extraction calibrated on real samples
-4. Spatial Clustering - table reconstruction
-5. Confidence filtering and validation
-6. Annotated PDF generation
+4. Visual Diff Overlay - color-coded bounding boxes
+5. Annotated PDF generation
 
-Key Features:
-- Azure Document Intelligence for table/form extraction (when configured)
-- Google Vision API fallback (always available)
-- OpenCV preprocessing for scanned documents
-- 90%+ accuracy on Accused (A1-A9) and Witness (LW-1+) lists
-- Annotated PDF output for human review
+Visual Diff Color Coding:
+- GREEN: High-confidence fields (>90%)
+- YELLOW: Low-confidence fields (needs review)
+- RED: Detected but unextracted regions
 """
 import os
 import io
 import re
 import cv2
+import base64
 import logging
 import asyncio
 import tempfile
@@ -39,15 +37,18 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Import enhanced parser
+# Import enhanced parser with visual diff
 from services.enhanced_legal_parser import (
     EnhancedLegalParser,
     EnhancedLegalParserService,
     LegalDocumentData,
     PersonRecord,
+    ExtractedField,
+    BoundingBox,
     OpenCVPreprocessor,
     SpatialClusterer,
-    AnnotatedPDFGenerator,
+    VisualDiffGenerator,
+    ConfidenceColors,
     get_legal_parser,
     get_legal_parser_service,
 )
@@ -58,30 +59,12 @@ from services.enhanced_legal_parser import (
 # ============================================
 
 @dataclass
-class BoundingBox:
-    """Bounding box coordinates."""
-    x: float
-    y: float
-    width: float
-    height: float
-    page: int = 1
-    
-    def to_dict(self) -> Dict:
-        return {
-            "x": self.x, "y": self.y, 
-            "width": self.width, "height": self.height,
-            "page": self.page
-        }
-
-
-@dataclass
 class ExtractedCell:
     """Single table cell with content and metadata."""
     row_index: int
     col_index: int
     content: str
     confidence: float
-    bounding_box: Optional[BoundingBox] = None
     row_span: int = 1
     col_span: int = 1
     is_header: bool = False
@@ -94,7 +77,6 @@ class ExtractedTable:
     rows: int
     columns: int
     cells: List[ExtractedCell] = field(default_factory=list)
-    bounding_box: Optional[BoundingBox] = None
     confidence: float = 0.0
     
     def to_dict(self) -> Dict:
@@ -107,10 +89,7 @@ class ExtractedTable:
                     "row": c.row_index,
                     "col": c.col_index,
                     "content": c.content,
-                    "confidence": c.confidence,
-                    "row_span": c.row_span,
-                    "col_span": c.col_span,
-                    "is_header": c.is_header
+                    "confidence": c.confidence
                 }
                 for c in self.cells
             ],
@@ -132,15 +111,14 @@ class ExtractedKeyValue:
     key: str
     value: str
     confidence: float
-    bounding_box: Optional[BoundingBox] = None
 
 
 @dataclass
 class DocumentIntelligenceResult:
-    """Complete extraction result with all structured data."""
+    """Complete extraction result with visual diff."""
     success: bool
     source_file: str
-    document_type: str  # chargesheet, casediary, remand
+    document_type: str
     
     # Raw extracted content
     full_text: str = ""
@@ -175,8 +153,10 @@ class DocumentIntelligenceResult:
     chargesheet_date: str = ""
     section_35_3_dates: List[str] = field(default_factory=list)
     
-    # Annotated PDF
+    # Visual Diff
     annotated_pdf_bytes: Optional[bytes] = None
+    annotated_pdf_base64: str = ""
+    annotated_filename: str = ""
     
     # Quality metrics
     overall_confidence: float = 0.0
@@ -184,6 +164,9 @@ class DocumentIntelligenceResult:
     processing_time_ms: int = 0
     ocr_engine: str = ""
     preprocessing_applied: List[str] = field(default_factory=list)
+    
+    # Visual diff summary
+    visual_diff_summary: Dict[str, Any] = field(default_factory=dict)
     
     # Errors/warnings
     errors: List[str] = field(default_factory=list)
@@ -194,7 +177,7 @@ class DocumentIntelligenceResult:
             "success": self.success,
             "source_file": self.source_file,
             "document_type": self.document_type,
-            "full_text": self.full_text[:2000] if self.full_text else "",  # Truncate for response
+            "full_text": self.full_text[:2000] if self.full_text else "",
             "tables": [t.to_dict() for t in self.tables],
             "key_values": [{"key": kv.key, "value": kv.value, "confidence": kv.confidence} for kv in self.key_values],
             "fir_number": self.fir_number,
@@ -221,9 +204,12 @@ class DocumentIntelligenceResult:
             "processing_time_ms": self.processing_time_ms,
             "ocr_engine": self.ocr_engine,
             "preprocessing_applied": self.preprocessing_applied,
+            "visual_diff_summary": self.visual_diff_summary,
+            "annotated_filename": self.annotated_filename,
+            "has_annotated_pdf": bool(self.annotated_pdf_base64),
+            "annotated_pdf_base64": self.annotated_pdf_base64,
             "errors": self.errors,
-            "warnings": self.warnings,
-            "has_annotated_pdf": self.annotated_pdf_bytes is not None
+            "warnings": self.warnings
         }
 
 
@@ -232,10 +218,7 @@ class DocumentIntelligenceResult:
 # ============================================
 
 class AzureDocumentIntelligence:
-    """
-    Azure AI Document Intelligence client wrapper.
-    Handles layout analysis and table extraction.
-    """
+    """Azure AI Document Intelligence client wrapper."""
     
     def __init__(self):
         """Initialize Azure client from environment variables."""
@@ -266,16 +249,7 @@ class AzureDocumentIntelligence:
     
     async def analyze_document(self, document_bytes: bytes, 
                                model_id: str = "prebuilt-layout") -> Dict[str, Any]:
-        """
-        Analyze document using Azure Document Intelligence.
-        
-        Args:
-            document_bytes: Document content as bytes
-            model_id: Model to use (prebuilt-layout, prebuilt-document)
-            
-        Returns:
-            Raw analysis result from Azure
-        """
+        """Analyze document using Azure Document Intelligence."""
         if not self.client:
             raise RuntimeError("Azure Document Intelligence client not initialized")
         
@@ -309,12 +283,10 @@ class AzureDocumentIntelligence:
         """Convert Azure result to dictionary."""
         output = {
             "content": result.content if hasattr(result, 'content') else "",
-            "pages": [],
             "tables": [],
             "key_value_pairs": []
         }
         
-        # Process tables
         if hasattr(result, 'tables') and result.tables:
             for i, table in enumerate(result.tables):
                 table_dict = {
@@ -338,7 +310,6 @@ class AzureDocumentIntelligence:
                 
                 output["tables"].append(table_dict)
         
-        # Process key-value pairs
         if hasattr(result, 'key_value_pairs') and result.key_value_pairs:
             for kv in result.key_value_pairs:
                 kv_dict = {
@@ -356,16 +327,11 @@ class AzureDocumentIntelligence:
 # ============================================
 
 class TableReconstructor:
-    """
-    Spatial clustering and table reconstruction.
-    Handles merged cells, irregular layouts, and missing borders.
-    """
+    """Spatial clustering and table reconstruction."""
     
     @staticmethod
     def reconstruct_tables(azure_tables: List[Dict]) -> List[ExtractedTable]:
-        """
-        Reconstruct clean table structures from Azure output.
-        """
+        """Reconstruct clean table structures from Azure output."""
         tables = []
         
         for table_data in azure_tables:
@@ -424,7 +390,6 @@ class ConfidenceValidator:
         """Validate extraction result and flag low-confidence fields."""
         low_confidence = []
         
-        # Validate required fields
         required_fields = [
             ("fir_number", result.fir_number),
             ("police_station", result.police_station),
@@ -439,7 +404,6 @@ class ConfidenceValidator:
                     "severity": "high"
                 })
         
-        # Validate accused
         if not result.accused_persons:
             result.warnings.append("No accused persons extracted")
         else:
@@ -451,13 +415,11 @@ class ConfidenceValidator:
                         "severity": "medium"
                     })
         
-        # Validate witnesses
         if not result.witnesses:
             result.warnings.append("No witnesses extracted")
         
         result.low_confidence_fields = low_confidence
         
-        # Add quality warning
         if result.overall_confidence < cls.LOW_CONFIDENCE_THRESHOLD:
             result.warnings.append(f"Low overall confidence: {result.overall_confidence:.0%}")
         
@@ -470,7 +432,7 @@ class ConfidenceValidator:
 
 class DocumentIntelligenceService:
     """
-    Main service orchestrating the document intelligence pipeline.
+    Main service orchestrating the document intelligence pipeline with visual diff.
     
     Pipeline:
     1. Image preprocessing (OpenCV)
@@ -478,7 +440,8 @@ class DocumentIntelligenceService:
     3. Table reconstruction
     4. Enhanced legal parsing (rule-based extraction)
     5. Confidence validation
-    6. Annotated PDF generation
+    6. Visual diff overlay generation
+    7. Annotated PDF creation
     """
     
     def __init__(self):
@@ -487,7 +450,7 @@ class DocumentIntelligenceService:
         self.azure_client = AzureDocumentIntelligence()
         self.legal_parser = get_legal_parser()
         self.validator = ConfidenceValidator()
-        self.annotator = AnnotatedPDFGenerator()
+        self.visual_diff = VisualDiffGenerator()
         
         logger.info(f"DocumentIntelligenceService initialized "
                    f"(Azure: {self.azure_client.is_configured})")
@@ -497,19 +460,11 @@ class DocumentIntelligenceService:
                               filename: str,
                               document_type: str = "auto",
                               preprocess: bool = True,
-                              generate_annotated: bool = True) -> DocumentIntelligenceResult:
+                              generate_visual_diff: bool = True) -> DocumentIntelligenceResult:
         """
         Process a document through the full pipeline.
         
-        Args:
-            file_bytes: Document content as bytes
-            filename: Original filename
-            document_type: Type of document (chargesheet, casediary, remand, auto)
-            preprocess: Whether to apply image preprocessing
-            generate_annotated: Whether to generate annotated PDF
-            
-        Returns:
-            DocumentIntelligenceResult with all extracted data
+        Returns both clean JSON extraction and annotated diff PDF.
         """
         start_time = datetime.now()
         
@@ -530,17 +485,15 @@ class DocumentIntelligenceService:
                 except Exception as e:
                     logger.warning(f"Preprocessing failed, using original: {e}")
             
-            # Step 2: OCR - Try Azure first, fallback to Google Vision
+            # Step 2: OCR
             ocr_text = ""
             azure_tables = []
-            azure_kvs = []
             
             if self.azure_client.is_configured and self.azure_client.client:
                 try:
                     azure_result = await self.azure_client.analyze_document(processed_bytes)
                     ocr_text = azure_result.get("content", "")
                     azure_tables = azure_result.get("tables", [])
-                    _ = azure_result.get("key_value_pairs", [])  # Reserved for future use
                     result.ocr_engine = "azure_document_intelligence"
                     logger.info(f"Azure OCR: {len(ocr_text)} chars, {len(azure_tables)} tables")
                 except Exception as e:
@@ -595,17 +548,32 @@ class DocumentIntelligenceService:
             result.low_confidence_fields = parsed_data.low_confidence_fields
             result.warnings.extend(parsed_data.parsing_notes)
             
+            # Visual diff summary
+            result.visual_diff_summary = {
+                "extracted_fields_count": len(parsed_data.extracted_fields),
+                "high_confidence_count": sum(1 for f in parsed_data.extracted_fields if f.confidence >= 0.90),
+                "medium_confidence_count": sum(1 for f in parsed_data.extracted_fields if 0.70 <= f.confidence < 0.90),
+                "low_confidence_count": sum(1 for f in parsed_data.extracted_fields if f.confidence < 0.70),
+                "accused_extracted": len(parsed_data.accused_persons),
+                "witnesses_extracted": len(parsed_data.witnesses)
+            }
+            
             # Step 5: Validation
             result = self.validator.validate_result(result)
             
-            # Step 6: Generate annotated PDF
-            if generate_annotated and filename.lower().endswith('.pdf'):
+            # Step 6: Generate visual diff PDF
+            if generate_visual_diff:
                 try:
-                    annotated = self.annotator.generate_annotated_pdf(file_bytes, parsed_data)
-                    if annotated != file_bytes:
-                        result.annotated_pdf_bytes = annotated
+                    annotated_bytes, annotated_filename = await self.visual_diff.generate_annotated_pdf(
+                        file_bytes, filename, parsed_data
+                    )
+                    result.annotated_pdf_bytes = annotated_bytes
+                    result.annotated_pdf_base64 = base64.b64encode(annotated_bytes).decode('utf-8')
+                    result.annotated_filename = annotated_filename
+                    logger.info(f"Visual diff generated: {annotated_filename}")
                 except Exception as e:
-                    logger.warning(f"Annotation generation failed: {e}")
+                    logger.warning(f"Visual diff generation failed: {e}")
+                    result.warnings.append(f"Visual diff generation failed: {str(e)}")
             
             result.success = True
             
@@ -647,23 +615,15 @@ class DocumentIntelligenceService:
     
     async def batch_process(self, 
                            files: List[Tuple[bytes, str]],
-                           document_type: str = "auto") -> List[DocumentIntelligenceResult]:
-        """
-        Process multiple documents.
-        
-        Args:
-            files: List of (file_bytes, filename) tuples
-            document_type: Type of documents
-            
-        Returns:
-            List of extraction results
-        """
+                           document_type: str = "auto",
+                           generate_visual_diff: bool = False) -> List[DocumentIntelligenceResult]:
+        """Process multiple documents."""
         results = []
         
         for file_bytes, filename in files:
             result = await self.process_document(
                 file_bytes, filename, document_type,
-                generate_annotated=False  # Skip annotation for batch
+                generate_visual_diff=generate_visual_diff
             )
             results.append(result)
             logger.info(f"Processed {filename}: success={result.success}, "
@@ -673,16 +633,7 @@ class DocumentIntelligenceService:
         return results
     
     def parse_text_only(self, text: str, document_type: str = "auto") -> LegalDocumentData:
-        """
-        Parse already-extracted OCR text.
-        
-        Args:
-            text: OCR text
-            document_type: Document type hint
-            
-        Returns:
-            LegalDocumentData with extracted fields
-        """
+        """Parse already-extracted OCR text."""
         return self.legal_parser.parse(text, document_type)
 
 
@@ -715,7 +666,10 @@ __all__ = [
     'EnhancedLegalParser',
     'LegalDocumentData',
     'PersonRecord',
+    'ExtractedField',
+    'BoundingBox',
     'OpenCVPreprocessor',
-    'AnnotatedPDFGenerator',
+    'VisualDiffGenerator',
+    'ConfidenceColors',
     'get_legal_parser',
 ]
