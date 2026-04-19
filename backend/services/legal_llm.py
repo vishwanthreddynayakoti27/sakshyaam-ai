@@ -112,11 +112,32 @@ Rules:
 Return ONLY valid JSON, no explanations."""
 
 
-async def translate_to_legal_english(text: str, source_language: str = "auto") -> Dict[str, Any]:
+async def translate_to_legal_english(text: str, source_language: str = "auto", officer_id: str = "unknown") -> Dict[str, Any]:
     """
     Translate petition/complaint text to formal legal English using GPT-5.2.
     Preserves police legalese and converts to third-person narrative.
+    
+    Uses caching to reduce API costs and latency.
     """
+    from services.document_cache import get_cached_result, set_cached_result
+    from services.translation_usage import log_translation_usage
+    
+    # Check cache first
+    cached = await get_cached_result(text, "translation")
+    if cached:
+        # Log as cached
+        await log_translation_usage(
+            officer_id=officer_id,
+            operation="llm_translate",
+            source_language=source_language,
+            target_language="en",
+            char_count=len(text),
+            token_count=0,
+            api_provider="emergent_llm",
+            cached=True
+        )
+        return cached
+    
     if not EMERGENT_LLM_KEY:
         logger.error("EMERGENT_LLM_KEY not configured")
         return {
@@ -144,12 +165,29 @@ Provide the formal legal English translation:"""
         user_message = UserMessage(text=prompt)
         response = await chat.send_message(user_message)
         
-        return {
+        result = {
             "success": True,
             "translated_text": response,
             "legal_text": response,
             "source_language": source_language
         }
+        
+        # Cache the result
+        await set_cached_result(text, "translation", result, source_language)
+        
+        # Log usage
+        await log_translation_usage(
+            officer_id=officer_id,
+            operation="llm_translate",
+            source_language=source_language,
+            target_language="en",
+            char_count=len(text),
+            token_count=len(text) // 4,  # Approximate token count
+            api_provider="emergent_llm",
+            cached=False
+        )
+        
+        return result
         
     except Exception as e:
         logger.error(f"Translation error: {e}")
@@ -161,11 +199,31 @@ Provide the formal legal English translation:"""
         }
 
 
-async def extract_entities(text: str) -> Dict[str, Any]:
+async def extract_entities(text: str, officer_id: str = "unknown") -> Dict[str, Any]:
     """
     Extract key entities from petition/complaint text using GPT-5.2.
     Returns structured data for Global Case Context.
+    
+    Uses caching to reduce API costs and latency.
     """
+    from services.document_cache import get_cached_result, set_cached_result
+    from services.translation_usage import log_translation_usage
+    
+    # Check cache first
+    cached = await get_cached_result(text, "entity_extraction")
+    if cached:
+        await log_translation_usage(
+            officer_id=officer_id,
+            operation="entity_extraction",
+            source_language="en",
+            target_language="en",
+            char_count=len(text),
+            token_count=0,
+            api_provider="emergent_llm",
+            cached=True
+        )
+        return cached
+    
     if not EMERGENT_LLM_KEY:
         logger.error("EMERGENT_LLM_KEY not configured")
         return {
@@ -203,10 +261,28 @@ Return the extracted entities as JSON:"""
             
             entities = json.loads(clean_response.strip())
             
-            return {
+            result = {
                 "success": True,
                 "entities": entities
             }
+            
+            # Cache the result
+            await set_cached_result(text, "entity_extraction", result, "en")
+            
+            # Log usage
+            await log_translation_usage(
+                officer_id=officer_id,
+                operation="entity_extraction",
+                source_language="en",
+                target_language="en",
+                char_count=len(text),
+                token_count=len(text) // 4,
+                api_provider="emergent_llm",
+                cached=False
+            )
+            
+            return result
+            
         except json.JSONDecodeError as je:
             logger.warning(f"JSON parse error: {je}, raw response: {response[:500]}")
             return {

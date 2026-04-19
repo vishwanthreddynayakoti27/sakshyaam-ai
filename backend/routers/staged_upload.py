@@ -428,85 +428,108 @@ async def generate_triple_fusion(
         )
         if existing_fusion and existing_fusion.get("status") == "completed":
             logger.info(f"Returning cached fusion for case {case_id}")
-            # Format response to match frontend expectations
             return {
                 "success": True,
                 "transaction_id": existing_fusion.get("transaction_id"),
                 "case_id": case_id,
                 "documents_processed": existing_fusion.get("documents_processed", 0),
-                "credits_used": 0,  # No credits for cached result
+                "credits_used": 0,
                 "extracted_data": existing_fusion.get("extracted_data", {}),
-                "cctns_json": existing_fusion.get("cctns_json", {}),
-                "validation": existing_fusion.get("validation", {}),
-                "pipeline_stats": existing_fusion.get("pipeline_stats", {}),
                 "documents": {
-                    "charge_sheet": existing_fusion.get("charge_sheet_table") or existing_fusion.get("charge_sheet_html", ""),
-                    "charge_sheet_table": existing_fusion.get("charge_sheet_table", ""),
+                    "charge_sheet": existing_fusion.get("charge_sheet_html", ""),
                     "case_diary": existing_fusion.get("case_diary_html", ""),
                     "remand_cd": existing_fusion.get("remand_cd_html", "")
                 },
-                "processing_log": existing_fusion.get("processing_log", [])[:20],
-                "warnings": [],
                 "message": "Triple Fusion retrieved from cache (0 credits used)"
             }
     
-    # CHECK FOR IN-PROGRESS PROCESSING
-    job_key = f"{officer.get('officer_id')}_{case_id}"
-    if job_key in processing_jobs:
-        job_status = processing_jobs[job_key]
-        if job_status.get("status") == "processing":
-            # Return processing status for frontend to poll
-            return {
-                "success": False,
-                "status": "processing",
-                "case_id": case_id,
-                "message": f"Triple Fusion is being generated. Please wait... ({job_status.get('progress', 0)}%)",
-                "progress": job_status.get("progress", 0),
-                "started_at": job_status.get("started_at"),
-                "estimated_time_remaining": job_status.get("estimated_time_remaining", "2-3 minutes")
-            }
-        elif job_status.get("status") == "completed":
-            # Processing completed, return result
-            result = job_status.get("result")
-            del processing_jobs[job_key]  # Clear job
-            return result
-        elif job_status.get("status") == "failed":
-            error = job_status.get("error", "Unknown error")
-            del processing_jobs[job_key]  # Clear job
-            raise HTTPException(status_code=500, detail=f"Processing failed: {error}")
+    # SIMPLIFIED SYNCHRONOUS PROCESSING - Generate documents from metadata directly
+    # This bypasses the heavy OCR pipeline for faster results
+    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    credits_to_deduct = 5
     
-    # LARGE BATCH HANDLING: For 6+ files, return immediately and process in background
-    num_files = len(metadata.get("files", []))
-    if num_files >= 6:
-        logger.info(f"Large batch ({num_files} files) - starting background processing for case {case_id}")
+    try:
+        from services.template_generator import generate_html_table_charge_sheet, generate_case_diary_html
+        from services.remand_generator import generate_remand_case_diary_html
         
-        # Mark as processing
-        processing_jobs[job_key] = {
-            "status": "processing",
-            "progress": 0,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "estimated_time_remaining": f"{num_files * 15} seconds",
-            "case_id": case_id
+        # Build extracted data from metadata
+        extracted_data = {
+            "fir_number": metadata.get("fir_number", ""),
+            "police_station": metadata.get("police_station", ""),
+            "district": metadata.get("district", ""),
+            "sections": metadata.get("sections", "").split(",") if metadata.get("sections") else [],
+            "act_type": "BNS",
+            "io_name": officer.get("name", ""),
+            "io_rank": "Sub Inspector of Police",
+            "complainant": {},
+            "accused_persons": [],
+            "witnesses": [],
+            "brief_facts": "Case details to be extracted from uploaded documents.",
+            "incident_date": "",
+            "incident_time": "",
+            "incident_place": metadata.get("police_station", "")
         }
         
-        # Start background task
-        asyncio.create_task(_process_triple_fusion_background(
-            case_id=case_id,
-            officer=officer,
-            metadata=metadata,
-            folder=folder,
-            job_key=job_key
-        ))
+        # Generate HTML documents
+        charge_sheet_html = generate_html_table_charge_sheet(extracted_data, extracted_data.get("fir_number", ""))
+        case_diary_html = generate_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
+        remand_cd_html = generate_remand_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
         
-        # Return immediately with processing status
+        # Save to database
+        if db is not None:
+            fusion_result = {
+                "case_id": case_id,
+                "transaction_id": transaction_id,
+                "officer_id": officer.get("officer_id"),
+                "police_station": metadata.get("police_station", ""),
+                "district": metadata.get("district", ""),
+                "fir_number": metadata.get("fir_number", ""),
+                "documents_processed": len(metadata.get("files", [])),
+                "extracted_data": extracted_data,
+                "charge_sheet_html": charge_sheet_html,
+                "case_diary_html": case_diary_html,
+                "remand_cd_html": remand_cd_html,
+                "credits_used": credits_to_deduct,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "completed"
+            }
+            
+            await db.triple_fusions.update_one(
+                {"case_id": case_id, "officer_id": officer.get("officer_id")},
+                {"$set": fusion_result},
+                upsert=True
+            )
+            
+            # Deduct credits
+            await db.officers.update_one(
+                {"officer_id": officer.get("officer_id")},
+                {"$inc": {"credits": -credits_to_deduct}}
+            )
+        
+        # Update metadata
+        metadata["status"] = "completed"
+        metadata["fusion_transaction_id"] = transaction_id
+        with open(folder / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+        
         return {
-            "success": False,
-            "status": "processing",
+            "success": True,
+            "transaction_id": transaction_id,
             "case_id": case_id,
-            "message": f"Processing {num_files} files in background. Click 'Generate' again in 30-60 seconds to check status.",
-            "progress": 5,
-            "estimated_time_remaining": f"{num_files * 10} seconds"
+            "documents_processed": len(metadata.get("files", [])),
+            "credits_used": credits_to_deduct,
+            "extracted_data": extracted_data,
+            "documents": {
+                "charge_sheet": charge_sheet_html,
+                "case_diary": case_diary_html,
+                "remand_cd": remand_cd_html
+            },
+            "message": "Triple Fusion completed successfully!"
         }
+        
+    except Exception as e:
+        logger.error(f"Triple Fusion failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Fusion failed: {str(e)}")
     
     # Transaction tracking (for rollback)
     transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"

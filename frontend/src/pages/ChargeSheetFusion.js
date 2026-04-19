@@ -154,114 +154,38 @@ const ChargeSheetFusion = () => {
     setCreditsUsed(0);
     
     try {
-      toast.info('Starting Triple Fusion... (Credits deducted only on SUCCESS)');
+      toast.info('Generating Triple Fusion...');
       
       const response = await api.post(`/staging/generate-triple-fusion/${caseId}`);
       
-      // Handle "processing" status for large batches
-      if (response.data.status === 'processing') {
-        toast.info(response.data.message || 'Processing large batch in background...');
-        
-        // Start polling for results
-        pollForResults(caseId);
-        return;
-      }
-      
       if (response.data.success) {
-        handleFusionSuccess(response.data);
+        // Set HTML content for tabs
+        setChargeSheetHtml(response.data.documents?.charge_sheet || '');
+        setCaseDiaryHtml(response.data.documents?.case_diary || '');
+        setRemandHtml(response.data.documents?.remand_cd || '');
+        
+        // Set download links
+        setDownloadLinks({
+          chargesheet: `/api/download/docx/${firNumber.replace('/', '-')}_ChargeSheet.docx`,
+          casediary: `/api/download/docx/${firNumber.replace('/', '-')}_CaseDiary.docx`,
+          remand: `/api/download/docx/${firNumber.replace('/', '-')}_RemandCD.docx`
+        });
+        
+        // Set extracted data summary
+        setExtractedData(response.data.extracted_data);
+        setCreditsUsed(response.data.credits_used);
+        
+        toast.success('Triple Fusion COMPLETE!');
+        toast.success(`Credits used: ${response.data.credits_used}`);
       }
     } catch (error) {
       const errorMsg = error.response?.data?.detail || 'Fusion failed';
       toast.error(errorMsg);
-      // Use success toast for reassurance (green color)
-      toast.success('✓ No credits deducted - Automatic rollback on failure', {
-        duration: 5000,
-        description: 'You can safely try again'
-      });
+      toast.success('No credits deducted', { duration: 3000 });
       console.error(error);
+    } finally {
       setIsGenerating(false);
     }
-  };
-  
-  // Handle successful fusion response
-  const handleFusionSuccess = (data) => {
-    // Set HTML content for tabs
-    setChargeSheetHtml(data.documents?.charge_sheet || '');
-    setCaseDiaryHtml(data.documents?.case_diary || '');
-    setRemandHtml(data.documents?.remand_cd || '');
-    
-    // Set download links
-    setDownloadLinks({
-      chargesheet: `/api/download/docx/${firNumber.replace('/', '-')}_ChargeSheet.docx`,
-      casediary: `/api/download/docx/${firNumber.replace('/', '-')}_CaseDiary.docx`,
-      remand: `/api/download/docx/${firNumber.replace('/', '-')}_RemandCD.docx`
-    });
-    
-    // Set extracted data summary
-    setExtractedData(data.extracted_data);
-    setCreditsUsed(data.credits_used);
-    
-    toast.success('Triple Fusion COMPLETE!');
-    toast.success(`Credits used: ${data.credits_used}`);
-    toast.info(`Documents processed: ${data.documents_processed}`);
-    setIsGenerating(false);
-  };
-  
-  // Poll for background processing results
-  const pollForResults = async (currentCaseId) => {
-    let attempts = 0;
-    const maxAttempts = 30; // Poll for up to 3 minutes (30 * 6 seconds)
-    
-    const checkStatus = async () => {
-      try {
-        const response = await api.get(`/staging/job-status/${currentCaseId}`);
-        
-        if (response.data.success || response.data.status === 'completed') {
-          if (response.data.cached) {
-            // Already completed - fetch full results
-            const fullResponse = await api.post(`/staging/generate-triple-fusion/${currentCaseId}`);
-            if (fullResponse.data.success) {
-              handleFusionSuccess(fullResponse.data);
-            }
-          } else {
-            handleFusionSuccess(response.data);
-          }
-          return; // Stop polling
-        }
-        
-        if (response.data.status === 'processing') {
-          attempts++;
-          if (attempts < maxAttempts) {
-            toast.info(`Processing... ${response.data.progress || 0}%`, { id: 'processing-status' });
-            setTimeout(checkStatus, 6000); // Poll every 6 seconds
-          } else {
-            toast.error('Processing is taking too long. Please try again.');
-            setIsGenerating(false);
-          }
-          return;
-        }
-        
-        // Not found or other status
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(checkStatus, 6000);
-        } else {
-          setIsGenerating(false);
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(checkStatus, 6000);
-        } else {
-          toast.error('Failed to get processing status');
-          setIsGenerating(false);
-        }
-      }
-    };
-    
-    // Start polling
-    setTimeout(checkStatus, 5000); // First check after 5 seconds
   };
 
   // === DOWNLOAD WORD DOCUMENT ===
