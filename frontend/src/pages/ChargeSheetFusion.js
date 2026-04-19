@@ -457,6 +457,7 @@ const ChargeSheetFusion = () => {
                   documentsCount={documentsCount}
                   extractedData={extractedData}
                   onDownload={downloadDocument}
+                  caseId={caseId}
                 />
               ) : (
                 <FusionIdleView filesReady={stagedFiles.length > 0} firReady={!!firNumber.trim()} />
@@ -543,75 +544,172 @@ const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
   );
 };
 
-const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload }) => (
-  <div className="w-full max-w-lg" data-testid="fusion-completed-view">
-    <div className="text-center mb-6">
-      <div className="mx-auto w-20 h-20 rounded-full bg-[#00FFB3]/20 border-2 border-[#00FFB3]/40 flex items-center justify-center mb-4">
-        <CheckCircle2 className="text-[#00FFB3]" size={44} />
-      </div>
-      <h3 className="text-2xl font-bold text-white mb-1">Triple Fusion Complete</h3>
-      <p className="text-white/60 text-sm">
-        FIR {firNumber} · {documentsCount} file{documentsCount === 1 ? '' : 's'} processed · {creditsUsed} credits used
-      </p>
-    </div>
+const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId }) => {
+  const [smartLoading, setSmartLoading] = React.useState(false);
+  const [corrections, setCorrections] = React.useState(null);
 
-    {/* Extraction summary */}
-    {extractedData && (
-      <div className="mb-6 p-4 rounded-lg bg-[#030614] border border-[#00FFB3]/20">
-        <h4 className="text-[#00FFB3] font-semibold text-sm mb-3">Extraction Summary</h4>
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <p className="text-white/50 text-xs">Accused</p>
-            <p className="text-white font-bold text-lg">
-              {(extractedData.accused_persons?.length) ?? (extractedData.accused_count ?? 0)}
-            </p>
+  const downloadSmartChargeSheet = async () => {
+    if (!caseId) {
+      toast.error('No case selected');
+      return;
+    }
+    setSmartLoading(true);
+    setCorrections(null);
+    try {
+      toast.info('Running station-writer AI (Claude 4.5)... ~20 seconds');
+      const resp = await api.post(
+        `/staging/generate-intelligent-charge-sheet/${caseId}`,
+        null,
+        { responseType: 'blob' }
+      );
+      // Pull corrections count from response headers
+      const correctionsCount = resp.headers['x-corrections-count'] || resp.headers['X-Corrections-Count'];
+      // Trigger DOCX download
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentChargeSheet.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      // Fetch the corrections list separately
+      try {
+        const meta = await api.get(`/staging/intelligent-chargesheet/${caseId}`);
+        if (meta.data?.corrections_applied?.length) {
+          setCorrections(meta.data.corrections_applied);
+        }
+      } catch (e) { /* non-critical */ }
+
+      toast.success(`Station-format charge sheet downloaded (${correctionsCount || 0} corrections applied)`);
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Intelligent generation failed';
+      if (error.response?.data instanceof Blob) {
+        try {
+          msg = JSON.parse(await error.response.data.text()).detail || msg;
+        } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setSmartLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-lg" data-testid="fusion-completed-view">
+      <div className="text-center mb-6">
+        <div className="mx-auto w-20 h-20 rounded-full bg-[#00FFB3]/20 border-2 border-[#00FFB3]/40 flex items-center justify-center mb-4">
+          <CheckCircle2 className="text-[#00FFB3]" size={44} />
+        </div>
+        <h3 className="text-2xl font-bold text-white mb-1">Triple Fusion Complete</h3>
+        <p className="text-white/60 text-sm">
+          FIR {firNumber} · {documentsCount} file{documentsCount === 1 ? '' : 's'} processed · {creditsUsed} credits used
+        </p>
+      </div>
+
+      {/* Extraction summary */}
+      {extractedData && (
+        <div className="mb-6 p-4 rounded-lg bg-[#030614] border border-[#00FFB3]/20">
+          <h4 className="text-[#00FFB3] font-semibold text-sm mb-3">Extraction Summary</h4>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-white/50 text-xs">Accused</p>
+              <p className="text-white font-bold text-lg">
+                {(extractedData.accused_persons?.length) ?? (extractedData.accused_count ?? 0)}
+              </p>
+            </div>
+            <div>
+              <p className="text-white/50 text-xs">Witnesses</p>
+              <p className="text-white font-bold text-lg">
+                {(extractedData.witnesses?.length) ?? (extractedData.witness_count ?? 0)}
+              </p>
+            </div>
+            <div>
+              <p className="text-white/50 text-xs">Complainant</p>
+              <p className="text-white font-medium text-sm truncate">
+                {extractedData.complainant?.name || 'N/A'}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-white/50 text-xs">Witnesses</p>
-            <p className="text-white font-bold text-lg">
-              {(extractedData.witnesses?.length) ?? (extractedData.witness_count ?? 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-white/50 text-xs">Complainant</p>
-            <p className="text-white font-medium text-sm truncate">
-              {extractedData.complainant?.name || 'N/A'}
+        </div>
+      )}
+
+      {/* STATION-WRITER INTELLIGENT CHARGE SHEET */}
+      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#FFB800]/10 to-[#FF8800]/5 border border-[#FFB800]/30">
+        <div className="flex items-start gap-3 mb-3">
+          <Sparkles className="text-[#FFB800] shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h4 className="text-[#FFB800] font-bold text-base">Station-Writer Intelligent Charge Sheet</h4>
+            <p className="text-white/60 text-xs mt-1 leading-relaxed">
+              Auto-corrects misclassifications (complainant/accused), fixes typos in BNS sections, composes a proper flowing narrative, matches the real Makthal station format. Missing fields print as blanks for manual entry. Uses Claude Sonnet 4.5 · 3 credits.
             </p>
           </div>
         </div>
+        <Button
+          onClick={downloadSmartChargeSheet}
+          disabled={smartLoading}
+          className="w-full h-11 bg-gradient-to-r from-[#FFB800] to-[#FF8800] text-black font-bold hover:opacity-90"
+          data-testid="download-intelligent-chargesheet"
+        >
+          {smartLoading ? (
+            <><Loader2 className="animate-spin mr-2" size={16} /> Running AI (~20s)...</>
+          ) : (
+            <><Sparkles size={16} className="mr-2" /> Generate Station-Format Charge Sheet</>
+          )}
+        </Button>
+        {corrections && corrections.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-[#FFB800]/20" data-testid="corrections-list">
+            <p className="text-[#FFB800] text-xs font-semibold mb-2">
+              {corrections.length} correction{corrections.length === 1 ? '' : 's'} applied:
+            </p>
+            <ul className="space-y-1">
+              {corrections.map((c, i) => (
+                <li key={i} className="text-white/70 text-xs pl-3 border-l-2 border-[#FFB800]/40">
+                  {c}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
-    )}
 
-    {/* Download buttons */}
-    <div className="space-y-3">
-      <Button
-        onClick={() => onDownload('chargesheet')}
-        className="w-full h-12 bg-gradient-to-r from-[#00C2FF] to-[#4F7EFF] text-white font-semibold hover:opacity-90"
-        data-testid="download-chargesheet"
-      >
-        <Download size={18} className="mr-2" />
-        Download Charge Sheet (.docx)
-      </Button>
-      <Button
-        onClick={() => onDownload('casediary')}
-        variant="outline"
-        className="w-full h-12 border-[#4F7EFF]/40 text-[#4F7EFF] hover:bg-[#4F7EFF]/10 font-semibold"
-        data-testid="download-casediary"
-      >
-        <Download size={18} className="mr-2" />
-        Download Case Diary Part-I (.docx)
-      </Button>
-      <Button
-        onClick={() => onDownload('remand')}
-        variant="outline"
-        className="w-full h-12 border-[#FFB800]/40 text-[#FFB800] hover:bg-[#FFB800]/10 font-semibold"
-        data-testid="download-remand"
-      >
-        <Download size={18} className="mr-2" />
-        Download Remand Case Diary (.docx)
-      </Button>
+      {/* Original (pipeline) download buttons */}
+      <div className="space-y-3">
+        <p className="text-white/40 text-xs uppercase tracking-wider">Or download pipeline-generated HTML versions:</p>
+        <Button
+          onClick={() => onDownload('chargesheet')}
+          variant="outline"
+          className="w-full h-11 border-[#00C2FF]/40 text-[#00C2FF] hover:bg-[#00C2FF]/10 font-medium"
+          data-testid="download-chargesheet"
+        >
+          <Download size={16} className="mr-2" />
+          Charge Sheet (pipeline)
+        </Button>
+        <Button
+          onClick={() => onDownload('casediary')}
+          variant="outline"
+          className="w-full h-11 border-[#4F7EFF]/40 text-[#4F7EFF] hover:bg-[#4F7EFF]/10 font-medium"
+          data-testid="download-casediary"
+        >
+          <Download size={16} className="mr-2" />
+          Case Diary Part-I
+        </Button>
+        <Button
+          onClick={() => onDownload('remand')}
+          variant="outline"
+          className="w-full h-11 border-white/20 text-white/70 hover:bg-white/5 font-medium"
+          data-testid="download-remand"
+        >
+          <Download size={16} className="mr-2" />
+          Remand Case Diary
+        </Button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default ChargeSheetFusion;

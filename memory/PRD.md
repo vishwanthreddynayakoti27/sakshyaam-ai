@@ -132,6 +132,29 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ `replace('/', '-')` → `replaceAll('/', '-')` for multi-slash FIR numbers
 - ✅ Testing: **71/71 regression pass on both desktop (1920×1080) and mobile (500×900)** — zero console errors, zero pageerrors
 
+### 2026-04-19: Intelligent Charge Sheet Generator (Station-Writer Grade)
+- ✅ New service `/app/backend/services/intelligent_charge_sheet.py` — single Claude Sonnet 4.5 call (GPT-5.2 fallback) that validates + corrects + composes in one pass
+- ✅ System prompt primes the LLM as a "senior station writer" with BNS/BNSS fluency + 8 hard rules (never hallucinate, never invent sections, empty string for missing fields, correct misclassifications, re-number LW-, flowing narrative, prayer/closing)
+- ✅ Returns strict JSON with full charge-sheet structure + `corrections_applied` array listing every fix
+- ✅ New renderer `/app/backend/services/station_charge_sheet_renderer.py` produces DOCX matching the real Makthal 18-column layout:
+  - 3-column kv table (No./Field/Value) matching station format
+  - Witness list as separate 3-column table (LW# / Name block / Role)
+  - Brief Facts as justified paragraphs
+  - Missing fields render as visible `__________` placeholders so officers can fill in by hand
+  - Completely-empty witness list adds one blank row for manual entry
+- ✅ New endpoints:
+  - `POST /api/staging/generate-intelligent-charge-sheet/{case_id}` — returns DOCX directly (3 credits, rollback-safe)
+  - `GET /api/staging/intelligent-chargesheet/{case_id}` — returns corrections list + metadata
+- ✅ Frontend: new orange "Generate Station-Format Charge Sheet" button in `FusionCompletedView` with inline corrections display after download
+- ✅ Tested against FIR 57/2026 with INTENTIONALLY buggy input (complainant in accused list, corrupted name "tances from you", typo "1118(2)", invalid age "1 years"). Claude caught ALL bugs:
+  1. Moved Chandapuram Manikanta from A1 → complainant/LW-1
+  2. Removed corrupted "tances from you" entry
+  3. Fixed 1118(2) → 118(2) BNS
+  4. Dropped non-offence sections (35(3), 180(3)) from the sections line
+  5. Reconstructed all 8 LW witnesses from narrative
+  6. Bonus: corrected IO salutation Sri. → Smt. (Bhagya Lakshmi Reddy is female)
+- ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
+
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
 - ✅ Spatial clustering for table detection

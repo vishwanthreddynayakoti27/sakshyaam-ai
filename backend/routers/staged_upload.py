@@ -841,3 +841,155 @@ async def get_job_status(
         "stage": job.get("stage", "queued"),
         "message": f"Processing... {job.get('progress', 0)}% ({job.get('stage', 'queued')})"
     }
+
+
+
+# =====================================================================
+# Intelligent Charge Sheet Generator (station-writer grade)
+# =====================================================================
+@router.post("/generate-intelligent-charge-sheet/{case_id}")
+async def generate_intelligent_charge_sheet_endpoint(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Generate a production-grade charge sheet for a staged case.
+    Takes the last Triple Fusion extracted data, runs it through
+    Claude Sonnet 4.5 for validation/correction/narrative composition,
+    then renders a station-format DOCX.
+    COST: 3 credits (deducted only on success).
+    """
+    from fastapi.responses import Response
+    from services.intelligent_charge_sheet import generate_intelligent_charge_sheet
+    from services.station_charge_sheet_renderer import render_charge_sheet_docx
+
+    officer_id = officer.get("officer_id", "unknown")
+    credits_to_deduct = 3
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    existing = await db.triple_fusions.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0}
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=400,
+            detail="No Triple Fusion result found. Run Generate Triple Fusion first."
+        )
+
+    extracted = existing.get("extracted_data") or {}
+    folder = get_case_folder(officer_id, case_id)
+    metadata_path = folder / "metadata.json"
+    metadata = {}
+    if metadata_path.exists():
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+    sections_raw = extracted.get("sections") or []
+    sections_text = ", ".join(sections_raw) if isinstance(sections_raw, list) else str(sections_raw)
+
+    raw_data = {
+        "fir_number": extracted.get("fir_number") or metadata.get("fir_number", ""),
+        "fir_date": extracted.get("fir_date", ""),
+        "chargesheet_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+        "police_station": extracted.get("police_station") or metadata.get("police_station", ""),
+        "district": extracted.get("district") or metadata.get("district", ""),
+        "sections": sections_text or metadata.get("sections", ""),
+        "io": {
+            "name": extracted.get("io_name") or officer.get("name", ""),
+            "rank": extracted.get("io_rank") or officer.get("rank", "SI of Police"),
+            "station": f"PS {metadata.get('police_station','Makthal')}",
+            "salutation": "Sri.",
+        },
+        "complainant": extracted.get("complainant") or {},
+        "accused_persons": extracted.get("accused_persons") or [],
+        "witnesses": extracted.get("witnesses") or [],
+        "incident_date": extracted.get("incident_date", ""),
+        "incident_time": extracted.get("incident_time", ""),
+        "incident_place": extracted.get("incident_place", ""),
+        "medical_findings": extracted.get("medical_findings", ""),
+        "section_35_3_dates": extracted.get("section_35_3_dates", ""),
+        "brief_facts": extracted.get("brief_facts", ""),
+    }
+
+    try:
+        logger.info(f"[ICGS] Generating intelligent charge sheet for case {case_id}")
+        cs_data = await generate_intelligent_charge_sheet(raw_data, session_id=f"ics-{case_id}")
+        docx_bytes = render_charge_sheet_docx(cs_data)
+
+        await db.intelligent_chargesheets.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id,
+                "officer_id": officer_id,
+                "fir_number": cs_data.get("fir_number", ""),
+                "structured_data": cs_data,
+                "corrections_applied": cs_data.get("corrections_applied", []),
+                "model_used": cs_data.get("_model_used", ""),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "credits_used": credits_to_deduct,
+            }},
+            upsert=True,
+        )
+        await db.officers.update_one(
+            {"officer_id": officer_id},
+            {"$inc": {"credits": -credits_to_deduct}}
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_CHARGESHEET_GENERATE",
+            "credit_cost": credits_to_deduct,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model_used": cs_data.get("_model_used", ""),
+        })
+
+        fir_safe = (cs_data.get("fir_number") or "case").replace("/", "-")
+        filename = f"{fir_safe}_IntelligentChargeSheet.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Corrections-Count": str(len(cs_data.get("corrections_applied", []))),
+                "X-Model-Used": cs_data.get("_model_used", ""),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[ICGS] Intelligent charge sheet FAILED for case {case_id}: {e}")
+        if db is not None:
+            await db.action_logs.insert_one({
+                "officer_id": officer_id,
+                "action": "INTELLIGENT_CHARGESHEET_GENERATE",
+                "credit_cost": 0,
+                "status": "FAILED",
+                "correlation_id": case_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": str(e),
+            })
+        raise HTTPException(
+            status_code=500,
+            detail=f"Intelligent charge sheet failed. NO CREDITS DEDUCTED. Error: {str(e)}"
+        )
+
+
+@router.get("/intelligent-chargesheet/{case_id}")
+async def get_intelligent_chargesheet_metadata(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """Return the corrections applied + structured data for the last intelligent charge sheet."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    doc = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer.get("officer_id", "unknown")},
+        {"_id": 0}
+    )
+    if not doc:
+        return {"success": False, "message": "No intelligent charge sheet generated for this case yet"}
+    return {"success": True, **doc}
