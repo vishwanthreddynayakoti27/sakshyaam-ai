@@ -82,6 +82,26 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ 9/9 backend tests pass in `/app/backend/tests/test_triple_fusion_queue.py`
 - ✅ 12-file batch completes in <3s (previously hung at 60s K8s timeout)
 
+### 2026-04-19: RBAC + Supervisor Role + Fusion Skeleton Loader
+- ✅ Added `role` field to officers: `admin` | `supervisor` | `officer` (default)
+- ✅ Split backend dependencies:
+  - `verify_admin` → write endpoints (approvals, cache-cleanup, role management)
+  - `verify_admin_or_supervisor` → read endpoints (all GET /admin/* endpoints)
+- ✅ New endpoints:
+  - `GET /api/admin/officers` — list all officers with roles
+  - `POST /api/admin/officers/{id}/role` (form: role) — admin-only; blocks self-demotion
+- ✅ `/auth/profile` and `/auth/login` now return `role` + `is_admin` fields
+- ✅ Admin Dashboard:
+  - Role-aware header: "Admin Dashboard" vs "Supervisor Dashboard" + role badge
+  - New **"Manage Roles"** tab (admin-only) with officer list + per-row officer/supervisor/admin buttons
+  - Supervisor sees 4 tabs (no Manage Roles); approve/reject replaced with 🔒 "Read-only (Supervisor)"; cache-cleanup button disabled with Lock icon
+  - `/auth/profile` auto-refreshed on mount so role changes apply without re-login
+- ✅ Fusion Skeleton Loader (`ChargeSheetFusion.js`):
+  - Replaces empty "Charge Sheet Preview" while `isGenerating=true`
+  - Sky-blue progress banner with human-readable stage text + % counter
+  - Document-shaped skeleton (title, 2-col meta grid, 5-row table, 4-line paragraph) with pulsing animation
+- ✅ Testing: **55/55 tests pass** (46 new RBAC tests + 9 Triple Fusion regression) — `/app/backend/tests/test_rbac.py`, `test_triple_fusion_queue.py`
+
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
 - ✅ Spatial clustering for table detection

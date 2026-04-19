@@ -1,22 +1,25 @@
-# Test Credentials
+# Test Credentials (all use password: `Test123!`)
 
-## Primary Test Officer (Admin)
-- **Officer ID**: `TEST001`
-- **Password**: `Test123!`
-- **Email**: `test@police.gov.in`
-- **Role**: Admin (is_admin=True, approval_status=APPROVED)
-- **Use for**: Admin dashboard, Translation Usage tab, all officer flows
+## ADMIN (full access)
+- `pc72` — vishwanth reddu — **YOUR primary admin account**
+- `TEST001` — Test Officer
+- `TEST123` — Test Officer
 
-## Secondary Admin
-- **Officer ID**: `TEST123`
-- **Role**: Admin (is_admin=True)
+## SUPERVISOR (read-only dev/support: sees issues, logs, translation usage, pending users; can't approve or cleanup)
+- `DEMO001` — Inspector Demo Kumar
 
-## Login Endpoint
+## OFFICER (regular user)
+- `TEST002` — Test Officer (reset during last test run)
+- All others default to officer
+
+## Login endpoint
 ```
 POST /api/auth/login
-{
-  "officer_id": "TEST001",
-  "password": "Test123!"
-}
+Content-Type: application/json
+{ "officer_id": "pc72", "password": "Test123!" }
 ```
-Response contains `token` (JWT) to use as `Authorization: Bearer <token>`.
+Response includes `token`, `officer.role`, `officer.is_admin`.
+
+## RBAC Dependencies (server.py)
+- `verify_admin` → admin-only write endpoints (approve/reject user, cache-cleanup, role change)
+- `verify_admin_or_supervisor` → admin + supervisor read endpoints (all GET /admin/*)
