@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 import json
 import math
@@ -945,7 +946,12 @@ async def signup(officer_data: OfficerCreate):
 
 @api_router.post("/auth/login", response_model=LoginResponse)
 async def login(login_data: OfficerLogin):
-    officer_doc = await db.officers.find_one({"officer_id": login_data.officer_id}, {"_id": 0})
+    # Case-insensitive officer_id lookup (e.g. "Pc72" should match "pc72")
+    oid = (login_data.officer_id or "").strip()
+    officer_doc = await db.officers.find_one(
+        {"officer_id": {"$regex": f"^{re.escape(oid)}$", "$options": "i"}},
+        {"_id": 0}
+    )
     if not officer_doc:
         raise HTTPException(status_code=401, detail="Officer not found")
     
@@ -1001,7 +1007,13 @@ async def forgot_password(payload: ForgotPasswordRequest):
     if not officer_id:
         raise HTTPException(status_code=400, detail="officer_id is required")
 
-    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+    # Case-insensitive lookup — store the canonical ID for downstream DB ops
+    officer = await db.officers.find_one(
+        {"officer_id": {"$regex": f"^{re.escape(officer_id)}$", "$options": "i"}},
+        {"_id": 0}
+    )
+    if officer:
+        officer_id = officer["officer_id"]  # use canonical (DB) casing
 
     # Generic success response — don't leak whether officer_id exists
     generic_ok = {
