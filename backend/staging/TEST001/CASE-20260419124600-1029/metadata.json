@@ -1,0 +1,97 @@
+{
+  "case_id": "CASE-20260419124600-1029",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "BATCH12-23bfe8",
+  "sections": "302,307",
+  "created_at": "2026-04-19T12:46:00.044546+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "70ff662b_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.124281+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "9aa1333b_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.125594+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "9cc87c1a_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.127689+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "867b7a64_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.128780+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "1ecab666_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.130550+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "f154fdf5_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.131728+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "248bb8f7_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.133673+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "a2a0e5ee_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.134774+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "bdd355a7_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.136511+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "b44d40d3_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.137505+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "bbd712a2_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.139326+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "28d3a3e1_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:46:01.140473+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419124601-d8ce"
+}

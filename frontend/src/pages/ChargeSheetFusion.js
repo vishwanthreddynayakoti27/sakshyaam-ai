@@ -50,6 +50,10 @@ const ChargeSheetFusion = () => {
   const [downloadLinks, setDownloadLinks] = useState({});
   const [extractedData, setExtractedData] = useState(null);
   const [creditsUsed, setCreditsUsed] = useState(0);
+
+  // === JOB POLLING STATE ===
+  const [jobProgress, setJobProgress] = useState(0);
+  const [jobStage, setJobStage] = useState('');
   
   const fileInputRef = useRef(null);
 
@@ -139,45 +143,97 @@ const ChargeSheetFusion = () => {
   };
 
   // === GENERATE TRIPLE FUSION ===
+  const applyFusionResult = (data) => {
+    setChargeSheetHtml(data.documents?.charge_sheet || '');
+    setCaseDiaryHtml(data.documents?.case_diary || '');
+    setRemandHtml(data.documents?.remand_cd || '');
+
+    setDownloadLinks({
+      chargesheet: `/api/download/docx/${firNumber.replace('/', '-')}_ChargeSheet.docx`,
+      casediary: `/api/download/docx/${firNumber.replace('/', '-')}_CaseDiary.docx`,
+      remand: `/api/download/docx/${firNumber.replace('/', '-')}_RemandCD.docx`
+    });
+
+    setExtractedData(data.extracted_data);
+    setCreditsUsed(data.credits_used || 0);
+  };
+
+  const pollJobStatus = async () => {
+    const MAX_POLLS = 120; // 120 * 2s = 4 minutes max
+    let attempts = 0;
+
+    while (attempts < MAX_POLLS) {
+      attempts += 1;
+      await new Promise((r) => setTimeout(r, 2000));
+
+      let statusResp;
+      try {
+        statusResp = await api.get(`/staging/job-status/${caseId}`);
+      } catch (err) {
+        toast.error('Polling failed: ' + (err.response?.data?.detail || err.message));
+        return false;
+      }
+
+      const d = statusResp.data || {};
+      setJobProgress(d.progress || 0);
+      setJobStage(d.stage || '');
+
+      if (d.status === 'completed') {
+        applyFusionResult(d);
+        toast.success('Triple Fusion COMPLETE!');
+        if (d.credits_used) toast.success(`Credits used: ${d.credits_used}`);
+        return true;
+      }
+      if (d.status === 'failed') {
+        toast.error(d.error || d.message || 'Fusion failed');
+        toast.success('No credits deducted', { duration: 3000 });
+        return false;
+      }
+    }
+
+    toast.error('Fusion still running — please refresh the page in a minute.');
+    return false;
+  };
+
   const generateTripleFusion = async () => {
     if (!caseId) {
       toast.error('No case folder created');
       return;
     }
-    
+
     if (stagedFiles.length === 0) {
       toast.error('No files staged for fusion');
       return;
     }
-    
+
     setIsGenerating(true);
     setCreditsUsed(0);
-    
+    setJobProgress(0);
+    setJobStage('queued');
+
     try {
-      toast.info('Generating Triple Fusion...');
-      
+      toast.info('Queuing Triple Fusion job...');
+
       const response = await api.post(`/staging/generate-triple-fusion/${caseId}`);
-      
-      if (response.data.success) {
-        // Set HTML content for tabs
-        setChargeSheetHtml(response.data.documents?.charge_sheet || '');
-        setCaseDiaryHtml(response.data.documents?.case_diary || '');
-        setRemandHtml(response.data.documents?.remand_cd || '');
-        
-        // Set download links
-        setDownloadLinks({
-          chargesheet: `/api/download/docx/${firNumber.replace('/', '-')}_ChargeSheet.docx`,
-          casediary: `/api/download/docx/${firNumber.replace('/', '-')}_CaseDiary.docx`,
-          remand: `/api/download/docx/${firNumber.replace('/', '-')}_RemandCD.docx`
-        });
-        
-        // Set extracted data summary
-        setExtractedData(response.data.extracted_data);
-        setCreditsUsed(response.data.credits_used);
-        
-        toast.success('Triple Fusion COMPLETE!');
-        toast.success(`Credits used: ${response.data.credits_used}`);
+      const d = response.data || {};
+
+      // Fast path: server returned cached completed result synchronously
+      if (d.status === 'completed') {
+        applyFusionResult(d);
+        toast.success(d.message || 'Triple Fusion retrieved from cache');
+        return;
       }
+
+      // Async path: poll job status until done
+      if (d.status === 'processing') {
+        setJobProgress(d.progress || 0);
+        setJobStage(d.stage || 'queued');
+        toast.info(`Processing ${d.file_count || stagedFiles.length} files in background...`);
+        await pollJobStatus();
+        return;
+      }
+
+      toast.error('Unexpected response from server');
     } catch (error) {
       const errorMsg = error.response?.data?.detail || 'Fusion failed';
       toast.error(errorMsg);
@@ -185,6 +241,8 @@ const ChargeSheetFusion = () => {
       console.error(error);
     } finally {
       setIsGenerating(false);
+      setJobProgress(0);
+      setJobStage('');
     }
   };
 
@@ -428,7 +486,24 @@ const ChargeSheetFusion = () => {
                 </>
               )}
             </Button>
-            
+
+            {/* Async Progress Indicator */}
+            {isGenerating && (
+              <div className="space-y-2" data-testid="fusion-progress">
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#00C2FF] to-[#4F7EFF] transition-all duration-500"
+                    style={{ width: `${jobProgress}%` }}
+                    data-testid="fusion-progress-bar"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs text-white/60">
+                  <span data-testid="fusion-progress-stage">{jobStage || 'queued'}</span>
+                  <span data-testid="fusion-progress-percent">{jobProgress}%</span>
+                </div>
+              </div>
+            )}
+
             <p className="text-center text-white/40 text-xs">
               Credits deducted ONLY on successful generation
             </p>

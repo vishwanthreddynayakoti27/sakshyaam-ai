@@ -1,0 +1,33 @@
+{
+  "summary": "Backend verification of Triple Fusion DB-backed async job queue. All 9 pytest cases PASSED (9.19s). POST /api/staging/generate-triple-fusion/{case_id} returns in <1s with {status:'processing', job_id, progress:0, stage:'queued'}. Polling GET /api/staging/job-status/{case_id} progresses through stages and completes with documents, extracted_data, credits_used:5. Idempotency (cached completed + in-flight same job_id), 12-file end-to-end batch, and credit accounting (exact -5 delta) all verified. The `'str' object has no attribute 'get'` bug is confirmed fixed. MongoDB `triple_fusion_jobs` collection persists all required fields (job_id, case_id, officer_id, status, progress, stage, created_at, updated_at, file_count, transaction_id, error).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_triple_fusion_queue.py",
+    "/app/test_reports/pytest/triple_fusion_queue_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Failure-rollback code path (routers/staged_upload.py L746-766) looks correct: 0-credit action_logs entry + job status='failed'. Not hit by real fixtures during this run (no fault-injection), but code inspection confirms correctness — credits are mutated only AFTER success on L702-705.",
+    "extract_text_from_staged_file is async but PyPDF2/python-docx are CPU-bound synchronous calls that block the event loop; fine for 12 files but could be wrapped in asyncio.to_thread for heavier batches.",
+    "_process_triple_fusion_background catches all Exception broadly — good, but failure does NOT roll back staging metadata.json (still 'staging'); acceptable since retry is idempotent.",
+    "Authorization uses JWT only; no ownership check that officer_id in token matches case-folder path owner on download/fusion read endpoints (low-priority, out of scope)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_triple_fusion_queue.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "N/A (backend only)"},
+  "test_credentials": "TEST001 / Test123! — login via POST /api/auth/login with {officer_id, password} — works",
+  "seed_data_creation": "Each test creates a fresh case via POST /api/staging/create-case and uploads /app/backend/reference_samples/57-26_Chargesheet.pdf and 236_remand.pdf (sizes 1–12 files). 6 triple_fusion_jobs docs created during the run; 12-file batch consumed 5 credits as expected.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend queue flow is stable. If frontend (ChargeSheetFusion.js) testing is needed, verify: (a) generate-fusion-btn triggers POST and receives job_id in <3s, (b) fusion-progress/fusion-progress-bar/fusion-progress-percent update during polling, (c) completed docs render. Re-run /app/backend/tests/test_triple_fusion_queue.py as regression.",
+  "rca of the issue": "Root cause (now fixed): generate_html_table_charge_sheet(data, case_info) signature expects case_info as Dict; previous code passed extracted_data.get('fir_number','') — a string — causing `'str' object has no attribute 'get'` when the generator called case_info.get(...). Fix in _process_triple_fusion_background (L630-637) constructs a proper case_info dict from metadata + officer and passes it to all three generators (charge_sheet, case_diary, remand_cd). Additionally, the synchronous in-memory job store was replaced with MongoDB `triple_fusion_jobs` collection so POST returns immediately (<1s) and frontend polls for progress — preventing 60s request timeouts for 12+ file batches."
+}

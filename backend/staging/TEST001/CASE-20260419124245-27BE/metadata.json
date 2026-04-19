@@ -1,0 +1,97 @@
+{
+  "case_id": "CASE-20260419124245-27BE",
+  "officer_id": "TEST001",
+  "police_station": "Banjara Hills",
+  "district": "Hyderabad",
+  "fir_number": "256/2026",
+  "sections": "351",
+  "created_at": "2026-04-19T12:42:45.049541+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "556c622f_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.152719+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "c7e4bf59_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.155808+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "030a0423_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.157089+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "00e26851_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.158997+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "d73dadb8_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.160195+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "cb6ade9c_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.162114+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "f9f48b9e_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.163311+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "5abb7eca_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.165194+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "c3d89b85_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.166444+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "a172ce19_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.168460+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "f5b09550_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.169677+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "aaba7537_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:42:46.171701+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419124246-fe72"
+}

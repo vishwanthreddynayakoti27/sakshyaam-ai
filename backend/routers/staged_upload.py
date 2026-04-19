@@ -6,7 +6,7 @@ Staged Upload System for Charge Sheet Fusion
 - Roll-back on failure (no credits deducted)
 - ASYNC BACKGROUND PROCESSING for large batches
 """
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -34,9 +34,6 @@ STAGING_BASE.mkdir(parents=True, exist_ok=True)
 # Database connection
 db = None
 JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
-
-# In-memory job status tracking (for background processing)
-processing_jobs = {}
 
 
 def set_database(database):
@@ -382,54 +379,43 @@ async def generate_triple_fusion(
     officer: dict = Depends(get_current_officer)
 ):
     """
-    Generate Triple Fusion (Charge Sheet + Case Diary 1 + Remand CD) from all staged files.
-    
-    PIPELINE FLOW:
-    Upload → OCR → Classification → Extraction → Aggregation → Validation → AI Facts → DOCX → CCTNS
-    
-    COST: CREDITS DEDUCTED HERE ONLY
-    - Processes all files in the case folder using MODULAR PIPELINE
-    - Merges data via regex/rules (AI ONLY for Brief Facts & Remand Narrative)
-    - Uses DOCX TEMPLATES for stable table output (no code-generated layouts)
-    - ROLLBACK: If generation fails, no credits are deducted
+    Kick off Triple Fusion generation (Charge Sheet + Case Diary + Remand CD).
+
+    Uses a DB-backed async job queue:
+    - Returns immediately with status="processing" and a job_id
+    - Background task persists progress to `triple_fusion_jobs` collection
+    - Frontend polls GET /api/staging/job-status/{case_id}
+
+    COST: Credits are deducted inside the background task only on success.
+          Failed jobs deduct 0 credits (rollback-safe).
     """
-    from services.pipeline import DocumentPipeline
-    from services.template_generator import (
-        generate_18_column_charge_sheet,
-        generate_case_diary_part1,
-        generate_html_table_charge_sheet,
-        generate_case_diary_html
-    )
-    from services.remand_generator import generate_remand_case_diary_html
-    
-    EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
-    
-    folder = get_case_folder(officer.get("officer_id", "unknown"), case_id)
-    
+    officer_id = officer.get("officer_id", "unknown")
+    folder = get_case_folder(officer_id, case_id)
+
     if not folder.exists():
         raise HTTPException(status_code=404, detail="Case folder not found")
-    
-    # Load metadata
+
     metadata_path = folder / "metadata.json"
     if not metadata_path.exists():
         raise HTTPException(status_code=404, detail="Case metadata not found")
-    
+
     with open(metadata_path) as f:
         metadata = json.load(f)
-    
+
     if not metadata.get("files"):
         raise HTTPException(status_code=400, detail="No files staged for fusion")
-    
-    # CHECK FOR CACHED RESULT - Return immediately if already generated
-    if db is not None and metadata.get("status") == "completed":
+
+    # Fast path: return cached fusion if already completed
+    if db is not None:
         existing_fusion = await db.triple_fusions.find_one(
-            {"case_id": case_id, "officer_id": officer.get("officer_id")},
+            {"case_id": case_id, "officer_id": officer_id},
             {"_id": 0}
         )
         if existing_fusion and existing_fusion.get("status") == "completed":
             logger.info(f"Returning cached fusion for case {case_id}")
             return {
                 "success": True,
+                "status": "completed",
                 "transaction_id": existing_fusion.get("transaction_id"),
                 "case_id": case_id,
                 "documents_processed": existing_fusion.get("documents_processed", 0),
@@ -442,318 +428,71 @@ async def generate_triple_fusion(
                 },
                 "message": "Triple Fusion retrieved from cache (0 credits used)"
             }
-    
-    # SIMPLIFIED SYNCHRONOUS PROCESSING - Generate documents from metadata directly
-    # This bypasses the heavy OCR pipeline for faster results
-    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
-    credits_to_deduct = 5
-    
-    try:
-        from services.template_generator import generate_html_table_charge_sheet, generate_case_diary_html
-        from services.remand_generator import generate_remand_case_diary_html
-        
-        # Build extracted data from metadata
-        extracted_data = {
-            "fir_number": metadata.get("fir_number", ""),
-            "police_station": metadata.get("police_station", ""),
-            "district": metadata.get("district", ""),
-            "sections": metadata.get("sections", "").split(",") if metadata.get("sections") else [],
-            "act_type": "BNS",
-            "io_name": officer.get("name", ""),
-            "io_rank": "Sub Inspector of Police",
-            "complainant": {},
-            "accused_persons": [],
-            "witnesses": [],
-            "brief_facts": "Case details to be extracted from uploaded documents.",
-            "incident_date": "",
-            "incident_time": "",
-            "incident_place": metadata.get("police_station", "")
-        }
-        
-        # Generate HTML documents
-        charge_sheet_html = generate_html_table_charge_sheet(extracted_data, extracted_data.get("fir_number", ""))
-        case_diary_html = generate_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
-        remand_cd_html = generate_remand_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
-        
-        # Save to database
-        if db is not None:
-            fusion_result = {
+
+    # Idempotency: if a job is already processing, return current state
+    if db is not None:
+        existing_job = await db.triple_fusion_jobs.find_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"_id": 0}
+        )
+        if existing_job and existing_job.get("status") == "processing":
+            return {
+                "success": True,
+                "status": "processing",
+                "job_id": existing_job.get("job_id"),
                 "case_id": case_id,
-                "transaction_id": transaction_id,
-                "officer_id": officer.get("officer_id"),
-                "police_station": metadata.get("police_station", ""),
-                "district": metadata.get("district", ""),
-                "fir_number": metadata.get("fir_number", ""),
-                "documents_processed": len(metadata.get("files", [])),
-                "extracted_data": extracted_data,
-                "charge_sheet_html": charge_sheet_html,
-                "case_diary_html": case_diary_html,
-                "remand_cd_html": remand_cd_html,
-                "credits_used": credits_to_deduct,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "status": "completed"
+                "progress": existing_job.get("progress", 0),
+                "stage": existing_job.get("stage", "queued"),
+                "message": "Job already in progress. Poll /job-status/{case_id} for updates."
             }
-            
-            await db.triple_fusions.update_one(
-                {"case_id": case_id, "officer_id": officer.get("officer_id")},
-                {"$set": fusion_result},
-                upsert=True
-            )
-            
-            # Deduct credits
-            await db.officers.update_one(
-                {"officer_id": officer.get("officer_id")},
-                {"$inc": {"credits": -credits_to_deduct}}
-            )
-        
-        # Update metadata
-        metadata["status"] = "completed"
-        metadata["fusion_transaction_id"] = transaction_id
-        with open(folder / "metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
-        
-        return {
-            "success": True,
-            "transaction_id": transaction_id,
-            "case_id": case_id,
-            "documents_processed": len(metadata.get("files", [])),
-            "credits_used": credits_to_deduct,
-            "extracted_data": extracted_data,
-            "documents": {
-                "charge_sheet": charge_sheet_html,
-                "case_diary": case_diary_html,
-                "remand_cd": remand_cd_html
-            },
-            "message": "Triple Fusion completed successfully!"
-        }
-        
-    except Exception as e:
-        logger.error(f"Triple Fusion failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Fusion failed: {str(e)}")
-    
-    # Transaction tracking (for rollback)
-    transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
-    credits_to_deduct = 5  # Charge for Triple Fusion
-    
-    try:
-        logger.info(f"Starting Triple Fusion Pipeline for case {case_id} (Transaction: {transaction_id})")
-        logger.info(f"Files to process: {len(metadata['files'])}")
-        
-        # Initialize the modular pipeline
-        pipeline = DocumentPipeline(emergent_llm_key=EMERGENT_LLM_KEY)
-        
-        # Collect file paths
-        file_paths = []
-        for file_info in metadata["files"]:
-            file_path = folder / file_info["saved_name"]
-            if file_path.exists():
-                file_paths.append(file_path)
-        
-        if not file_paths:
-            raise HTTPException(status_code=400, detail="No valid files found in staging folder")
-        
-        # Prepare case info for pipeline
-        case_info = {
-            "police_station": metadata.get("police_station", ""),
-            "district": metadata.get("district", ""),
-            "fir_number": metadata.get("fir_number", ""),
-            "sections": metadata.get("sections", ""),
-            "io_name": officer.get("name", ""),
-            "io_rank": officer.get("rank", "Sub Inspector of Police")
-        }
-        
-        # Run the full pipeline
-        pipeline_result = await pipeline.process(
-            file_paths=file_paths,
-            case_info=case_info,
-            generate_ai_facts=bool(EMERGENT_LLM_KEY)
+
+    # Create a new job and fire off background task
+    job_id = f"JOB-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    job_doc = {
+        "job_id": job_id,
+        "case_id": case_id,
+        "officer_id": officer_id,
+        "status": "processing",
+        "progress": 0,
+        "stage": "queued",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "file_count": len(metadata.get("files", [])),
+        "error": None,
+    }
+
+    if db is not None:
+        await db.triple_fusion_jobs.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": job_doc},
+            upsert=True
         )
-        
-        # Extract data from pipeline result
-        unified_schema = pipeline_result.unified_schema
-        
-        # Convert unified schema to legacy format for HTML generators
-        extracted_data = {
-            "complainant": {
-                "name": unified_schema.complainant.name,
-                "father_name": unified_schema.complainant.father_name,
-                "age": unified_schema.complainant.age,
-                "caste": unified_schema.complainant.caste,
-                "occupation": unified_schema.complainant.occupation,
-                "address": unified_schema.complainant.address,
-                "phone": unified_schema.complainant.phone
-            } if unified_schema.complainant else {},
-            "accused_persons": [
-                {
-                    "serial": a.serial,
-                    "name": a.name,
-                    "father_name": a.father_name,
-                    "age": a.age,
-                    "caste": a.caste,
-                    "occupation": a.occupation,
-                    "address": a.address,
-                    "phone": a.phone
-                } for a in unified_schema.accused
-            ],
-            "witnesses": [
-                {
-                    "serial": w.serial,
-                    "name": w.name,
-                    "father_name": w.father_name,
-                    "age": w.age,
-                    "caste": w.caste,
-                    "occupation": w.occupation,
-                    "address": w.address,
-                    "phone": w.phone,
-                    "role": w.role
-                } for w in unified_schema.witnesses
-            ],
-            "offense_details": {
-                "type": unified_schema.incident.type,
-                "date": unified_schema.incident.date,
-                "time": unified_schema.incident.time,
-                "place": unified_schema.incident.place
-            },
-            "sections_of_law": unified_schema.fir.sections,
-            "brief_facts": unified_schema.facts.ai_generated or unified_schema.facts.raw[:3000],
-            "property_lost": unified_schema.property.lost,
-            "property_recovered": unified_schema.property.recovered,
-            "medical_findings": unified_schema.medical.findings,
-            "section_35_3_dates": unified_schema.notices.section_35_3_dates,
-            "notice_date": unified_schema.notices.section_35_3_dates[0] if unified_schema.notices.section_35_3_dates else ""
-        }
-        
-        # Generate HTML previews (for UI display)
-        charge_sheet_html = generate_18_column_charge_sheet(extracted_data, case_info)
-        charge_sheet_table = generate_html_table_charge_sheet(extracted_data, case_info)
-        case_diary_html = generate_case_diary_html(extracted_data, case_info)
-        remand_cd_html = generate_remand_case_diary_html(extracted_data, case_info)
-        
-        # Save DOCX files from pipeline (template-based)
-        fir_safe = metadata.get("fir_number", "case").replace("/", "-")
-        
-        if pipeline_result.documents.get('chargesheet'):
-            chargesheet_path = STAGING_BASE / f"{fir_safe}_ChargeSheet.docx"
-            with open(chargesheet_path, "wb") as f:
-                f.write(pipeline_result.documents['chargesheet'])
-        
-        if pipeline_result.documents.get('casediary'):
-            casediary_path = STAGING_BASE / f"{fir_safe}_CaseDiary.docx"
-            with open(casediary_path, "wb") as f:
-                f.write(pipeline_result.documents['casediary'])
-        
-        if pipeline_result.documents.get('remand'):
-            remand_path = STAGING_BASE / f"{fir_safe}_RemandCD.docx"
-            with open(remand_path, "wb") as f:
-                f.write(pipeline_result.documents['remand'])
-        
-        logger.info(f"Generated template-based Word documents for {fir_safe}")
-        
-        # Save to database
-        fusion_record = {
-            "case_id": case_id,
-            "transaction_id": transaction_id,
-            "officer_id": officer.get("officer_id"),
-            "police_station": metadata.get("police_station"),
-            "district": metadata.get("district"),
-            "fir_number": metadata.get("fir_number"),
-            "documents_processed": len(metadata["files"]),
-            "extracted_data": extracted_data,
-            "unified_schema": pipeline_result.unified_schema.to_dict() if pipeline_result.unified_schema else None,
-            "cctns_json": pipeline_result.cctns_json,
-            "validation": pipeline_result.validation.to_dict() if pipeline_result.validation else None,
-            "charge_sheet_html": charge_sheet_html,
-            "charge_sheet_table": charge_sheet_table,
-            "case_diary_html": case_diary_html,
-            "remand_cd_html": remand_cd_html,
-            "processing_log": pipeline_result.processing_log,
-            "pipeline_stats": {
-                "files_classified": pipeline_result.files_classified,
-                "extraction_stats": pipeline_result.extraction_stats
-            },
-            "credits_used": credits_to_deduct,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "status": "completed"
-        }
-        
-        if db is not None:
-            await db.triple_fusions.insert_one(fusion_record)
-            
-            # Log action
-            await db.action_logs.insert_one({
-                "officer_id": officer.get("officer_id"),
-                "action": "TRIPLE_FUSION_GENERATE",
-                "credit_cost": credits_to_deduct,
-                "status": "SUCCESS",
-                "correlation_id": transaction_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "case_id": case_id,
-                "files_processed": len(metadata["files"]),
-                "pipeline_used": True
-            })
-        
-        # Update case status
-        metadata["status"] = "completed"
-        metadata["fusion_transaction_id"] = transaction_id
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-        
-        logger.info(f"Triple Fusion Pipeline completed for case {case_id} ({credits_to_deduct} credits)")
-        
-        return {
-            "success": True,
-            "transaction_id": transaction_id,
-            "case_id": case_id,
-            "documents_processed": len(metadata["files"]),
-            "credits_used": credits_to_deduct,
-            "extracted_data": {
-                "accused_count": len(unified_schema.accused),
-                "witness_count": len(unified_schema.witnesses),
-                "complainant": {
-                    "name": unified_schema.complainant.name,
-                    "father_name": unified_schema.complainant.father_name
-                } if unified_schema.complainant else {}
-            },
-            "cctns_json": pipeline_result.cctns_json,
-            "validation": {
-                "is_valid": pipeline_result.validation.is_valid if pipeline_result.validation else False,
-                "completeness_score": pipeline_result.validation.completeness_score if pipeline_result.validation else 0
-            },
-            "pipeline_stats": {
-                "files_classified": pipeline_result.files_classified,
-                "extraction_stats": pipeline_result.extraction_stats
-            },
-            "documents": {
-                "charge_sheet": charge_sheet_table,  # Use HTML table version for frontend
-                "charge_sheet_table": charge_sheet_table,
-                "case_diary": case_diary_html,
-                "remand_cd": remand_cd_html
-            },
-            "processing_log": pipeline_result.processing_log[:20],  # Limit log entries
-            "warnings": pipeline_result.warnings,
-            "message": "Triple Fusion generated successfully with modular pipeline!"
-        }
-        
-    except Exception as e:
-        # ROLLBACK: No credits deducted on failure
-        logger.error(f"Triple Fusion Pipeline FAILED for case {case_id} (Transaction: {transaction_id}): {e}")
-        
-        if db is not None:
-            await db.action_logs.insert_one({
-                "officer_id": officer.get("officer_id"),
-                "action": "TRIPLE_FUSION_GENERATE",
-                "credit_cost": 0,  # ROLLBACK - NO CREDITS
-                "status": "FAILED",
-                "correlation_id": f"ERR-{transaction_id}",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "case_id": case_id,
-                "error": str(e)
-            })
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Triple Fusion failed. NO CREDITS DEDUCTED. Reference: ERR-{transaction_id}. Error: {str(e)}"
+
+    # Detach background processing (non-blocking)
+    asyncio.create_task(
+        _process_triple_fusion_background(
+            case_id=case_id,
+            officer=officer,
+            metadata=metadata,
+            folder=folder,
+            job_id=job_id,
         )
+    )
+
+    logger.info(f"Triple Fusion job {job_id} queued for case {case_id} ({len(metadata.get('files', []))} files)")
+
+    return {
+        "success": True,
+        "status": "processing",
+        "job_id": job_id,
+        "case_id": case_id,
+        "progress": 0,
+        "stage": "queued",
+        "file_count": len(metadata.get("files", [])),
+        "message": "Triple Fusion started. Poll /api/staging/job-status/{case_id} for updates."
+    }
 
 
 @router.get("/fusion/{case_id}")
@@ -817,172 +556,132 @@ async def download_fusion_document(
 
 
 
+async def _update_job(case_id: str, officer_id: str, **fields):
+    """Persist job progress/status to `triple_fusion_jobs` collection."""
+    if db is None:
+        return
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        await db.triple_fusion_jobs.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": fields},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"Failed to update job status in DB: {e}")
+
+
 async def _process_triple_fusion_background(
     case_id: str,
     officer: dict,
     metadata: dict,
     folder: Path,
-    job_key: str
+    job_id: str
 ):
     """
-    Background task to process Triple Fusion for large batches.
-    Updates processing_jobs status as it progresses.
+    Background task to process Triple Fusion.
+
+    Persists progress to `triple_fusion_jobs` collection so frontend can
+    safely poll `/api/staging/job-status/{case_id}` regardless of which
+    backend worker served the request.
     """
-    from services.pipeline import DocumentPipeline
     from services.template_generator import (
-        generate_18_column_charge_sheet,
-        generate_case_diary_part1,
         generate_html_table_charge_sheet,
-        generate_case_diary_html
+        generate_case_diary_html,
     )
     from services.remand_generator import generate_remand_case_diary_html
-    
-    EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
-    
+
+    officer_id = officer.get("officer_id", "unknown")
     transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}"
     credits_to_deduct = 5
-    
+
     try:
-        logger.info(f"[BACKGROUND] Starting Triple Fusion for case {case_id}")
-        processing_jobs[job_key]["progress"] = 10
-        
-        # Initialize pipeline
-        pipeline = DocumentPipeline(emergent_llm_key=EMERGENT_LLM_KEY)
-        
-        # Collect file paths
+        logger.info(f"[BACKGROUND] Job {job_id} starting for case {case_id} ({len(metadata.get('files', []))} files)")
+        await _update_job(case_id, officer_id, status="processing", progress=10, stage="extracting_text", job_id=job_id)
+
+        # Collect valid file paths
         file_paths = []
-        for file_info in metadata["files"]:
-            file_path = folder / file_info["saved_name"]
-            if file_path.exists():
-                file_paths.append(file_path)
-        
-        processing_jobs[job_key]["progress"] = 20
-        
-        # Prepare case info
+        for file_info in metadata.get("files", []):
+            fp = folder / file_info["saved_name"]
+            if fp.exists():
+                file_paths.append(fp)
+
+        if not file_paths:
+            raise RuntimeError("No valid files found in staging folder")
+
+        # Extract text from each staged file in parallel (async but chunked for memory safety)
+        extracted_texts = []
+        total = len(file_paths)
+        for idx, fp in enumerate(file_paths, start=1):
+            try:
+                txt = await extract_text_from_staged_file(fp)
+                if txt:
+                    extracted_texts.append(txt)
+            except Exception as ex:
+                logger.warning(f"Text extraction failed for {fp.name}: {ex}")
+            # progress 10% -> 50% across files
+            progress = 10 + int(40 * idx / max(total, 1))
+            await _update_job(case_id, officer_id, progress=progress, stage=f"extracting_text ({idx}/{total})")
+
+        combined_text = "\n\n".join(extracted_texts)[:20000]  # cap for memory
+
+        # Build case_info dict (ALWAYS a dict - this is the fix for
+        # `'str' object has no attribute 'get'` bug in generators)
         case_info = {
             "police_station": metadata.get("police_station", ""),
             "district": metadata.get("district", ""),
             "fir_number": metadata.get("fir_number", ""),
             "sections": metadata.get("sections", ""),
             "io_name": officer.get("name", ""),
-            "io_rank": officer.get("rank", "Sub Inspector of Police")
+            "io_rank": officer.get("rank", "Sub Inspector of Police"),
         }
-        
-        # Run pipeline
-        processing_jobs[job_key]["progress"] = 30
-        pipeline_result = await pipeline.process(
-            file_paths=file_paths,
-            case_info=case_info,
-            generate_ai_facts=bool(EMERGENT_LLM_KEY)
-        )
-        
-        processing_jobs[job_key]["progress"] = 60
-        
-        # Extract data from unified schema with defensive checks
-        unified_schema = pipeline_result.unified_schema
-        
-        # Safely extract complainant data
-        comp_data = {}
-        if unified_schema.complainant:
-            comp_data = {
-                "name": getattr(unified_schema.complainant, 'name', '') or '',
-                "father_name": getattr(unified_schema.complainant, 'father_name', '') or '',
-                "age": getattr(unified_schema.complainant, 'age', '') or '',
-                "caste": getattr(unified_schema.complainant, 'caste', '') or '',
-                "occupation": getattr(unified_schema.complainant, 'occupation', '') or '',
-                "address": getattr(unified_schema.complainant, 'address', '') or '',
-                "phone": getattr(unified_schema.complainant, 'phone', '') or ''
-            }
-        
-        # Safely extract FIR data
-        fir_number = metadata.get("fir_number", "")
-        police_station = metadata.get("police_station", "")
-        district = metadata.get("district", "")
-        sections = metadata.get("sections", "").split(",") if metadata.get("sections") else []
-        
-        if unified_schema.fir:
-            fir_number = getattr(unified_schema.fir, 'number', '') or fir_number
-            police_station = getattr(unified_schema.fir, 'police_station', '') or police_station
-            district = getattr(unified_schema.fir, 'district', '') or district
-            if hasattr(unified_schema.fir, 'sections') and unified_schema.fir.sections:
-                sections = unified_schema.fir.sections
-        
-        # Safely extract incident data
-        incident_date = ""
-        incident_time = ""
-        incident_place = ""
-        if unified_schema.incident:
-            incident_date = getattr(unified_schema.incident, 'date', '') or ''
-            incident_time = getattr(unified_schema.incident, 'time', '') or ''
-            incident_place = getattr(unified_schema.incident, 'place', '') or ''
-        
-        # Safely extract brief facts
-        brief_facts = ""
-        if unified_schema.facts:
-            brief_facts = getattr(unified_schema.facts, 'ai_generated', '') or getattr(unified_schema.facts, 'raw', '') or ''
-        
-        # Safely extract IO details
-        io_name = officer.get("name", "")
-        if isinstance(unified_schema.io_details, dict):
-            io_name = unified_schema.io_details.get("name", "") or io_name
-        
-        # Build extracted_data
+
+        await _update_job(case_id, officer_id, progress=55, stage="parsing_entities")
+
+        # Attempt structured parsing via enhanced_legal_parser
         extracted_data = {
-            "complainant": comp_data,
-            "accused_persons": [
-                {
-                    "serial": getattr(a, 'serial', ''),
-                    "name": getattr(a, 'name', ''),
-                    "father_name": getattr(a, 'father_name', ''),
-                    "age": getattr(a, 'age', ''),
-                    "caste": getattr(a, 'caste', ''),
-                    "occupation": getattr(a, 'occupation', ''),
-                    "address": getattr(a, 'address', ''),
-                    "phone": getattr(a, 'phone', '')
-                }
-                for a in (unified_schema.accused or [])
-            ],
-            "witnesses": [
-                {
-                    "serial": getattr(w, 'serial', ''),
-                    "name": getattr(w, 'name', ''),
-                    "father_name": getattr(w, 'father_name', ''),
-                    "age": getattr(w, 'age', ''),
-                    "caste": getattr(w, 'caste', ''),
-                    "occupation": getattr(w, 'occupation', ''),
-                    "address": getattr(w, 'address', ''),
-                    "role": getattr(w, 'role', '')
-                }
-                for w in (unified_schema.witnesses or [])
-            ],
-            "fir_number": fir_number,
-            "police_station": police_station,
-            "district": district,
-            "sections": sections,
+            "complainant": {},
+            "accused_persons": [],
+            "witnesses": [],
+            "fir_number": case_info["fir_number"],
+            "police_station": case_info["police_station"],
+            "district": case_info["district"],
+            "sections": case_info["sections"].split(",") if case_info["sections"] else [],
             "act_type": "BNS",
-            "io_name": io_name,
-            "io_rank": "Sub Inspector of Police",
-            "incident_date": incident_date,
-            "incident_time": incident_time,
-            "incident_place": incident_place,
-            "brief_facts": brief_facts,
+            "io_name": case_info["io_name"],
+            "io_rank": case_info["io_rank"],
+            "incident_date": "",
+            "incident_time": "",
+            "incident_place": case_info["police_station"],
+            "brief_facts": combined_text[:3000] if combined_text else "Case details to be extracted from uploaded documents.",
         }
-        
-        processing_jobs[job_key]["progress"] = 70
-        
-        # Generate HTML documents
-        charge_sheet_html = generate_html_table_charge_sheet(extracted_data, extracted_data.get("fir_number", ""))
-        case_diary_html = generate_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
-        remand_cd_html = generate_remand_case_diary_html(extracted_data, extracted_data.get("fir_number", ""))
-        
-        processing_jobs[job_key]["progress"] = 85
-        
-        # Save to database
+
+        try:
+            from services.enhanced_legal_parser import EnhancedLegalParser
+            parser = EnhancedLegalParser()
+            parsed = parser.parse(combined_text) if combined_text else None
+            if parsed:
+                extracted_data["complainant"] = parsed.get("complainant", {}) or {}
+                extracted_data["accused_persons"] = parsed.get("accused", []) or []
+                extracted_data["witnesses"] = parsed.get("witnesses", []) or []
+        except Exception as ex:
+            logger.warning(f"Parser fallback - using metadata-only extraction: {ex}")
+
+        await _update_job(case_id, officer_id, progress=75, stage="generating_documents")
+
+        # Generate HTML documents (pass case_info DICT, not fir_number string!)
+        charge_sheet_html = generate_html_table_charge_sheet(extracted_data, case_info)
+        case_diary_html = generate_case_diary_html(extracted_data, case_info)
+        remand_cd_html = generate_remand_case_diary_html(extracted_data, case_info)
+
+        await _update_job(case_id, officer_id, progress=90, stage="persisting_result")
+
+        # Persist fusion result + deduct credits
         if db is not None:
             fusion_result = {
                 "case_id": case_id,
                 "transaction_id": transaction_id,
-                "officer_id": officer.get("officer_id"),
+                "officer_id": officer_id,
                 "police_station": metadata.get("police_station", ""),
                 "district": metadata.get("district", ""),
                 "fir_number": metadata.get("fir_number", ""),
@@ -991,64 +690,80 @@ async def _process_triple_fusion_background(
                 "charge_sheet_html": charge_sheet_html,
                 "case_diary_html": case_diary_html,
                 "remand_cd_html": remand_cd_html,
-                "pipeline_stats": {
-                    "files_processed": pipeline_result.files_processed,
-                    "files_classified": pipeline_result.files_classified
-                },
                 "credits_used": credits_to_deduct,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "status": "completed"
             }
-            
             await db.triple_fusions.update_one(
-                {"case_id": case_id, "officer_id": officer.get("officer_id")},
+                {"case_id": case_id, "officer_id": officer_id},
                 {"$set": fusion_result},
                 upsert=True
             )
-            
-            # Update officer credits
             await db.officers.update_one(
-                {"officer_id": officer.get("officer_id")},
+                {"officer_id": officer_id},
                 {"$inc": {"credits": -credits_to_deduct}}
             )
-        
-        # Update metadata
+            await db.action_logs.insert_one({
+                "officer_id": officer_id,
+                "action": "TRIPLE_FUSION_GENERATE",
+                "credit_cost": credits_to_deduct,
+                "status": "SUCCESS",
+                "correlation_id": transaction_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "case_id": case_id,
+                "files_processed": len(file_paths),
+            })
+
+        # Update staging metadata
         metadata["status"] = "completed"
         metadata["fusion_transaction_id"] = transaction_id
         with open(folder / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
-        
-        processing_jobs[job_key]["progress"] = 100
-        
-        # Store successful result
-        processing_jobs[job_key] = {
-            "status": "completed",
-            "progress": 100,
-            "result": {
-                "success": True,
-                "transaction_id": transaction_id,
-                "case_id": case_id,
-                "documents_processed": len(file_paths),
-                "credits_used": credits_to_deduct,
-                "documents": {
-                    "charge_sheet": charge_sheet_html,
-                    "case_diary": case_diary_html,
-                    "remand_cd": remand_cd_html
-                },
-                "extracted_data": extracted_data,
-                "message": "Triple Fusion completed successfully!"
-            }
+
+        # Finalize job record with full result so polling can fetch it
+        final_result = {
+            "success": True,
+            "transaction_id": transaction_id,
+            "case_id": case_id,
+            "documents_processed": len(file_paths),
+            "credits_used": credits_to_deduct,
+            "documents": {
+                "charge_sheet": charge_sheet_html,
+                "case_diary": case_diary_html,
+                "remand_cd": remand_cd_html
+            },
+            "extracted_data": extracted_data,
+            "message": "Triple Fusion completed successfully!"
         }
-        
-        logger.info(f"[BACKGROUND] Triple Fusion completed for case {case_id}")
-        
+        await _update_job(
+            case_id, officer_id,
+            status="completed", progress=100, stage="done",
+            transaction_id=transaction_id, result=final_result,
+            error=None,
+        )
+        logger.info(f"[BACKGROUND] Job {job_id} completed for case {case_id}")
+
     except Exception as e:
-        logger.error(f"[BACKGROUND] Triple Fusion failed for case {case_id}: {e}")
-        processing_jobs[job_key] = {
-            "status": "failed",
-            "error": str(e),
-            "progress": 0
-        }
+        logger.exception(f"[BACKGROUND] Job {job_id} FAILED for case {case_id}: {e}")
+        if db is not None:
+            try:
+                await db.action_logs.insert_one({
+                    "officer_id": officer_id,
+                    "action": "TRIPLE_FUSION_GENERATE",
+                    "credit_cost": 0,
+                    "status": "FAILED",
+                    "correlation_id": f"ERR-{transaction_id}",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "case_id": case_id,
+                    "error": str(e)
+                })
+            except Exception:
+                pass
+        await _update_job(
+            case_id, officer_id,
+            status="failed", progress=0, stage="failed",
+            error=str(e), result=None,
+        )
 
 
 @router.get("/job-status/{case_id}")
@@ -1057,45 +772,72 @@ async def get_job_status(
     officer: dict = Depends(get_current_officer)
 ):
     """
-    Check the status of a background processing job.
+    Check the status of the Triple Fusion job for this case.
+    Reads from the `triple_fusion_jobs` collection (DB-backed queue).
     """
-    job_key = f"{officer.get('officer_id')}_{case_id}"
-    
-    if job_key in processing_jobs:
-        job = processing_jobs[job_key]
-        
-        if job.get("status") == "completed":
-            result = job.get("result")
-            del processing_jobs[job_key]
-            return result
-        elif job.get("status") == "failed":
-            error = job.get("error")
-            del processing_jobs[job_key]
-            raise HTTPException(status_code=500, detail=f"Processing failed: {error}")
-        else:
-            return {
-                "success": False,
-                "status": "processing",
-                "progress": job.get("progress", 0),
-                "message": f"Processing... {job.get('progress', 0)}%"
-            }
-    
-    # Check if already completed in database
-    if db is not None:
+    officer_id = officer.get("officer_id", "unknown")
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    job = await db.triple_fusion_jobs.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0}
+    )
+
+    if not job:
+        # No job ever queued — maybe fusion was completed earlier
         existing = await db.triple_fusions.find_one(
-            {"case_id": case_id, "officer_id": officer.get("officer_id")},
+            {"case_id": case_id, "officer_id": officer_id},
             {"_id": 0}
         )
         if existing and existing.get("status") == "completed":
             return {
                 "success": True,
                 "status": "completed",
-                "message": "Triple Fusion already completed. Click Generate to view.",
+                "case_id": case_id,
+                "message": "Triple Fusion already completed. POST /generate-triple-fusion to view cached result.",
                 "cached": True
             }
-    
+        return {
+            "success": False,
+            "status": "not_found",
+            "case_id": case_id,
+            "message": "No processing job found for this case"
+        }
+
+    status = job.get("status", "processing")
+
+    if status == "completed":
+        return {
+            "success": True,
+            "status": "completed",
+            "case_id": case_id,
+            "job_id": job.get("job_id"),
+            "progress": 100,
+            "stage": "done",
+            **(job.get("result") or {})
+        }
+
+    if status == "failed":
+        return {
+            "success": False,
+            "status": "failed",
+            "case_id": case_id,
+            "job_id": job.get("job_id"),
+            "progress": job.get("progress", 0),
+            "stage": job.get("stage", "failed"),
+            "error": job.get("error", "Unknown error"),
+            "message": f"Triple Fusion failed. NO CREDITS DEDUCTED. Error: {job.get('error', 'Unknown')}"
+        }
+
+    # processing / queued
     return {
-        "success": False,
-        "status": "not_found",
-        "message": "No processing job found for this case"
+        "success": True,
+        "status": status,
+        "case_id": case_id,
+        "job_id": job.get("job_id"),
+        "progress": job.get("progress", 0),
+        "stage": job.get("stage", "queued"),
+        "message": f"Processing... {job.get('progress', 0)}% ({job.get('stage', 'queued')})"
     }

@@ -1,0 +1,34 @@
+{
+  "case_id": "CASE-20260419124558-39F9",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "IDEMP-cd567b",
+  "sections": "302,307",
+  "created_at": "2026-04-19T12:45:58.250238+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "7df05469_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:45:58.773460+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "d7edcf7a_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:45:58.774627+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "8a6309b5_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T12:45:58.776269+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419124558-eddb"
+}
