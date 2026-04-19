@@ -18,7 +18,9 @@ import {
   TrendingUp,
   Trash2,
   UserCog,
-  Lock
+  Lock,
+  KeyRound,
+  Copy
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -34,6 +36,8 @@ const AdminDashboard = () => {
   const [topUsers, setTopUsers] = useState([]);
   const [cacheStats, setCacheStats] = useState(null);
   const [allOfficers, setAllOfficers] = useState([]);
+  const [resetRequests, setResetRequests] = useState([]);
+  const [tempPassword, setTempPassword] = useState(null); // One-time display of generated temp password
   const [loading, setLoading] = useState(false);
 
   // Resolve current user role for RBAC gating
@@ -72,6 +76,7 @@ const AdminDashboard = () => {
     else if (activeTab === 'issues') loadIssues();
     else if (activeTab === 'usage') loadUsageData();
     else if (activeTab === 'roles') loadAllOfficers();
+    else if (activeTab === 'resets') loadResetRequests();
   }, [activeTab]);
 
   const loadPendingUsers = async () => {
@@ -163,6 +168,51 @@ const AdminDashboard = () => {
     }
   };
 
+  const loadResetRequests = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/admin/password-reset-requests');
+      setResetRequests(res.data?.requests || []);
+    } catch (error) {
+      toast.error('Failed to load password reset requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const approveReset = async (requestId, officerId) => {
+    if (!window.confirm(`Generate temporary password for ${officerId}? The password will be shown ONCE — share it offline with the officer.`)) return;
+    try {
+      const res = await api.post(`/admin/password-reset-requests/${requestId}/reset`);
+      setTempPassword({
+        officer_id: res.data.officer_id,
+        password: res.data.temporary_password,
+        request_id: res.data.request_id,
+      });
+      toast.success(`Temporary password generated for ${officerId}`);
+      loadResetRequests();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Reset failed');
+    }
+  };
+
+  const rejectReset = async (requestId) => {
+    if (!window.confirm('Reject this password reset request?')) return;
+    try {
+      await api.post(`/admin/password-reset-requests/${requestId}/reject`);
+      toast.success('Request rejected');
+      loadResetRequests();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Reject failed');
+    }
+  };
+
+  const copyTempPassword = () => {
+    if (!tempPassword) return;
+    navigator.clipboard?.writeText(tempPassword.password);
+    toast.success('Copied to clipboard');
+  };
+
   const approveUser = async (userId) => {
     try {
       await api.post(`/admin/approve-user/${userId}`);
@@ -227,6 +277,7 @@ const AdminDashboard = () => {
               else if (activeTab === 'logs') loadLogs();
               else if (activeTab === 'usage') loadUsageData();
               else if (activeTab === 'roles') loadAllOfficers();
+              else if (activeTab === 'resets') loadResetRequests();
               else loadIssues();
             }}
             variant="outline"
@@ -242,6 +293,7 @@ const AdminDashboard = () => {
         <div className="flex gap-2">
           {[
             { id: 'pending', label: 'Pending Users', icon: Users, count: pendingUsers.length, show: canRead },
+            { id: 'resets', label: 'Password Resets', icon: KeyRound, count: resetRequests.filter((r) => r.status === 'pending').length, show: canRead },
             { id: 'logs', label: 'System Logs', icon: FileText, count: logs.length, show: canRead },
             { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issues.length, show: canRead },
             { id: 'usage', label: 'Translation Usage', icon: BarChart3, count: usageReport?.totals?.total_requests || 0, show: canRead },
@@ -604,6 +656,153 @@ const AdminDashboard = () => {
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Password Resets Tab */}
+              {activeTab === 'resets' && (
+                <div className="space-y-4" data-testid="resets-tab">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <KeyRound className="text-[#FFB800]" size={20} />
+                      Password Reset Requests
+                    </h2>
+                    <p className="text-white/50 text-xs">
+                      {resetRequests.filter((r) => r.status === 'pending').length} pending ·
+                      {' '}{resetRequests.length} total
+                    </p>
+                  </div>
+
+                  {/* One-time temp password banner (admin only) */}
+                  {tempPassword && (
+                    <div
+                      className="p-4 rounded-lg bg-[#FFB800]/10 border border-[#FFB800]/40"
+                      data-testid="temp-password-banner"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <p className="text-[#FFB800] text-sm font-semibold flex items-center gap-2">
+                            <KeyRound size={14} />
+                            Temporary password for {tempPassword.officer_id}
+                          </p>
+                          <p className="text-white/60 text-xs mt-1">
+                            Share this offline with the officer. It will NOT be shown again.
+                          </p>
+                          <div className="mt-3 flex items-center gap-2">
+                            <code
+                              className="px-3 py-2 rounded bg-black/50 text-[#00FFB3] font-mono text-base tracking-wider border border-[#00FFB3]/30 select-all"
+                              data-testid="temp-password-value"
+                            >
+                              {tempPassword.password}
+                            </code>
+                            <Button
+                              size="sm"
+                              onClick={copyTempPassword}
+                              className="bg-[#00C2FF]/20 text-[#00C2FF] hover:bg-[#00C2FF]/30"
+                              data-testid="copy-temp-password-btn"
+                            >
+                              <Copy size={14} className="mr-1" /> Copy
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setTempPassword(null)}
+                              className="border-white/20 text-white/70"
+                              data-testid="dismiss-temp-password-btn"
+                            >
+                              Dismiss
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg bg-[#030614] border border-white/10 divide-y divide-white/5">
+                    {resetRequests.length === 0 ? (
+                      <div className="text-center py-8 text-white/40">
+                        <KeyRound size={48} className="mx-auto mb-3 opacity-40" />
+                        <p>No password reset requests</p>
+                      </div>
+                    ) : (
+                      resetRequests.map((req) => {
+                        const statusColor = req.status === 'pending'
+                          ? 'bg-[#FFB800]/20 text-[#FFB800] border-[#FFB800]/30'
+                          : req.status === 'completed'
+                          ? 'bg-[#00FFB3]/20 text-[#00FFB3] border-[#00FFB3]/30'
+                          : 'bg-[#FF3B3B]/20 text-[#FF3B3B] border-[#FF3B3B]/30';
+                        return (
+                          <div
+                            key={req.request_id}
+                            className="px-4 py-3 hover:bg-white/5"
+                            data-testid={`reset-request-${req.request_id}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-white font-medium">
+                                    {req.officer_name || req.officer_id}
+                                  </span>
+                                  <span className="text-white/40 text-xs font-mono">
+                                    {req.officer_id}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-mono uppercase border ${statusColor}`}>
+                                    {req.status}
+                                  </span>
+                                </div>
+                                <p className="text-white/50 text-xs">
+                                  Email: {req.email_on_file || req.email_provided || '-'}
+                                </p>
+                                {req.reason && (
+                                  <p className="text-white/60 text-sm mt-1 italic">"{req.reason}"</p>
+                                )}
+                                <p className="text-white/30 text-xs mt-1 flex items-center gap-3">
+                                  <span>
+                                    <Clock size={10} className="inline mr-1" />
+                                    Requested {req.created_at?.split('T')[0]} {req.created_at?.split('T')[1]?.substring(0, 8)}
+                                  </span>
+                                  {req.resolved_by && (
+                                    <span className="text-white/50">
+                                      · Resolved by {req.resolved_by}
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              {req.status === 'pending' && (
+                                <div className="flex gap-2 shrink-0">
+                                  {canWrite ? (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => approveReset(req.request_id, req.officer_id)}
+                                        data-testid={`approve-reset-${req.request_id}`}
+                                        className="bg-[#00FFB3]/20 text-[#00FFB3] hover:bg-[#00FFB3]/30"
+                                      >
+                                        <KeyRound size={14} className="mr-1" /> Reset
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => rejectReset(req.request_id)}
+                                        data-testid={`reject-reset-${req.request_id}`}
+                                        className="border-[#FF3B3B]/30 text-[#FF3B3B] hover:bg-[#FF3B3B]/10"
+                                      >
+                                        <XCircle size={14} />
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <span className="flex items-center gap-1 text-white/40 text-xs">
+                                      <Lock size={12} /> Admin only
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}

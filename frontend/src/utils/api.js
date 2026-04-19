@@ -79,6 +79,14 @@ export const auth = {
     const response = await api.get('/auth/profile');
     return response.data;
   },
+  forgotPassword: async ({ officer_id, email, reason }) => {
+    const response = await api.post('/auth/forgot-password', { officer_id, email, reason });
+    return response.data;
+  },
+  changePassword: async ({ current_password, new_password }) => {
+    const response = await api.post('/auth/change-password', { current_password, new_password });
+    return response.data;
+  },
 };
 
 export const ocr = {

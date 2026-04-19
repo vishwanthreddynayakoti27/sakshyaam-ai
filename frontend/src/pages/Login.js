@@ -8,6 +8,8 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import PricingModal from '../components/PricingModal';
+import ForgotPasswordModal from '../components/ForgotPasswordModal';
+import ForceChangePasswordModal from '../components/ForceChangePasswordModal';
 
 const Login = ({ setIsAuthenticated }) => {
   const navigate = useNavigate();
@@ -15,6 +17,8 @@ const Login = ({ setIsAuthenticated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPricing, setShowPricing] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forceChange, setForceChange] = useState(null); // holds temp password when must_change_password
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,19 +29,33 @@ const Login = ({ setIsAuthenticated }) => {
       const response = await auth.login(formData.officer_id, formData.password);
       localStorage.setItem('token', response.token);
       localStorage.setItem('officer', JSON.stringify(response.officer));
-      // Store credentials for auto-refresh on token expiration
       localStorage.setItem('officer_id', formData.officer_id);
       localStorage.setItem('officer_password', formData.password);
+
+      // If officer logged in with a temporary password, force change before entering app
+      if (response.must_change_password) {
+        setForceChange(formData.password);
+        toast.info('You must change your password before continuing');
+        return;
+      }
+
       setIsAuthenticated(true);
       toast.success('Login successful!');
       navigate('/');
     } catch (err) {
       const errorMsg = err.response?.data?.detail || 'Login failed';
-      setError(errorMsg);
-      toast.error(errorMsg);
+      setError(typeof errorMsg === 'string' ? errorMsg : 'Login failed');
+      toast.error(typeof errorMsg === 'string' ? errorMsg : 'Login failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForceChangeDone = () => {
+    setForceChange(null);
+    setIsAuthenticated(true);
+    toast.success('Welcome! Redirecting to dashboard...');
+    navigate('/');
   };
 
   return (
@@ -127,11 +145,21 @@ const Login = ({ setIsAuthenticated }) => {
           </form>
 
           <div className="mt-6 space-y-3">
-            <div className="flex items-center justify-center gap-2 text-sm text-white/60">
-              <span>New Officer?</span>
-              <Link to="/signup" className="text-accent hover:text-accent/80 font-semibold" data-testid="login-signup-link">
-                Create Account
-              </Link>
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                onClick={() => setShowForgot(true)}
+                className="text-white/60 hover:text-accent underline underline-offset-2"
+                data-testid="login-forgot-password-link"
+              >
+                Forgot password?
+              </button>
+              <div className="flex items-center gap-2 text-white/60">
+                <span>New Officer?</span>
+                <Link to="/signup" className="text-accent hover:text-accent/80 font-semibold" data-testid="login-signup-link">
+                  Create Account
+                </Link>
+              </div>
             </div>
             <button
               onClick={() => setShowPricing(true)}
@@ -149,6 +177,13 @@ const Login = ({ setIsAuthenticated }) => {
       </motion.div>
 
       {showPricing && <PricingModal onClose={() => setShowPricing(false)} />}
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
+      {forceChange && (
+        <ForceChangePasswordModal
+          currentPassword={forceChange}
+          onDone={handleForceChangeDone}
+        />
+      )}
     </div>
   );
 };

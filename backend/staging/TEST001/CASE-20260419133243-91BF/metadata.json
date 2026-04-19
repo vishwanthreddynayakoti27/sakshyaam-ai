@@ -1,0 +1,27 @@
+{
+  "case_id": "CASE-20260419133243-91BF",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "PROG-3a982d",
+  "sections": "302,307",
+  "created_at": "2026-04-19T13:32:43.415431+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "a55b31d1_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:32:44.111219+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "89a79826_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:32:44.112529+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419133244-fd39"
+}

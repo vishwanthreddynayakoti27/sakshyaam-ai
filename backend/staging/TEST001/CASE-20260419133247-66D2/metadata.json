@@ -1,0 +1,11 @@
+{
+  "case_id": "CASE-20260419133247-66D2",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "EMPTY-e64d9c",
+  "sections": "302,307",
+  "created_at": "2026-04-19T13:32:47.020938+00:00",
+  "status": "staging",
+  "files": []
+}

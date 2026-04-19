@@ -127,6 +127,7 @@ class OfficerResponse(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     officer: OfficerResponse
+    must_change_password: bool = False
 
 class DocumentProcess(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -324,6 +325,54 @@ async def get_current_officer(credentials: HTTPAuthorizationCredentials = Depend
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# System log file (set early so helpers below can reference it)
+_LOG_DIR = Path("/app/backend/admin/logs")
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+SYSTEM_LOG_FILE = _LOG_DIR / "system.log"
+
+
+def log_action(user: str, action: str, credit_cost: int, status: str, correlation_id: str = None):
+    """Log action to system log file."""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    corr_id = correlation_id or "-"
+    log_entry = f"[{timestamp}] | {user} | {action} | {credit_cost} | {status} | {corr_id}\n"
+    with open(SYSTEM_LOG_FILE, "a") as f:
+        f.write(log_entry)
+
+
+# Role-Based Access Control (RBAC) dependencies
+# ----------------------------------------------
+# Roles:
+#   - admin: Full read/write (approvals, cache cleanup, role management)
+#   - supervisor: Read-only dev/support — can view issues, logs, translation usage,
+#                 pending users, cache stats, but cannot take admin actions.
+#   - officer: Regular user (default).
+async def _get_officer_role(officer_id: str) -> dict:
+    """Load officer doc and resolve effective role."""
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "password_hash": 0, "password": 0})
+    if not officer:
+        raise HTTPException(status_code=401, detail="Officer not found")
+    role = officer.get("role") or ("admin" if officer.get("is_admin") else "officer")
+    officer["role"] = role
+    return officer
+
+
+async def verify_admin(officer_id: str = Depends(get_current_officer)):
+    """Verify user is admin (full write access)."""
+    officer = await _get_officer_role(officer_id)
+    if officer["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return officer_id
+
+
+async def verify_admin_or_supervisor(officer_id: str = Depends(get_current_officer)):
+    """Verify user is admin OR supervisor (read-only oversight access)."""
+    officer = await _get_officer_role(officer_id)
+    if officer["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Admin or Supervisor access required")
+    return officer_id
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -917,7 +966,209 @@ async def login(login_data: OfficerLogin):
         is_admin=bool(officer_doc.get('is_admin', False)),
     )
     
-    return LoginResponse(token=token, officer=officer_response)
+    return LoginResponse(
+        token=token,
+        officer=officer_response,
+        must_change_password=bool(officer_doc.get('must_change_password', False))
+    )
+
+
+# ====================================================================
+# Password Reset — Admin-Mediated (No email provider required)
+# ====================================================================
+import secrets as _secrets
+
+class ForgotPasswordRequest(BaseModel):
+    officer_id: str
+    email: Optional[str] = ""
+    reason: Optional[str] = ""
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    """
+    Officer requests a password reset. Request is queued for an admin to act on.
+    Public endpoint (no auth). Rate-limited by pending-request uniqueness.
+
+    Note: For security, this endpoint returns the same success response whether
+    the officer_id exists or not (prevents officer_id enumeration).
+    """
+    officer_id = (payload.officer_id or "").strip()
+    if not officer_id:
+        raise HTTPException(status_code=400, detail="officer_id is required")
+
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+
+    # Generic success response — don't leak whether officer_id exists
+    generic_ok = {
+        "success": True,
+        "message": "If this officer ID is registered, an admin has been notified. Please contact your admin for the temporary password."
+    }
+
+    if not officer:
+        # Log the attempt for audit, but return success anyway
+        log_action(officer_id, "PASSWORD_RESET_REQUEST", 0, "FAILED", "unknown-officer-id")
+        return generic_ok
+
+    # Prevent spam: reject if a pending request already exists for this officer
+    existing_pending = await db.password_reset_requests.find_one(
+        {"officer_id": officer_id, "status": "pending"}
+    )
+    if existing_pending:
+        return {
+            "success": True,
+            "message": "A reset request is already pending. Please contact your admin."
+        }
+
+    request_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    await db.password_reset_requests.insert_one({
+        "request_id": request_id,
+        "officer_id": officer_id,
+        "officer_name": officer.get("name", ""),
+        "email_on_file": officer.get("email", ""),
+        "email_provided": (payload.email or "").strip(),
+        "reason": (payload.reason or "").strip()[:500],
+        "status": "pending",
+        "created_at": now_iso,
+        "resolved_at": None,
+        "resolved_by": None,
+    })
+
+    log_action(officer_id, "PASSWORD_RESET_REQUEST", 0, "SUCCESS", request_id)
+    return generic_ok
+
+
+@api_router.get("/admin/password-reset-requests")
+async def admin_list_password_reset_requests(
+    status: Optional[str] = None,
+    limit: int = 100,
+    admin_id: str = Depends(verify_admin_or_supervisor)
+):
+    """List password-reset requests. (Admin or Supervisor: read-only)"""
+    query = {}
+    if status in ("pending", "completed", "rejected"):
+        query["status"] = status
+    requests = await db.password_reset_requests.find(
+        query, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"requests": requests, "count": len(requests)}
+
+
+@api_router.post("/admin/password-reset-requests/{request_id}/reset")
+async def admin_reset_password(
+    request_id: str,
+    admin_id: str = Depends(verify_admin)
+):
+    """
+    Admin approves the request → generates a temp password, updates the officer's
+    hash, marks officer.must_change_password=true so they're forced to change on
+    next login.
+
+    Returns the temp password ONCE. It is NEVER stored and cannot be retrieved again.
+    """
+    req = await db.password_reset_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Reset request not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=400, detail=f"Request already {req.get('status')}")
+
+    officer_id = req["officer_id"]
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+    if not officer:
+        raise HTTPException(status_code=404, detail="Target officer no longer exists")
+
+    # Generate a strong, human-shareable temporary password (12 chars, URL-safe)
+    temp_password = _secrets.token_urlsafe(9)[:12]
+    new_hash = hash_password(temp_password)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    await db.officers.update_one(
+        {"officer_id": officer_id},
+        {"$set": {
+            "password_hash": new_hash,
+            "must_change_password": True,
+            "password_reset_at": now_iso,
+            "password_reset_by": admin_id,
+        }}
+    )
+
+    await db.password_reset_requests.update_one(
+        {"request_id": request_id},
+        {"$set": {
+            "status": "completed",
+            "resolved_at": now_iso,
+            "resolved_by": admin_id,
+        }}
+    )
+
+    log_action(admin_id, "PASSWORD_RESET_APPROVE", 0, "SUCCESS", f"{officer_id}|{request_id}")
+
+    return {
+        "success": True,
+        "officer_id": officer_id,
+        "temporary_password": temp_password,  # shown ONCE, not stored
+        "warning": "Share this password offline with the officer. It will NOT be shown again. Officer must change it on next login.",
+        "request_id": request_id,
+    }
+
+
+@api_router.post("/admin/password-reset-requests/{request_id}/reject")
+async def admin_reject_password_reset(
+    request_id: str,
+    admin_id: str = Depends(verify_admin)
+):
+    """Reject a password reset request."""
+    req = await db.password_reset_requests.find_one({"request_id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Reset request not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=400, detail=f"Request already {req.get('status')}")
+
+    await db.password_reset_requests.update_one(
+        {"request_id": request_id},
+        {"$set": {
+            "status": "rejected",
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
+            "resolved_by": admin_id,
+        }}
+    )
+    log_action(admin_id, "PASSWORD_RESET_REJECT", 0, "SUCCESS", f"{req['officer_id']}|{request_id}")
+    return {"success": True, "request_id": request_id, "status": "rejected"}
+
+
+@api_router.post("/auth/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    officer_id: str = Depends(get_current_officer)
+):
+    """Authenticated officer changes own password (clears must_change_password flag)."""
+    if not payload.new_password or len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
+    if not officer:
+        raise HTTPException(status_code=404, detail="Officer not found")
+
+    if not verify_password(payload.current_password, officer["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    new_hash = hash_password(payload.new_password)
+    await db.officers.update_one(
+        {"officer_id": officer_id},
+        {"$set": {
+            "password_hash": new_hash,
+            "must_change_password": False,
+            "password_changed_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    log_action(officer_id, "PASSWORD_CHANGE", 0, "SUCCESS", officer_id)
+    return {"success": True, "message": "Password changed successfully"}
 
 
 @api_router.get("/auth/profile", response_model=OfficerResponse)
@@ -3050,51 +3301,6 @@ from pathlib import Path
 # System log file
 LOG_DIR = Path("/app/backend/admin/logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-SYSTEM_LOG_FILE = LOG_DIR / "system.log"
-
-
-def log_action(user: str, action: str, credit_cost: int, status: str, correlation_id: str = None):
-    """Log action to system log file."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    corr_id = correlation_id or "-"
-    log_entry = f"[{timestamp}] | {user} | {action} | {credit_cost} | {status} | {corr_id}\n"
-    
-    with open(SYSTEM_LOG_FILE, "a") as f:
-        f.write(log_entry)
-
-
-# Role-Based Access Control (RBAC) dependencies
-# ----------------------------------------------
-# Roles:
-#   - admin: Full read/write (approvals, cache cleanup, role management)
-#   - supervisor: Read-only dev/support — can view issues, logs, translation usage,
-#                 pending users, cache stats, but cannot take admin actions.
-#   - officer: Regular user (default).
-async def _get_officer_role(officer_id: str) -> dict:
-    """Load officer doc and resolve effective role."""
-    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "password_hash": 0, "password": 0})
-    if not officer:
-        raise HTTPException(status_code=401, detail="Officer not found")
-    # Backfill: treat legacy is_admin=True as role="admin"
-    role = officer.get("role") or ("admin" if officer.get("is_admin") else "officer")
-    officer["role"] = role
-    return officer
-
-
-async def verify_admin(officer_id: str = Depends(get_current_officer)):
-    """Verify user is admin (full write access)."""
-    officer = await _get_officer_role(officer_id)
-    if officer["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return officer_id
-
-
-async def verify_admin_or_supervisor(officer_id: str = Depends(get_current_officer)):
-    """Verify user is admin OR supervisor (read-only oversight access)."""
-    officer = await _get_officer_role(officer_id)
-    if officer["role"] not in ("admin", "supervisor"):
-        raise HTTPException(status_code=403, detail="Admin or Supervisor access required")
-    return officer_id
 
 
 @api_router.get("/admin/pending-users")
