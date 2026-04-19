@@ -1,0 +1,41 @@
+{
+  "case_id": "CASE-20260419130654-D719",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "FAST-9fc969",
+  "sections": "302,307",
+  "created_at": "2026-04-19T13:06:54.723816+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "6c6eb393_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:06:55.703765+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "82687427_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:06:55.705562+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "0193adc4_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:06:55.708222+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "8af523d0_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:06:55.709428+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419130655-693d"
+}

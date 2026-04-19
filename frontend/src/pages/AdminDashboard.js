@@ -16,7 +16,9 @@ import {
   DollarSign,
   Languages,
   TrendingUp,
-  Trash2
+  Trash2,
+  UserCog,
+  Lock
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -31,13 +33,45 @@ const AdminDashboard = () => {
   const [usageReport, setUsageReport] = useState(null);
   const [topUsers, setTopUsers] = useState([]);
   const [cacheStats, setCacheStats] = useState(null);
+  const [allOfficers, setAllOfficers] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Resolve current user role for RBAC gating
+  const [myRole, setMyRole] = useState('officer');
+  useEffect(() => {
+    // Fast read from localStorage
+    try {
+      const stored = JSON.parse(localStorage.getItem('officer') || '{}');
+      setMyRole(stored.role || (stored.is_admin ? 'admin' : 'officer'));
+    } catch (e) {
+      setMyRole('officer');
+    }
+    // Refresh from server so role changes don't require re-login
+    (async () => {
+      try {
+        const res = await api.get('/auth/profile');
+        const fresh = res.data || {};
+        const role = fresh.role || (fresh.is_admin ? 'admin' : 'officer');
+        setMyRole(role);
+        try {
+          const merged = { ...(JSON.parse(localStorage.getItem('officer') || '{}')), ...fresh };
+          localStorage.setItem('officer', JSON.stringify(merged));
+        } catch (e) { /* ignore */ }
+      } catch (e) { /* non-admin users get 401/403 which is fine */ }
+    })();
+  }, []);
+
+  const isAdmin = myRole === 'admin';
+  const isSupervisor = myRole === 'supervisor';
+  const canRead = isAdmin || isSupervisor;
+  const canWrite = isAdmin;
 
   useEffect(() => {
     if (activeTab === 'pending') loadPendingUsers();
     else if (activeTab === 'logs') loadLogs();
     else if (activeTab === 'issues') loadIssues();
     else if (activeTab === 'usage') loadUsageData();
+    else if (activeTab === 'roles') loadAllOfficers();
   }, [activeTab]);
 
   const loadPendingUsers = async () => {
@@ -105,6 +139,30 @@ const AdminDashboard = () => {
     }
   };
 
+  const loadAllOfficers = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/admin/officers');
+      setAllOfficers(res.data?.officers || []);
+    } catch (error) {
+      toast.error('Failed to load officers');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeRole = async (officerId, newRole) => {
+    try {
+      const fd = new FormData();
+      fd.append('role', newRole);
+      await api.post(`/admin/officers/${officerId}/role`, fd);
+      toast.success(`${officerId} set to ${newRole}`);
+      loadAllOfficers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Role change failed');
+    }
+  };
+
   const approveUser = async (userId) => {
     try {
       await api.post(`/admin/approve-user/${userId}`);
@@ -139,8 +197,28 @@ const AdminDashboard = () => {
               <Shield className="text-white" size={28} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-              <p className="text-white/60 text-sm">User approval, logs & issue tracking</p>
+              <h1 className="text-2xl font-bold text-white">
+                {isAdmin ? 'Admin Dashboard' : 'Supervisor Dashboard'}
+              </h1>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-white/60 text-sm">
+                  {isAdmin
+                    ? 'User approval, logs, roles & issue tracking'
+                    : 'Read-only oversight — issues, logs, translation usage'}
+                </p>
+                <span
+                  data-testid="role-badge"
+                  className={`px-2 py-0.5 rounded-full text-xs font-mono uppercase ${
+                    isAdmin
+                      ? 'bg-[#FFB800]/20 text-[#FFB800] border border-[#FFB800]/30'
+                      : isSupervisor
+                      ? 'bg-[#00C2FF]/20 text-[#00C2FF] border border-[#00C2FF]/30'
+                      : 'bg-white/10 text-white/50 border border-white/10'
+                  }`}
+                >
+                  {myRole}
+                </span>
+              </div>
             </div>
           </div>
           <Button
@@ -148,6 +226,7 @@ const AdminDashboard = () => {
               if (activeTab === 'pending') loadPendingUsers();
               else if (activeTab === 'logs') loadLogs();
               else if (activeTab === 'usage') loadUsageData();
+              else if (activeTab === 'roles') loadAllOfficers();
               else loadIssues();
             }}
             variant="outline"
@@ -162,11 +241,12 @@ const AdminDashboard = () => {
         {/* Tabs */}
         <div className="flex gap-2">
           {[
-            { id: 'pending', label: 'Pending Users', icon: Users, count: pendingUsers.length },
-            { id: 'logs', label: 'System Logs', icon: FileText, count: logs.length },
-            { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issues.length },
-            { id: 'usage', label: 'Translation Usage', icon: BarChart3, count: usageReport?.totals?.total_requests || 0 }
-          ].map((tab) => (
+            { id: 'pending', label: 'Pending Users', icon: Users, count: pendingUsers.length, show: canRead },
+            { id: 'logs', label: 'System Logs', icon: FileText, count: logs.length, show: canRead },
+            { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issues.length, show: canRead },
+            { id: 'usage', label: 'Translation Usage', icon: BarChart3, count: usageReport?.totals?.total_requests || 0, show: canRead },
+            { id: 'roles', label: 'Manage Roles', icon: UserCog, count: allOfficers.length, show: canWrite }
+          ].filter((t) => t.show).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -225,23 +305,31 @@ const AdminDashboard = () => {
                             <p className="text-white/40 text-xs">{user.rank} • {user.police_station}</p>
                           </div>
                           <div className="flex gap-2">
-                            <Button
-                              onClick={() => approveUser(user.officer_id)}
-                              size="sm"
-                              className="bg-[#00FFB3]/20 text-[#00FFB3] hover:bg-[#00FFB3]/30"
-                              data-testid={`approve-${user.officer_id}`}
-                            >
-                              <CheckCircle size={14} className="mr-1" /> Approve
-                            </Button>
-                            <Button
-                              onClick={() => rejectUser(user.officer_id)}
-                              size="sm"
-                              variant="outline"
-                              className="border-[#FF3B3B]/30 text-[#FF3B3B] hover:bg-[#FF3B3B]/10"
-                              data-testid={`reject-${user.officer_id}`}
-                            >
-                              <XCircle size={14} className="mr-1" /> Reject
-                            </Button>
+                            {canWrite ? (
+                              <>
+                                <Button
+                                  onClick={() => approveUser(user.officer_id)}
+                                  size="sm"
+                                  className="bg-[#00FFB3]/20 text-[#00FFB3] hover:bg-[#00FFB3]/30"
+                                  data-testid={`approve-${user.officer_id}`}
+                                >
+                                  <CheckCircle size={14} className="mr-1" /> Approve
+                                </Button>
+                                <Button
+                                  onClick={() => rejectUser(user.officer_id)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-[#FF3B3B]/30 text-[#FF3B3B] hover:bg-[#FF3B3B]/10"
+                                  data-testid={`reject-${user.officer_id}`}
+                                >
+                                  <XCircle size={14} className="mr-1" /> Reject
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="flex items-center gap-1 text-white/40 text-xs">
+                                <Lock size={12} /> Read-only (Supervisor)
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -358,10 +446,13 @@ const AdminDashboard = () => {
                       onClick={cleanupCache}
                       size="sm"
                       variant="outline"
-                      className="border-[#FF3B3B]/30 text-[#FF3B3B] hover:bg-[#FF3B3B]/10"
+                      disabled={!canWrite}
+                      className="border-[#FF3B3B]/30 text-[#FF3B3B] hover:bg-[#FF3B3B]/10 disabled:opacity-40"
                       data-testid="cache-cleanup-btn"
+                      title={canWrite ? 'Delete cache entries older than 30 days' : 'Admin only'}
                     >
-                      <Trash2 size={14} className="mr-1" /> Clean cache &gt; 30 days
+                      {canWrite ? <Trash2 size={14} className="mr-1" /> : <Lock size={14} className="mr-1" />}
+                      Clean cache &gt; 30 days
                     </Button>
                   </div>
 
@@ -514,6 +605,77 @@ const AdminDashboard = () => {
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Manage Roles Tab (Admin ONLY) */}
+              {activeTab === 'roles' && canWrite && (
+                <div className="space-y-4" data-testid="roles-tab">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <UserCog className="text-[#FFB800]" size={20} />
+                      Manage Officer Roles
+                    </h2>
+                    <p className="text-white/50 text-xs">{allOfficers.length} officers</p>
+                  </div>
+                  <div className="rounded-lg bg-[#030614] border border-white/10 divide-y divide-white/5">
+                    {allOfficers.length === 0 ? (
+                      <div className="text-center py-8 text-white/40">
+                        <UserCog size={48} className="mx-auto mb-3 opacity-40" />
+                        <p>No officers found</p>
+                      </div>
+                    ) : (
+                      allOfficers.map((o) => {
+                        const role = o.role || (o.is_admin ? 'admin' : 'officer');
+                        const badgeColor =
+                          role === 'admin'
+                            ? 'bg-[#FFB800]/20 text-[#FFB800] border-[#FFB800]/30'
+                            : role === 'supervisor'
+                            ? 'bg-[#00C2FF]/20 text-[#00C2FF] border-[#00C2FF]/30'
+                            : 'bg-white/10 text-white/60 border-white/10';
+                        return (
+                          <div
+                            key={o.officer_id}
+                            className="flex items-center justify-between px-4 py-3 hover:bg-white/5"
+                            data-testid={`officer-row-${o.officer_id}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div>
+                                <p className="text-white font-medium">{o.name || o.officer_id}</p>
+                                <p className="text-white/40 text-xs font-mono">
+                                  {o.officer_id} · {o.rank || '-'} · {o.district || '-'}
+                                </p>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-mono uppercase border ${badgeColor}`}>
+                                {role}
+                              </span>
+                            </div>
+                            <div className="flex gap-1">
+                              {['officer', 'supervisor', 'admin'].map((r) => (
+                                <Button
+                                  key={r}
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={role === r}
+                                  onClick={() => changeRole(o.officer_id, r)}
+                                  data-testid={`set-role-${o.officer_id}-${r}`}
+                                  className={`text-xs h-7 px-2 border-white/10 hover:bg-white/10 ${
+                                    role === r ? 'bg-white/10 text-white' : 'text-white/60'
+                                  }`}
+                                >
+                                  {r}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  <p className="text-xs text-white/40">
+                    <Lock size={10} className="inline mr-1" />
+                    You cannot change your own role. Ask another admin.
+                  </p>
                 </div>
               )}
             </>

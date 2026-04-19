@@ -1,0 +1,27 @@
+{
+  "case_id": "CASE-20260419130415-88E1",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "999/2026",
+  "sections": "",
+  "created_at": "2026-04-19T13:04:15.513620+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "2fece5a1_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:04:15.818130+00:00"
+    },
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "f72ca615_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:04:15.820670+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419130418-7dbf"
+}

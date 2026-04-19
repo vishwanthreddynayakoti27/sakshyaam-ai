@@ -27,6 +27,106 @@ import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import api from '../utils/api';
 
+/**
+ * Skeleton loader shown while the Triple Fusion job is running.
+ * Combines a stage-aware progress bar with a document-shaped skeleton layout
+ * so users get visual confidence that their document is being built.
+ */
+const FusionSkeleton = ({ activeTab = 'chargesheet', progress = 0, stage = '' }) => {
+  const titleMap = {
+    chargesheet: 'Charge Sheet',
+    casediary: 'Case Diary Part-I',
+    remand: 'Remand Case Diary'
+  };
+  const stageMap = {
+    queued: 'Queued — waiting for worker',
+    extracting_text: 'Extracting text from uploaded files',
+    parsing_entities: 'Parsing accused, witnesses & complainant',
+    generating_documents: 'Generating HTML document',
+    persisting_result: 'Saving result to database',
+    done: 'Done'
+  };
+  const baseStage = (stage || '').split(' ')[0];
+  const humanStage = stageMap[baseStage] || stage || 'Starting...';
+
+  return (
+    <div className="text-gray-800 animate-in fade-in duration-300" data-testid="fusion-skeleton">
+      {/* Progress banner */}
+      <div className="mb-6 rounded-md bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-200 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Loader2 className="animate-spin text-sky-600" size={18} />
+            <span className="font-semibold text-sky-900">
+              Generating {titleMap[activeTab] || 'Document'}
+            </span>
+          </div>
+          <span className="text-sm font-mono text-sky-800" data-testid="skeleton-progress-percent">
+            {progress}%
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-sky-100 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-sky-500 to-blue-600 transition-all duration-500"
+            style={{ width: `${progress}%` }}
+            data-testid="skeleton-progress-bar"
+          />
+        </div>
+        <p className="text-xs text-sky-700 mt-2" data-testid="skeleton-stage-text">
+          {humanStage}
+        </p>
+      </div>
+
+      {/* Document-shaped skeleton */}
+      <div className="space-y-4">
+        {/* Title */}
+        <div className="h-8 bg-gray-200 rounded animate-pulse w-2/3 mx-auto" />
+        <div className="h-4 bg-gray-100 rounded animate-pulse w-1/3 mx-auto" />
+
+        {/* Meta block */}
+        <div className="grid grid-cols-2 gap-3 pt-4">
+          <div className="h-3 bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse" />
+        </div>
+
+        {/* Table skeleton */}
+        <div className="pt-4 border-t border-gray-200">
+          <div className="h-6 bg-gray-200 rounded animate-pulse w-40 mb-3" />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="grid grid-cols-5 gap-2 py-2 border-b border-gray-100"
+              style={{ animationDelay: `${i * 100}ms` }}
+            >
+              <div className="h-3 bg-gray-100 rounded animate-pulse" />
+              <div className="h-3 bg-gray-100 rounded animate-pulse col-span-2" />
+              <div className="h-3 bg-gray-100 rounded animate-pulse" />
+              <div className="h-3 bg-gray-100 rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* Paragraph skeleton */}
+        <div className="pt-4 space-y-2">
+          <div className="h-3 bg-gray-100 rounded animate-pulse w-full" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse w-11/12" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse w-4/5" />
+          <div className="h-3 bg-gray-100 rounded animate-pulse w-10/12" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const FusionEmptyState = ({ icon: Icon, title, subtitle }) => (
+  <div className="flex flex-col items-center justify-center h-full text-gray-400 py-20" data-testid="fusion-empty-state">
+    <Icon size={64} className="mb-4 opacity-30" />
+    <p className="text-lg font-semibold">{title}</p>
+    <p className="text-sm">{subtitle}</p>
+  </div>
+);
+
 const ChargeSheetFusion = () => {
   // === TRIPLE TAB STATE ===
   const [activeTab, setActiveTab] = useState('chargesheet'); // 'chargesheet' | 'casediary' | 'remand'
@@ -550,40 +650,38 @@ const ChargeSheetFusion = () => {
 
               {/* Document Content */}
               <div className="bg-white rounded-lg p-4 min-h-[500px] overflow-auto">
-                {activeTab === 'chargesheet' && (
-                  chargeSheetHtml ? (
-                    <div dangerouslySetInnerHTML={{ __html: chargeSheetHtml }} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-400 py-20">
-                      <FileSpreadsheet size={64} className="mb-4 opacity-30" />
-                      <p className="text-lg font-semibold">Charge Sheet</p>
-                      <p className="text-sm">Upload files and click "Generate Triple Fusion"</p>
-                    </div>
-                  )
-                )}
-                
-                {activeTab === 'casediary' && (
-                  caseDiaryHtml ? (
-                    <div dangerouslySetInnerHTML={{ __html: caseDiaryHtml }} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-400 py-20">
-                      <BookOpen size={64} className="mb-4 opacity-30" />
-                      <p className="text-lg font-semibold">Case Diary Part-I</p>
-                      <p className="text-sm">Generated from FIR and Case Diary files</p>
-                    </div>
-                  )
-                )}
-                
-                {activeTab === 'remand' && (
-                  remandHtml ? (
-                    <div dangerouslySetInnerHTML={{ __html: remandHtml }} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-400 py-20">
-                      <Gavel size={64} className="mb-4 opacity-30" />
-                      <p className="text-lg font-semibold">Remand Case Diary</p>
-                      <p className="text-sm">Grounds for Arrest & Section 35(3) Notice</p>
-                    </div>
-                  )
+                {isGenerating ? (
+                  <FusionSkeleton
+                    activeTab={activeTab}
+                    progress={jobProgress}
+                    stage={jobStage}
+                  />
+                ) : (
+                  <>
+                    {activeTab === 'chargesheet' && (
+                      chargeSheetHtml ? (
+                        <div dangerouslySetInnerHTML={{ __html: chargeSheetHtml }} />
+                      ) : (
+                        <FusionEmptyState icon={FileSpreadsheet} title="Charge Sheet" subtitle='Upload files and click "Generate Triple Fusion"' />
+                      )
+                    )}
+
+                    {activeTab === 'casediary' && (
+                      caseDiaryHtml ? (
+                        <div dangerouslySetInnerHTML={{ __html: caseDiaryHtml }} />
+                      ) : (
+                        <FusionEmptyState icon={BookOpen} title="Case Diary Part-I" subtitle="Generated from FIR and Case Diary files" />
+                      )
+                    )}
+
+                    {activeTab === 'remand' && (
+                      remandHtml ? (
+                        <div dangerouslySetInnerHTML={{ __html: remandHtml }} />
+                      ) : (
+                        <FusionEmptyState icon={Gavel} title="Remand Case Diary" subtitle="Grounds for Arrest & Section 35(3) Notice" />
+                      )
+                    )}
+                  </>
                 )}
               </div>
 

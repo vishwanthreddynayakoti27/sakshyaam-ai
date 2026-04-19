@@ -121,6 +121,8 @@ class OfficerResponse(BaseModel):
     district: str
     email: str
     subscription_plan: str
+    role: str = "officer"  # "admin" | "supervisor" | "officer"
+    is_admin: bool = False
 
 class LoginResponse(BaseModel):
     token: str
@@ -910,7 +912,9 @@ async def login(login_data: OfficerLogin):
         rank=officer_doc['rank'],
         district=officer_doc['district'],
         email=officer_doc['email'],
-        subscription_plan=officer_doc.get('subscription_plan', 'none')
+        subscription_plan=officer_doc.get('subscription_plan', 'none'),
+        role=officer_doc.get('role', 'admin' if officer_doc.get('is_admin') else 'officer'),
+        is_admin=bool(officer_doc.get('is_admin', False)),
     )
     
     return LoginResponse(token=token, officer=officer_response)
@@ -930,7 +934,9 @@ async def get_profile(officer_id: str = Depends(get_current_officer)):
         rank=officer_doc['rank'],
         district=officer_doc['district'],
         email=officer_doc['email'],
-        subscription_plan=officer_doc.get('subscription_plan', 'none')
+        subscription_plan=officer_doc.get('subscription_plan', 'none'),
+        role=officer_doc.get('role', 'admin' if officer_doc.get('is_admin') else 'officer'),
+        is_admin=bool(officer_doc.get('is_admin', False)),
     )
 
 
@@ -3057,18 +3063,43 @@ def log_action(user: str, action: str, credit_cost: int, status: str, correlatio
         f.write(log_entry)
 
 
-# Admin authentication dependency
+# Role-Based Access Control (RBAC) dependencies
+# ----------------------------------------------
+# Roles:
+#   - admin: Full read/write (approvals, cache cleanup, role management)
+#   - supervisor: Read-only dev/support — can view issues, logs, translation usage,
+#                 pending users, cache stats, but cannot take admin actions.
+#   - officer: Regular user (default).
+async def _get_officer_role(officer_id: str) -> dict:
+    """Load officer doc and resolve effective role."""
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "password_hash": 0, "password": 0})
+    if not officer:
+        raise HTTPException(status_code=401, detail="Officer not found")
+    # Backfill: treat legacy is_admin=True as role="admin"
+    role = officer.get("role") or ("admin" if officer.get("is_admin") else "officer")
+    officer["role"] = role
+    return officer
+
+
 async def verify_admin(officer_id: str = Depends(get_current_officer)):
-    """Verify if user is admin."""
-    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0})
-    if not officer or not officer.get("is_admin", False):
+    """Verify user is admin (full write access)."""
+    officer = await _get_officer_role(officer_id)
+    if officer["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return officer_id
 
 
+async def verify_admin_or_supervisor(officer_id: str = Depends(get_current_officer)):
+    """Verify user is admin OR supervisor (read-only oversight access)."""
+    officer = await _get_officer_role(officer_id)
+    if officer["role"] not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Admin or Supervisor access required")
+    return officer_id
+
+
 @api_router.get("/admin/pending-users")
-async def get_pending_users(admin_id: str = Depends(verify_admin)):
-    """Get users pending approval."""
+async def get_pending_users(admin_id: str = Depends(verify_admin_or_supervisor)):
+    """Get users pending approval. (Admin or Supervisor: read-only)"""
     pending = await db.officers.find(
         {"approval_status": "PENDING"},
         {"_id": 0, "password": 0}
@@ -3108,8 +3139,8 @@ async def reject_user(user_id: str, admin_id: str = Depends(verify_admin)):
 
 
 @api_router.get("/admin/logs")
-async def get_system_logs(limit: int = 100, admin_id: str = Depends(verify_admin)):
-    """Get system logs (last N entries)."""
+async def get_system_logs(limit: int = 100, admin_id: str = Depends(verify_admin_or_supervisor)):
+    """Get system logs (last N entries). (Admin or Supervisor: read-only)"""
     if not SYSTEM_LOG_FILE.exists():
         return {"logs": [], "count": 0}
     
@@ -3136,8 +3167,8 @@ async def get_system_logs(limit: int = 100, admin_id: str = Depends(verify_admin
 
 
 @api_router.get("/admin/issues")
-async def get_issues(admin_id: str = Depends(verify_admin)):
-    """Get failed actions/issues from logs."""
+async def get_issues(admin_id: str = Depends(verify_admin_or_supervisor)):
+    """Get failed actions/issues from logs. (Admin or Supervisor: read-only)"""
     if not SYSTEM_LOG_FILE.exists():
         return {"issues": [], "count": 0}
     
@@ -3161,8 +3192,8 @@ async def get_issues(admin_id: str = Depends(verify_admin)):
 
 
 @api_router.get("/admin/action-logs")
-async def get_action_logs_db(limit: int = 100, admin_id: str = Depends(verify_admin)):
-    """Get action logs from database."""
+async def get_action_logs_db(limit: int = 100, admin_id: str = Depends(verify_admin_or_supervisor)):
+    """Get action logs from database. (Admin or Supervisor: read-only)"""
     logs = await db.action_logs.find(
         {},
         {"_id": 0}
@@ -3188,9 +3219,9 @@ async def admin_translation_usage(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     officer_id: Optional[str] = None,
-    admin_id: str = Depends(verify_admin)
+    admin_id: str = Depends(verify_admin_or_supervisor)
 ):
-    """Get translation usage report for date range (default: last 30 days)."""
+    """Get translation usage report for date range (default: last 30 days). (Admin or Supervisor)"""
     report = await get_usage_report(start_date=start_date, end_date=end_date, officer_id=officer_id)
     return report
 
@@ -3198,18 +3229,18 @@ async def admin_translation_usage(
 @api_router.get("/admin/translation-usage/daily")
 async def admin_translation_usage_daily(
     date: Optional[str] = None,
-    admin_id: str = Depends(verify_admin)
+    admin_id: str = Depends(verify_admin_or_supervisor)
 ):
-    """Get translation usage for a single day (default: today)."""
+    """Get translation usage for a single day (default: today). (Admin or Supervisor)"""
     return await get_daily_usage(date)
 
 
 @api_router.get("/admin/translation-usage/monthly")
 async def admin_translation_usage_monthly(
     month: Optional[str] = None,
-    admin_id: str = Depends(verify_admin)
+    admin_id: str = Depends(verify_admin_or_supervisor)
 ):
-    """Get translation usage for a single month (default: current month)."""
+    """Get translation usage for a single month (default: current month). (Admin or Supervisor)"""
     return await get_monthly_usage(month)
 
 
@@ -3217,16 +3248,16 @@ async def admin_translation_usage_monthly(
 async def admin_translation_top_users(
     limit: int = 10,
     month: Optional[str] = None,
-    admin_id: str = Depends(verify_admin)
+    admin_id: str = Depends(verify_admin_or_supervisor)
 ):
-    """Get top users by translation volume."""
+    """Get top users by translation volume. (Admin or Supervisor)"""
     users = await get_top_users(limit=limit, month=month)
     return {"top_users": users, "count": len(users)}
 
 
 @api_router.get("/admin/cache-stats")
-async def admin_cache_stats(admin_id: str = Depends(verify_admin)):
-    """Get document cache statistics."""
+async def admin_cache_stats(admin_id: str = Depends(verify_admin_or_supervisor)):
+    """Get document cache statistics. (Admin or Supervisor: read-only)"""
     return await get_cache_stats()
 
 
@@ -3235,10 +3266,69 @@ async def admin_cache_cleanup(
     days_old: int = 30,
     admin_id: str = Depends(verify_admin)
 ):
-    """Clear cache entries older than specified days."""
+    """Clear cache entries older than specified days. (Admin ONLY)"""
     deleted = await clear_old_cache(days_old=days_old)
     log_action(admin_id, "CACHE_CLEANUP", 0, "SUCCESS", f"DELETED-{deleted}")
     return {"success": True, "deleted_count": deleted, "days_old": days_old}
+
+
+# =====================================================================
+# Role Management (Admin ONLY)
+# =====================================================================
+@api_router.get("/admin/officers")
+async def admin_list_officers(
+    role_filter: Optional[str] = None,
+    admin_id: str = Depends(verify_admin_or_supervisor)
+):
+    """List all officers with their roles. (Admin or Supervisor: read-only)"""
+    query = {}
+    if role_filter and role_filter in ("admin", "supervisor", "officer"):
+        query["role"] = role_filter
+    docs = await db.officers.find(
+        query,
+        {"_id": 0, "password": 0, "password_hash": 0}
+    ).to_list(500)
+    # Normalize legacy rows
+    for d in docs:
+        if not d.get("role"):
+            d["role"] = "admin" if d.get("is_admin") else "officer"
+    return {"officers": docs, "count": len(docs)}
+
+
+@api_router.post("/admin/officers/{target_officer_id}/role")
+async def admin_set_role(
+    target_officer_id: str,
+    role: str = Form(...),
+    admin_id: str = Depends(verify_admin)
+):
+    """Set role for an officer. role ∈ {admin, supervisor, officer}. (Admin ONLY)"""
+    if role not in ("admin", "supervisor", "officer"):
+        raise HTTPException(status_code=400, detail="Invalid role. Must be admin|supervisor|officer")
+
+    # Prevent an admin from demoting themselves (avoid lockout)
+    if target_officer_id == admin_id and role != "admin":
+        raise HTTPException(status_code=400, detail="Cannot change your own role. Ask another admin.")
+
+    existing = await db.officers.find_one({"officer_id": target_officer_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Officer not found")
+
+    is_admin_flag = (role == "admin")
+    update_doc = {
+        "role": role,
+        "is_admin": is_admin_flag,
+    }
+    # Auto-approve when promoting to admin or supervisor
+    if role in ("admin", "supervisor") and existing.get("approval_status") != "APPROVED":
+        update_doc["approval_status"] = "APPROVED"
+        update_doc["approved_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.officers.update_one(
+        {"officer_id": target_officer_id},
+        {"$set": update_doc}
+    )
+    log_action(admin_id, "ROLE_CHANGE", 0, "SUCCESS", f"{target_officer_id}->{role}")
+    return {"success": True, "officer_id": target_officer_id, "role": role}
 
 
 # Import new routers for Unified Intelligence Pipeline

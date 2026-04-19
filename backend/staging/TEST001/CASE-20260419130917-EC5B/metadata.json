@@ -1,0 +1,20 @@
+{
+  "case_id": "CASE-20260419130917-EC5B",
+  "officer_id": "TEST001",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "99/2026-FUSION-TEST",
+  "sections": "",
+  "created_at": "2026-04-19T13:09:17.632353+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "d29dcbe6_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T13:09:17.865742+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419130923-d29a"
+}
