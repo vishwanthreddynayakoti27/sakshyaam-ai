@@ -54,12 +54,34 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Annotated PDF generation (pdf2image + PIL)
 - ✅ Integration with `/api/document-intelligence/analyze`
 
+### 2026-04-19: Admin Dashboard — Translation Usage Reporting
+- ✅ Backend endpoints exposed under `/api/admin/...`:
+  - `GET /admin/translation-usage` (date-range report, default last 30d)
+  - `GET /admin/translation-usage/daily`
+  - `GET /admin/translation-usage/monthly`
+  - `GET /admin/translation-usage/top-users`
+  - `GET /admin/cache-stats`
+  - `POST /admin/cache-cleanup?days_old=30`
+- ✅ Frontend "Translation Usage" tab in `AdminDashboard.js`:
+  - KPI cards: Total Requests, Chars, Estimated Cost, Cache Hit Rate
+  - Daily breakdown table (last 30 days)
+  - Top users (current month)
+  - Document cache stats by operation
+  - "Clean cache > 30 days" action
+- ✅ Verified end-to-end with curl + screenshot using seeded data
+
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
 - ✅ Spatial clustering for table detection
 - ✅ Rule-based extraction calibrated on real samples
 
 ## In Progress / Pending
+
+### P0 - Triple Fusion Endpoint (Blocker, still broken)
+- `'str' object has no attribute 'get'` in `/app/backend/routers/staged_upload.py`
+- 60s K8s ingress timeout for 12+ file batches
+- User-requested next step: implement proper DB-backed **worker queue** (Celery/RQ) instead of `asyncio.create_task`
+- Status: NEXT UP
 
 ### P1 - DOCX Template Compliance
 - Verify actual DOCX downloads use `.docx` templates with placeholders

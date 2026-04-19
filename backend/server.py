@@ -3171,6 +3171,76 @@ async def get_action_logs_db(limit: int = 100, admin_id: str = Depends(verify_ad
     return {"logs": logs, "count": len(logs)}
 
 
+# ====================================================================
+# Translation Usage Reporting & Cache Stats (Admin Dashboard)
+# ====================================================================
+from services.translation_usage import (
+    get_daily_usage,
+    get_monthly_usage,
+    get_usage_report,
+    get_top_users,
+)
+from services.document_cache import get_cache_stats, clear_old_cache
+
+
+@api_router.get("/admin/translation-usage")
+async def admin_translation_usage(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    officer_id: Optional[str] = None,
+    admin_id: str = Depends(verify_admin)
+):
+    """Get translation usage report for date range (default: last 30 days)."""
+    report = await get_usage_report(start_date=start_date, end_date=end_date, officer_id=officer_id)
+    return report
+
+
+@api_router.get("/admin/translation-usage/daily")
+async def admin_translation_usage_daily(
+    date: Optional[str] = None,
+    admin_id: str = Depends(verify_admin)
+):
+    """Get translation usage for a single day (default: today)."""
+    return await get_daily_usage(date)
+
+
+@api_router.get("/admin/translation-usage/monthly")
+async def admin_translation_usage_monthly(
+    month: Optional[str] = None,
+    admin_id: str = Depends(verify_admin)
+):
+    """Get translation usage for a single month (default: current month)."""
+    return await get_monthly_usage(month)
+
+
+@api_router.get("/admin/translation-usage/top-users")
+async def admin_translation_top_users(
+    limit: int = 10,
+    month: Optional[str] = None,
+    admin_id: str = Depends(verify_admin)
+):
+    """Get top users by translation volume."""
+    users = await get_top_users(limit=limit, month=month)
+    return {"top_users": users, "count": len(users)}
+
+
+@api_router.get("/admin/cache-stats")
+async def admin_cache_stats(admin_id: str = Depends(verify_admin)):
+    """Get document cache statistics."""
+    return await get_cache_stats()
+
+
+@api_router.post("/admin/cache-cleanup")
+async def admin_cache_cleanup(
+    days_old: int = 30,
+    admin_id: str = Depends(verify_admin)
+):
+    """Clear cache entries older than specified days."""
+    deleted = await clear_old_cache(days_old=days_old)
+    log_action(admin_id, "CACHE_CLEANUP", 0, "SUCCESS", f"DELETED-{deleted}")
+    return {"success": True, "deleted_count": deleted, "days_old": days_old}
+
+
 # Import new routers for Unified Intelligence Pipeline
 from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion, staged_upload, document_intelligence
 
