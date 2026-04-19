@@ -1,0 +1,165 @@
+{
+  "court": "IN THE COURT OF JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL",
+  "district": "Narayanpet",
+  "police_station": "Makthal",
+  "fir_number": "57/2026",
+  "fir_date": "22.02.2026",
+  "chargesheet_date": "26.03.2026",
+  "sections": "118(2), 115(2), 352 R/w 3(5) BNS",
+  "chargesheet_type": "Original",
+  "io": {
+    "salutation": "Smt.",
+    "name": "Y. Bhagya Lakshmi Reddy",
+    "rank": "SI of Police",
+    "station": "PS Makthal"
+  },
+  "complainant": {
+    "salutation": "Sri.",
+    "name": "Chandapuram Manikanta",
+    "father_name": "Chandrashekar",
+    "age": "22 years",
+    "caste": "Mudiraj",
+    "occupation": "Business (Glass Frame work)",
+    "address": "Nethajinagar, Makthal Mandal, Narayanpet",
+    "phone": "9441016205"
+  },
+  "accused": [
+    {
+      "serial": "A1",
+      "salutation": "Sri.",
+      "name": "Pujari Nandakishor",
+      "father_name": "Pujari Subhash",
+      "age": "36 years",
+      "caste": "Yadav",
+      "occupation": "Agriculture",
+      "address": "H.No. 2-72 Maganoor Village & Mandal, Narayanpet District",
+      "phone": "9959282848",
+      "section_35_3_notice_date": "22.02.2026"
+    },
+    {
+      "serial": "A2",
+      "salutation": "Sri.",
+      "name": "H Kiran Kumar",
+      "father_name": "H Chukkappa",
+      "age": "28 years",
+      "caste": "Yadav",
+      "occupation": "Agriculture",
+      "address": "H No.3-75 Maganoor Village & Mandal, Narayanpet District",
+      "phone": "9640649419",
+      "section_35_3_notice_date": "22.02.2026"
+    }
+  ],
+  "witnesses": [
+    {
+      "serial": "LW-1",
+      "salutation": "Sri.",
+      "name": "Chandapuram Manikanta",
+      "father_name": "Chandrashekar",
+      "age": "22 years",
+      "caste": "Mudiraj",
+      "occupation": "Business (Glass Frame work)",
+      "address": "Nethajinagar, Makthal Mandal, Narayanpet",
+      "phone": "9441016205",
+      "role": "Complainant and Injured"
+    },
+    {
+      "serial": "LW-2",
+      "salutation": "Sri.",
+      "name": "Chandapuram Chandra Shekar",
+      "father_name": "Late Hanmanthu",
+      "age": "56 years",
+      "caste": "Mudiraj",
+      "occupation": "Business",
+      "address": "Nethajinagar, Makthal",
+      "phone": "8522916205",
+      "role": "Cir witness and father of LW-1"
+    },
+    {
+      "serial": "LW-3",
+      "salutation": "Sri.",
+      "name": "Chandarpuram Vijaykumar",
+      "father_name": "Late Tamulu",
+      "age": "38 years",
+      "caste": "Mudiraj",
+      "occupation": "Car Driver",
+      "address": "Nethajinagar, Makthal",
+      "phone": "9959996668",
+      "role": "Eyewitness"
+    },
+    {
+      "serial": "LW-4",
+      "salutation": "Sri.",
+      "name": "Mudadi Akshya Kumar",
+      "father_name": "Ravi",
+      "age": "25 years",
+      "caste": "Mochi SC",
+      "occupation": "Business",
+      "address": "Shivajinagar, Makthal",
+      "phone": "",
+      "role": "Eyewitness"
+    },
+    {
+      "serial": "LW-5",
+      "salutation": "Sri.",
+      "name": "Golla Prashanth",
+      "father_name": "Ningappa",
+      "age": "26 years",
+      "caste": "Madiga",
+      "occupation": "Pvt Job",
+      "address": "JVR Colony, Makthal",
+      "phone": "8688663599",
+      "role": "Panch for Scene of offence"
+    },
+    {
+      "serial": "LW-6",
+      "salutation": "Sri.",
+      "name": "Myathari Venkat Narayana",
+      "father_name": "M. Anil",
+      "age": "25 years",
+      "caste": "Madiga",
+      "occupation": "Business",
+      "address": "JVR Colony, Makthal",
+      "phone": "7981445086",
+      "role": "Panch for Scene of offence"
+    },
+    {
+      "serial": "LW-7",
+      "salutation": "Dr.",
+      "name": "Bala Ganesh Goud",
+      "father_name": "",
+      "age": "",
+      "caste": "",
+      "occupation": "Civil Assistant Surgeon",
+      "address": "Govt. Area Hospital, Makthal",
+      "phone": "",
+      "role": "Treated the injured/LW-1, issued wound certificate"
+    },
+    {
+      "serial": "LW-8",
+      "salutation": "Smt.",
+      "name": "Y. Bhagya Lakshmi Reddy",
+      "father_name": "",
+      "age": "",
+      "caste": "",
+      "occupation": "SI of Police",
+      "address": "PS Makthal",
+      "phone": "",
+      "role": "IO and field charge sheet"
+    }
+  ],
+  "property_recovered": "",
+  "notice_ack_enclosed": "",
+  "brief_facts": "On 22.02.2026, LW-8 served notice U/s 35(3) BNSS on the accused persons A1 Pujari Nandakishor and A2 H Kiran Kumar informing them of the allegations of offences punishable U/s 118(2), 115(2), 352 R/w 3(5) BNS and directing them to appear at Police Station Makthal on or before 23.02.2026 between 10:00 hours to 18:00 hours to give their statement regarding the same.\n\nIn obedience to the said notice, the accused persons A1 and A2 appeared before LW-8 on 23.02.2026 at 10:00 hours at PS Makthal and voluntarily admitted their guilt in the commission of the said offence. LW-8 collected address proof from them and released them on the ground that the offence is punishable with imprisonment for a term which may extend to less than seven years as per Section 35(3) BNSS.\n\nLW-8 received the wound certificate from LW-7 Dr. Bala Ganesh Goud, Civil Assistant Surgeon, Govt. Area Hospital Makthal, who examined and treated LW-1 and certified that the injuries sustained by LW-1 are simple in nature.\n\nThe incident took place on 22.02.2026 at around 16:00 hours at Sukanya Glass Frame Work Shop, Nethajinagar, Makthal Town. LW-1 Chandapuram Manikanta S/o Chandrashekar, aged 22 years, caste Mudiraj, occupation Business (Glass Frame work), resident of Nethajinagar, Makthal Mandal, Narayanpet, Ph. 9441016205, was running the said shop at Nethajinagar Makthal Town. On that day at about 16:00 hours, the accused persons A1 Pujari Nandakishor S/o Pujari Subhash, aged 36 years, caste Yadav, occupation Agriculture, resident of H.No. 2-72 Maganoor Village & Mandal, Narayanpet District, Ph. 9959282848, and A2 H Kiran Kumar S/o H Chukkappa, aged 28 years, caste Yadav, occupation Agriculture, resident of H No.3-75 Maganoor Village & Mandal, Narayanpet District, Ph. 9640649419, came to the shop of LW-1 for photo frame work. After completion of the work, LW-1 asked the accused persons to make payment for the same. However, the accused persons refused to pay and started bargaining over the price. In the process, the accused persons became enraged and assaulted LW-1 with their hands and attacked him with a glass frame causing a bleeding injury near his right eyebrow. LW-3 Chandarpuram Vijaykumar S/o Late Tamulu, aged 38 years, caste Mudiraj, occupation Car Driver, resident of Nethajinagar, Makthal, Ph. 9959996668, and LW-4 Mudadi Akshya Kumar S/o Ravi, aged 25 years, caste Mochi SC, occupation Business, resident of Shivajinagar, Makthal, were eyewitnesses to the incident and intervened to stop the assault. During the intervention, the accused persons also beat LW-3 and abused him in filthy language. LW-4 along with local people rescued LW-1 from the accused persons. LW-2 Chandapuram Chandra Shekar S/o Late Hanmanthu, aged 56 years, caste Mudiraj, occupation Business, resident of Nethajinagar, Makthal, Ph. 8522916205, who is the father of LW-1, is a circumstantial witness. The scene of offence was inspected in the presence of panch witnesses LW-5 Golla Prashanth S/o Ningappa, aged 26 years, caste Madiga, occupation Pvt Job, resident of JVR Colony, Makthal, Ph. 8688663599, and LW-6 Myathari Venkat Narayana S/o M. Anil, aged 25 years, caste Madiga, occupation Business, resident of JVR Colony, Makthal, Ph. 7981445086. Thus, the accused persons A1 and A2 mentioned in Col. No. 11 of this charge sheet have committed the offence punishable U/s 118(2), 115(2), 352 R/w 3(5) BNS.",
+  "prayer": "Therefore, the Hon'ble court is prayed that to conduct trial against the accused persons A1 & A2 mentioned in Col.11 of this Charge sheet and punish them according to law. Hence charge sheet.",
+  "corrections_applied": [
+    "Moved Chandapuram Manikanta from accused list to complainant and LW-1 as per narrative",
+    "Removed garbled entry 'tances from you' with impossible age '1 years' and duplicate phone/address matching A1",
+    "Corrected sections line by removing procedural references 35(3) and 180(3) BNSS, keeping only offence sections 118(2), 115(2), 352 R/w 3(5) BNS",
+    "Applied gender-appropriate salutation 'Smt.' to IO Y. Bhagya Lakshmi Reddy",
+    "Constructed witness list in canonical order: LW-1 complainant/injured, LW-2 father/cir witness, LW-3/LW-4 eyewitnesses, LW-5/LW-6 scene panches, LW-7 medical officer, LW-8 IO",
+    "Assigned Section 35(3) notice date 22.02.2026 to both accused as per raw data",
+    "Composed brief facts in four paragraphs following the Step 6 sequence: notice service, accused appearance and admission, medical certificate receipt, incident narrative with final offence line"
+  ],
+  "_model_used": "claude-sonnet-4-5",
+  "_session_id": "fir-57-2026-v2"
+}
