@@ -223,7 +223,7 @@ const ChargeSheetFusion = () => {
 
   // === DOWNLOAD WORD DOCUMENT ===
   const downloadDocument = async (docType) => {
-    const filename = `${firNumber.replace('/', '-')}_${docType === 'chargesheet' ? 'ChargeSheet' : docType === 'casediary' ? 'CaseDiary' : 'RemandCD'}.docx`;
+    const filename = `${firNumber.replaceAll('/', '-')}_${docType === 'chargesheet' ? 'ChargeSheet' : docType === 'casediary' ? 'CaseDiary' : 'RemandCD'}.docx`;
     
     try {
       const response = await api.get(`/download/docx/${filename}`, {
@@ -254,11 +254,6 @@ const ChargeSheetFusion = () => {
 
   const handleDragOver = (e) => {
     e.preventDefault();
-  };
-
-  // === PRINT DOCUMENT (disabled — no preview HTML anymore) ===
-  const printDocument = () => {
-    toast.info('Print is disabled — please download the .DOCX and print from Word.');
   };
 
   return (
@@ -425,9 +420,9 @@ const ChargeSheetFusion = () => {
               )}
             </Button>
 
-            {/* Async Progress Indicator (mirrored in status card) */}
+            {/* Async Progress Indicator (mirrored in status card) — hide on mobile to avoid stacking */}
             {isGenerating && (
-              <div className="space-y-2" data-testid="fusion-progress">
+              <div className="hidden lg:block space-y-2" data-testid="fusion-progress">
                 <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-[#00C2FF] to-[#4F7EFF] transition-all duration-500"

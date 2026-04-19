@@ -117,6 +117,21 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Security: no officer_id enumeration, dedupe per officer, audit trail via `log_action` (PASSWORD_RESET_REQUEST / APPROVE / REJECT / PASSWORD_CHANGE)
 - ✅ Testing: **71/71 total tests pass** (16 new password-reset + 55 RBAC/Fusion regression) — `/app/backend/tests/test_password_reset.py`
 
+### 2026-04-19: Case-Insensitive Login
+- ✅ `POST /api/auth/login` and `/api/auth/forgot-password` now use case-insensitive regex match (`re.escape(oid)` with `i` flag). `Pc72`, `PC72`, `pc72` all resolve to the same officer.
+
+### 2026-04-19: Fusion Page Refactor — Removed Preview, Added Status Card
+- ✅ Root cause of mobile 'Script error at handleError': `dangerouslySetInnerHTML` with large generated HTML under iOS/Android WebView strict-mode CSP
+- ✅ Fix: Removed the entire HTML preview pane + Charge Sheet/Case Diary/Remand tab header
+- ✅ Replaced with 3 pure React subviews on the right panel:
+  - `FusionIdleView` — "Ready to Generate" card with FIR/file checklist
+  - `FusionGeneratingView` — pulsing cyan rings + spinning loader + progress bar + stage text + file count
+  - `FusionCompletedView` — green checkmark + extraction summary + 3 color-coded download buttons (ChargeSheet / CaseDiary / Remand)
+- ✅ Removed `FusionSkeleton`, `FusionEmptyState` helpers + `printDocument` dead code + unused imports
+- ✅ Duplicate progress bar in sidebar hidden on mobile (`hidden lg:block`)
+- ✅ `replace('/', '-')` → `replaceAll('/', '-')` for multi-slash FIR numbers
+- ✅ Testing: **71/71 regression pass on both desktop (1920×1080) and mobile (500×900)** — zero console errors, zero pageerrors
+
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
 - ✅ Spatial clustering for table detection
