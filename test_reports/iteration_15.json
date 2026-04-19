@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 15 — ChargeSheetFusion.js frontend refactor (removal of dangerouslySetInnerHTML + tabs) verified end-to-end on BOTH desktop (1920x1080) and mobile (500x900). Backend regression (test_triple_fusion_queue 9 + test_rbac 46 + test_password_reset 16 = 71/71) all green. Frontend: fusion-idle-view shows 'Ready to Generate' + two checklist items (green CheckCircle2 after FIR entered and files uploaded); clicking Generate Triple Fusion switches right panel to fusion-generating-view (pulsing rings, progress bar, stage text 'Queued — waiting for worker', 0% → progress); within ~2.5s (cache hit on pc72/57-2026 from prior run + ~3s cold on 99/2026) the panel switches to fusion-completed-view with green checkmark, 'Triple Fusion Complete', 'FIR 57/2026 · 2 files processed · 5 credits used', Extraction Summary (Accused/Witnesses/Complainant), and 3 download buttons (download-chargesheet, download-casediary, download-remand). Clicking Download Charge Sheet actually produced a successful .docx download + toast 'Downloaded: 57-2026_ChargeSheet.docx' (better than the acceptable 'Document not generated yet' fallback). NO pageerror, NO 'Script error' on mobile, NO console errors on either viewport — the dangerouslySetInnerHTML removal has eliminated the original mobile runtime error. Tab header (Charge Sheet/Case Diary/Remand) is gone (0 elements with role=tab on the page). Grepped frontend/src for 'FusionSkeleton' and 'FusionEmptyState' — zero references remain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_triple_fusion_queue.py",
+    "/app/backend/tests/test_rbac.py",
+    "/app/backend/tests/test_password_reset.py",
+    "/app/test_reports/pytest/iteration_15_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Good: all three subviews (FusionIdleView, FusionGeneratingView, FusionCompletedView) are pure React components with no dangerouslySetInnerHTML; this is the permanent fix for the mobile 'Script error at handleError' and is the correct architectural direction.",
+    "Good: isGenerating takes precedence over fusionReady in the JSX conditional, so a re-generate cleanly transitions completed → generating → completed without flicker.",
+    "Good: data-testid coverage is complete (fusion-status-card, fusion-idle-view, fusion-generating-view, fusion-completed-view, generating-progress-bar, generating-stage-text, generating-progress-percent, download-chargesheet, download-casediary, download-remand, generate-fusion-btn, fusion-progress, fusion-progress-bar, fusion-progress-stage, fusion-progress-percent, fir-number-input, file-drop-zone, chargesheet-fusion).",
+    "Minor: the left-column progress indicator (fusion-progress) duplicates what the status card already shows. On mobile the two stacked progress bars can look redundant — consider hiding the left one on mobile via `hidden lg:block` to keep the mobile view cleaner.",
+    "Minor: FusionGeneratingView.stageMap only parses the first whitespace-separated token of `stage` (baseStage = (stage || '').split(' ')[0]); backend stages are already single tokens so this works, but a defensive fallback to the raw stage string is already in place — good.",
+    "Minor: File size of ChargeSheetFusion.js is now 623 lines — still under the 700-line soft limit, but the three subview components would be cleanly extractable into /components/fusion/*.js if more features land here.",
+    "Minor: printDocument() is a no-op toast ('Print is disabled'); dead code — no UI element invokes it. Safe to remove to reduce bundle size.",
+    "Minor: downloadDocument filename uses firNumber.replace('/', '-') — replaces only the FIRST slash. If a future FIR format uses multiple slashes this will break; use .replaceAll('/','-') defensively.",
+    "Good: graceful error toast on download failure ('Download failed - Document not generated yet') — matches the acceptable behaviour called out in the review request, though in this test the .docx did download successfully, indicating backend docx generation IS wired up for this pipeline."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (71/71)", "frontend": "100% (both desktop and mobile flows: idle → generating → completed → download)"},
+  "test_credentials": "pc72 / Test123! used for all frontend runs. TEST002's password_hash was reset to Test123! in MongoDB at the start of this iteration (leftover state from iteration_14 — one-time cleanup, not a regression).",
+  "seed_data_creation": "2 staging cases created (FIR 57/2026 and FIR 99/2026 under pc72) with 2 PDFs each from /app/backend/reference_samples. Each consumed 5 credits on successful fusion. No leftover pending reset requests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "ChargeSheetFusion page is stable. Critical testids: fusion-idle-view, fusion-generating-view, fusion-completed-view, generating-progress-bar, generating-stage-text, generating-progress-percent, download-chargesheet/casediary/remand, generate-fusion-btn, fir-number-input, file-drop-zone. Backend cache-hits TFQ results keyed by (case_id, file-set hash); re-running with same FIR + same files returns completed status synchronously (no polling). TEST002 pw should stay Test123! between runs; if RBAC tests fail at login, run the one-liner in /app/backend resetting officers.password_hash + password_reset_requests cleanup (see iteration_15 execution log).",
+  "rca of the issue": "N/A — no bugs observed in this iteration. The prior-reported 'Script error at handleError' on mobile was root-caused to React reconciler processing a large HTML string via dangerouslySetInnerHTML under iOS/Android WebView strict-mode CSP; replacing the preview pane with three structured React subviews (FusionIdleView / FusionGeneratingView / FusionCompletedView) eliminates the raw-HTML injection surface entirely. Mobile pageerror count is now 0 across the full Idle→Generating→Completed flow."
+}

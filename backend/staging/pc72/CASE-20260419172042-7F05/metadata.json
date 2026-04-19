@@ -1,0 +1,104 @@
+{
+  "case_id": "CASE-20260419172042-7F05",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "57",
+  "sections": "",
+  "created_at": "2026-04-19T17:20:42.491708+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26 LW 2.pdf",
+      "saved_name": "efcbfd3d_57-26 LW 2.pdf",
+      "size": 1148651,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:20:43.949469+00:00"
+    },
+    {
+      "original_name": "57-26 CD 2.pdf",
+      "saved_name": "785422d1_57-26 CD 2.pdf",
+      "size": 1025601,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.933546+00:00"
+    },
+    {
+      "original_name": "57-26 CD 3.pdf",
+      "saved_name": "50feb829_57-26 CD 3.pdf",
+      "size": 1326038,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.934592+00:00"
+    },
+    {
+      "original_name": "57-26 LW 4.pdf",
+      "saved_name": "960f2eaf_57-26 LW 4.pdf",
+      "size": 972406,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.935053+00:00"
+    },
+    {
+      "original_name": "57-26 CDF.pdf",
+      "saved_name": "bc29f033_57-26 CDF.pdf",
+      "size": 2086862,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.936633+00:00"
+    },
+    {
+      "original_name": "57-26 Notice.pdf",
+      "saved_name": "948b26ba_57-26 Notice.pdf",
+      "size": 2094342,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.938595+00:00"
+    },
+    {
+      "original_name": "57-26 A2 Adhaar.pdf",
+      "saved_name": "84b3e05a_57-26 A2 Adhaar.pdf",
+      "size": 2752639,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.940912+00:00"
+    },
+    {
+      "original_name": "57-26 A1 Adhaar.pdf",
+      "saved_name": "eb025017_57-26 A1 Adhaar.pdf",
+      "size": 1916689,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.942327+00:00"
+    },
+    {
+      "original_name": "57-26 LW 1.pdf",
+      "saved_name": "b7eccf9e_57-26 LW 1.pdf",
+      "size": 1056083,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.943035+00:00"
+    },
+    {
+      "original_name": "57-26 MC.pdf",
+      "saved_name": "458a0ce2_57-26 MC.pdf",
+      "size": 1551607,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.944005+00:00"
+    },
+    {
+      "original_name": "57-26 CD 1.pdf",
+      "saved_name": "2e3547e6_57-26 CD 1.pdf",
+      "size": 2969565,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.945721+00:00"
+    },
+    {
+      "original_name": "57-26 LW 3.pdf",
+      "saved_name": "af11ef1f_57-26 LW 3.pdf",
+      "size": 936789,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.946124+00:00"
+    },
+    {
+      "original_name": "57-26 LW 2.pdf",
+      "saved_name": "4e91f5d9_57-26 LW 2.pdf",
+      "size": 1148651,
+      "type": ".pdf",
+      "uploaded_at": "2026-04-19T17:21:13.947652+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260419172116-7035"
+}
