@@ -993,3 +993,107 @@ async def get_intelligent_chargesheet_metadata(
     if not doc:
         return {"success": False, "message": "No intelligent charge sheet generated for this case yet"}
     return {"success": True, **doc}
+
+
+# =====================================================================
+# Intelligent Case Diary Part-I Generator
+# Reuses the already-corrected ICGS structured data to compose the
+# chronological investigation log narrative via Claude Sonnet 4.5.
+# =====================================================================
+@router.post("/generate-intelligent-case-diary/{case_id}")
+async def generate_intelligent_case_diary_endpoint(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Generate Case Diary Part-I for a case that already has an ICGS output.
+
+    Must be called AFTER /generate-intelligent-charge-sheet/{case_id} so the
+    structured data is available. COST: 2 credits (deducted on success).
+    """
+    from fastapi.responses import Response
+    from services.intelligent_case_diary import generate_intelligent_case_diary
+    from services.station_case_diary_renderer import render_case_diary_docx
+
+    officer_id = officer.get("officer_id", "unknown")
+    credits_to_deduct = 2
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    ics = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0}
+    )
+    if not ics or not ics.get("structured_data"):
+        raise HTTPException(
+            status_code=400,
+            detail="No intelligent charge sheet found. Run 'Generate Station-Format Charge Sheet' first."
+        )
+
+    try:
+        logger.info(f"[ICD] Generating case diary for case {case_id}")
+        cd_data = await generate_intelligent_case_diary(
+            ics["structured_data"],
+            session_id=f"icd-{case_id}",
+        )
+        docx_bytes = render_case_diary_docx(cd_data)
+
+        await db.intelligent_case_diaries.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id,
+                "officer_id": officer_id,
+                "fir_number": cd_data.get("fir_number", ""),
+                "structured_data": cd_data,
+                "entries_count": len(cd_data.get("entries", [])),
+                "model_used": cd_data.get("_model_used", ""),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "credits_used": credits_to_deduct,
+            }},
+            upsert=True,
+        )
+        await db.officers.update_one(
+            {"officer_id": officer_id},
+            {"$inc": {"credits": -credits_to_deduct}}
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_CASE_DIARY_GENERATE",
+            "credit_cost": credits_to_deduct,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model_used": cd_data.get("_model_used", ""),
+        })
+
+        fir_safe = (cd_data.get("fir_number") or "case").replace("/", "-")
+        filename = f"{fir_safe}_IntelligentCaseDiary.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Entries-Count": str(len(cd_data.get("entries", []))),
+                "X-Model-Used": cd_data.get("_model_used", ""),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[ICD] Case Diary FAILED for case {case_id}: {e}")
+        if db is not None:
+            await db.action_logs.insert_one({
+                "officer_id": officer_id,
+                "action": "INTELLIGENT_CASE_DIARY_GENERATE",
+                "credit_cost": 0,
+                "status": "FAILED",
+                "correlation_id": case_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": str(e),
+            })
+        raise HTTPException(
+            status_code=500,
+            detail=f"Case Diary generation failed. NO CREDITS DEDUCTED. Error: {str(e)}"
+        )
+

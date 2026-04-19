@@ -12,6 +12,7 @@ import {
   FileStack,
   FolderOpen,
   Trash2,
+  BookOpen,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -546,7 +547,9 @@ const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
 
 const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId }) => {
   const [smartLoading, setSmartLoading] = React.useState(false);
+  const [diaryLoading, setDiaryLoading] = React.useState(false);
   const [corrections, setCorrections] = React.useState(null);
+  const [hasChargeSheet, setHasChargeSheet] = React.useState(false);
 
   const downloadSmartChargeSheet = async () => {
     if (!caseId) {
@@ -585,6 +588,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         }
       } catch (e) { /* non-critical */ }
 
+      setHasChargeSheet(true);
       toast.success(`Station-format charge sheet downloaded (${correctionsCount || 0} corrections applied)`);
     } catch (error) {
       let msg = error.response?.data?.detail || 'Intelligent generation failed';
@@ -596,6 +600,47 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       toast.error(msg);
     } finally {
       setSmartLoading(false);
+    }
+  };
+
+  const downloadSmartCaseDiary = async () => {
+    if (!caseId) {
+      toast.error('No case selected');
+      return;
+    }
+    if (!hasChargeSheet) {
+      toast.error('Generate the Station-Format Charge Sheet first (it provides the structured data)');
+      return;
+    }
+    setDiaryLoading(true);
+    try {
+      toast.info('Generating Case Diary Part-I with Claude 4.5...');
+      const resp = await api.post(
+        `/staging/generate-intelligent-case-diary/${caseId}`,
+        null,
+        { responseType: 'blob' }
+      );
+      const entries = resp.headers['x-entries-count'] || resp.headers['X-Entries-Count'];
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentCaseDiary.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Case Diary Part-I downloaded (${entries || 0} chronological entries)`);
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Case diary generation failed';
+      if (error.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await error.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setDiaryLoading(false);
     }
   };
 
@@ -674,6 +719,35 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
               ))}
             </ul>
           </div>
+        )}
+      </div>
+
+      {/* STATION-FORMAT CASE DIARY PART-I */}
+      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#4F7EFF]/10 to-[#00C2FF]/5 border border-[#4F7EFF]/30">
+        <div className="flex items-start gap-3 mb-3">
+          <BookOpen className="text-[#4F7EFF] shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h4 className="text-[#4F7EFF] font-bold text-base">Station-Format Case Diary (Part-I)</h4>
+            <p className="text-white/60 text-xs mt-1 leading-relaxed">
+              Chronological IO investigation log composed from the corrected charge-sheet data. Each entry includes date, time, and proper station-writer phrasing (scene visit, S.180 statements, medical, 35(3) notice, accused appearance). Uses Claude Sonnet 4.5 · 2 credits.
+            </p>
+          </div>
+        </div>
+        <Button
+          onClick={downloadSmartCaseDiary}
+          disabled={diaryLoading || !hasChargeSheet}
+          className="w-full h-11 bg-gradient-to-r from-[#4F7EFF] to-[#00C2FF] text-white font-bold hover:opacity-90 disabled:opacity-40"
+          data-testid="download-intelligent-case-diary"
+          title={!hasChargeSheet ? 'Generate Station-Format Charge Sheet first' : 'Generate & download Case Diary Part-I'}
+        >
+          {diaryLoading ? (
+            <><Loader2 className="animate-spin mr-2" size={16} /> Composing entries (~20s)...</>
+          ) : (
+            <><BookOpen size={16} className="mr-2" /> Generate Case Diary Part-I</>
+          )}
+        </Button>
+        {!hasChargeSheet && (
+          <p className="mt-2 text-xs text-white/40 italic">Generate the charge sheet above first.</p>
         )}
       </div>
 

@@ -134,7 +134,7 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ### 2026-04-19: Intelligent Charge Sheet Generator (Station-Writer Grade)
 - ✅ New service `/app/backend/services/intelligent_charge_sheet.py` — single Claude Sonnet 4.5 call (GPT-5.2 fallback) that validates + corrects + composes in one pass
-- ✅ System prompt primes the LLM as a "senior station writer" with BNS/BNSS fluency + 8 hard rules (never hallucinate, never invent sections, empty string for missing fields, correct misclassifications, re-number LW-, flowing narrative, prayer/closing)
+- ✅ System prompt primes the LLM as a "senior station writer" with BNS/BNSS fluency + 7-step pipeline (INGEST → ROLE RESOLUTION → ENTITY CLEANUP → SECTION CORRECTION → WITNESS RE-NUMBERING → BRIEF FACTS COMPOSITION → FIELD POLICY)
 - ✅ Returns strict JSON with full charge-sheet structure + `corrections_applied` array listing every fix
 - ✅ New renderer `/app/backend/services/station_charge_sheet_renderer.py` produces DOCX matching the real Makthal 18-column layout:
   - 3-column kv table (No./Field/Value) matching station format
@@ -145,15 +145,17 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ New endpoints:
   - `POST /api/staging/generate-intelligent-charge-sheet/{case_id}` — returns DOCX directly (3 credits, rollback-safe)
   - `GET /api/staging/intelligent-chargesheet/{case_id}` — returns corrections list + metadata
-- ✅ Frontend: new orange "Generate Station-Format Charge Sheet" button in `FusionCompletedView` with inline corrections display after download
-- ✅ Tested against FIR 57/2026 with INTENTIONALLY buggy input (complainant in accused list, corrupted name "tances from you", typo "1118(2)", invalid age "1 years"). Claude caught ALL bugs:
-  1. Moved Chandapuram Manikanta from A1 → complainant/LW-1
-  2. Removed corrupted "tances from you" entry
-  3. Fixed 1118(2) → 118(2) BNS
-  4. Dropped non-offence sections (35(3), 180(3)) from the sections line
-  5. Reconstructed all 8 LW witnesses from narrative
-  6. Bonus: corrected IO salutation Sri. → Smt. (Bhagya Lakshmi Reddy is female)
+- ✅ Frontend: orange "Generate Station-Format Charge Sheet" button in `FusionCompletedView` with inline corrections display after download
+- ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
+
+### 2026-04-19: Intelligent Case Diary Part-I Generator
+- ✅ New service `/app/backend/services/intelligent_case_diary.py` — takes the already-corrected ICGS JSON as input, composes chronological IO investigation log via Claude Sonnet 4.5
+- ✅ System prompt enforces 3rd-person station style, date-ordered entries: FIR registration → scene panchanama + rough sketch + S.180 BNSS statements → medical examination + wound certificate → 35(3) BNSS notice → accused appearance + address proof + release → charge sheet filing
+- ✅ New renderer `/app/backend/services/station_case_diary_renderer.py` produces DOCX with 3-col table (Date / Time / Entry), FIR header, signature block; empty entries render as blank rows for manual entry
+- ✅ New endpoint `POST /api/staging/generate-intelligent-case-diary/{case_id}` — 2 credits, requires prior ICGS output
+- ✅ Frontend: blue "Generate Case Diary Part-I" button in `FusionCompletedView`, disabled until charge sheet is generated with explicit hint
+- ✅ Tested against FIR 57/2026 — 7 chronological entries composed correctly (scene visit, S.180 statements, medical, 35(3) notice, accused appearance, completion)
 
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
