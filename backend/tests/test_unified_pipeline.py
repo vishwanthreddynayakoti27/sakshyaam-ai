@@ -8,7 +8,7 @@ import os
 import io
 import hashlib
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://nyaya-prahari.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://legal-fusion-queue.preview.emergentagent.com')
 
 # Test credentials
 TEST_OFFICER_ID = "TEST_UNIFIED_001"
