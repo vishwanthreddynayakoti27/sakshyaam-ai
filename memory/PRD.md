@@ -102,6 +102,21 @@ Build a production-ready, highly modular backend document generation pipeline fo
   - Document-shaped skeleton (title, 2-col meta grid, 5-row table, 4-line paragraph) with pulsing animation
 - ✅ Testing: **55/55 tests pass** (46 new RBAC tests + 9 Triple Fusion regression) — `/app/backend/tests/test_rbac.py`, `test_triple_fusion_queue.py`
 
+### 2026-04-19: Forgot Password — Admin-Mediated Flow (no email provider)
+- ✅ Backend:
+  - `POST /api/auth/forgot-password` (public) — creates pending request in `password_reset_requests` collection; generic response regardless of officer_id existence (no enumeration leak); de-dupes pending requests
+  - `GET /api/admin/password-reset-requests` — admin + supervisor (read-only), status filter
+  - `POST /api/admin/password-reset-requests/{id}/reset` — admin-only; generates `secrets.token_urlsafe(9)[:12]` temp password, updates `password_hash` + `must_change_password=true`, returns temp password ONCE (never stored)
+  - `POST /api/admin/password-reset-requests/{id}/reject` — admin-only
+  - `POST /api/auth/change-password` — authenticated; verifies current password, enforces min 8 chars, clears `must_change_password` flag
+  - `LoginResponse` now includes `must_change_password` boolean
+- ✅ Frontend:
+  - "Forgot password?" link on Login page opens `ForgotPasswordModal` with officer_id + email + reason fields
+  - `ForceChangePasswordModal` blocks users with `must_change_password=true` from reaching the app until they submit a new password
+  - New **"Password Resets"** tab in Admin Dashboard (visible to admin + supervisor) with pending/completed/rejected filters, Reset/Reject buttons (admin-only), and one-time temp password banner with Copy/Dismiss
+- ✅ Security: no officer_id enumeration, dedupe per officer, audit trail via `log_action` (PASSWORD_RESET_REQUEST / APPROVE / REJECT / PASSWORD_CHANGE)
+- ✅ Testing: **71/71 total tests pass** (16 new password-reset + 55 RBAC/Fusion regression) — `/app/backend/tests/test_password_reset.py`
+
 ### Previous: Base Pipeline
 - ✅ OpenCV preprocessing (deskew, denoise, binarize, sharpen)
 - ✅ Spatial clustering for table detection
