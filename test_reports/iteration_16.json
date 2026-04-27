@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 16 — Credit & Payment System (signup approval gate + Stripe checkout + admin grant credits) end-to-end verified. Backend 14/14 pytest checks PASS via pytest wrapper around /app/backend/tests/test_credits_payments.py (signup PENDING+no-token, login 403 PENDING, admin approve grants 20 trial credits, login post-approval returns credits=20, public /credits/packs lists starter/pro/agency with server-side ₹499/₹1,999/₹6,999 amounts, /payments/checkout starter pack returns Stripe URL + persists txn INITIATED+credits_applied=False, custom_credits=200 → ₹1,000 server-computed, custom range 50–10,000 enforced, /admin/grant-credits +50 ledgered with granted_by=pc72, over-revoke (-200) rejected with 400, valid revoke -10 OK, non-admin grant blocked 403, REJECTED user login returns 403 with 'rejected' detail). Frontend 14/14 PASS via Playwright on https://legal-fusion-queue.preview.emergentagent.com (signup form → pending-approval-card with officer_id + Back-to-Login + does NOT navigate to dashboard; sidebar-credits link present on Layout-based pages with href=/credits; /credits page shows current-balance, 3 pack-card-{starter,pro,agency} with correct prices/credits, custom-credits-input live-computes ₹1,000 for 200 and ₹2,500 for 500, payment-history-card present; clicking pack-buy-starter actually redirects to https://checkout.stripe.com/c/pay/cs_test_…; admin /admin tab-credits visible, credits-tab renders 13 officer rows with grant-amount-* + grant-reason-* inputs).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (/) home page", "issues": ["Dashboard.js does NOT use the shared Layout component, so the 'Buy Credits' sidebar link (data-testid=sidebar-credits) is NOT visible from the landing page. Users must first navigate to another module (Charge Sheet Fusion, Document Generator, etc.) before they can find the Buy Credits link in the bottom-left of the unified sidebar. Recommend adding a 'Buy Credits' CTA in the Dashboard top-right (next to user menu) or migrating Dashboard.js to use Layout for sidebar consistency."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_credits_payments.py",
+    "/app/backend/tests/test_credits_payments_pytest.py",
+    "/app/test_reports/pytest/iteration_16_results.xml"
+  ],
+  "action_items": [
+    "(Minor UX) Surface the 'Buy Credits' link on the Dashboard home page — currently only reachable via the Layout sidebar from other modules.",
+    "(Data hygiene) pc72 currently has -53 credits balance from prior test runs. Backend's grant-revoke guard prevents going below 0 via /admin/grant-credits, but normal credit consumption (e.g. fusion runs at 5 credits each) is evidently not enforcing balance>=0 — a fusion call appears to have decremented credits on an account that was already at low balance. Confirm /charge-sheet-fusion and other consumers reject the request with 402 'Insufficient credits' BEFORE decrementing. Fix: add a server-side guard `if officer.credits < cost: raise 402` in every credit-consuming endpoint, mirroring the guard already present in /admin/grant-credits."
+  ],
+  "critical_code_review_comments": [
+    "Good: server-side amount computation in /payments/checkout — frontend cannot tamper with price (verified via test #8 custom_credits=10 → 400, test #9 custom_credits=200 → exactly ₹1000.00).",
+    "Good: idempotency flag credits_applied:bool on payment_transactions prevents double-credit on /payments/status polling (DB-level test in backend_test confirms).",
+    "Good: credit_grants ledger captures granted_by=pc72, amount, reason, timestamp — full audit trail.",
+    "Good: signup flow correctly returns {approval_status: PENDING, officer_id, message} with NO token field — UI Signup.js handles this branch and renders pending-approval-card with the new officer_id + Back-to-Login button.",
+    "Bug (medium): pc72 admin balance is -53 credits. The /admin/grant-credits endpoint correctly rejects revokes that would push balance negative, but normal *consumption* paths (charge-sheet fusion, OCR, doc-gen, translation) appear to allow the balance to dip below zero. There must be a missing pre-check in one of the consumer endpoints. Search for `officers.update_one({...}, {'$inc': {'credits': -…}})` calls in server.py and ensure each is preceded by `if officer['credits'] < cost: raise HTTPException(402, 'Insufficient credits')`.",
+    "Minor: Credits.js handles both axios-style `res.data` and bare-object responses (`res.data || res`) — fine as defensive coding but indicates inconsistency in the api wrapper. Standardise utils/api.js to always return `.data`.",
+    "Minor: Dashboard.js bypasses the shared Layout, so sidebar-credits is invisible on the home page. Users land on `/` after login and have no obvious path to /credits until they click into a feature module. Consider unifying.",
+    "Minor: pyttest wrapper added at /app/backend/tests/test_credits_payments_pytest.py — uses sys.path injection + dotenv to load /app/backend/.env. Total 1 test method that runs the existing 14-step async flow. JUnit XML at /app/test_reports/pytest/iteration_16_results.xml."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_credits_payments_pytest.py (NEW — pytest wrapper)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (14/14 — signup pending card, sidebar link, 3 packs with correct ₹/credits, custom 200→₹1,000 + 500→₹2,500, payment history, real Stripe redirect, admin tab-credits with 13 officer rows)"},
+  "test_credentials": "pc72 / Test123! (admin); plus auto-generated NEWUSER<rand> for signup→approval flow",
+  "seed_data_creation": "Test creates and cleans up TESTNEW<rand> + TESTREJ<rand> officers + their payment_transactions + credit_grants in each backend run. Frontend signup leaves NEWUSER<rand> in PENDING state in DB — main agent may want to run `db.officers.deleteMany({officer_id:/^NEWUSER/})` periodically.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All credit/payment testids confirmed working: sidebar-credits, credits-page, current-balance, pack-card-{starter|pro|agency}, pack-buy-{starter|pro|agency}, custom-credits-input, custom-amount, custom-buy-button, payment-history-card, history-row-{i}, pending-approval-card, pending-approval-back-to-login, tab-credits, credits-tab, grant-amount-{officer_id}, grant-reason-{officer_id}. Login placeholders are 'Enter Officer ID' and 'Enter Password' (NOT 'Officer ID'/'Password'); submit button text is 'SECURE LOGIN'. Dashboard / route uses its own custom layout (no Layout wrapper) — to test sidebar links, navigate to /credits, /charge-sheet-fusion, /admin etc. Backend pytest: `set -a && source /app/backend/.env && set +a && pytest /app/backend/tests/test_credits_payments_pytest.py -v -s`. The known data-issue: pc72 has -53 credits — flagged as action item for main agent (missing balance>=0 guard in consumer endpoints).",
+  "rca of the issue": "N/A — feature works as designed. The only bug flagged is the pc72 -53 credit balance, which is an unrelated pre-existing issue: credit-consumption endpoints (fusion, OCR, etc.) lack the same balance-floor guard that /admin/grant-credits has. Reproduction: any approved user with credits<cost runs charge-sheet-fusion (5 cr) and the balance goes negative because the consumer doesn't pre-check. Mitigation: add `if officer['credits'] < cost: raise HTTPException(402)` before every $inc:{credits:-cost} in server.py."
+}

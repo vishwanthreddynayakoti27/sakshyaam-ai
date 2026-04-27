@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -97,6 +97,8 @@ class Officer(BaseModel):
     email: EmailStr
     password_hash: str
     subscription_plan: str = "none"
+    credits: int = 0
+    approval_status: str = "PENDING"  # PENDING | APPROVED | REJECTED
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class OfficerCreate(BaseModel):
@@ -124,6 +126,8 @@ class OfficerResponse(BaseModel):
     subscription_plan: str
     role: str = "officer"  # "admin" | "supervisor" | "officer"
     is_admin: bool = False
+    credits: int = 0
+    approval_status: str = "APPROVED"
 
 class LoginResponse(BaseModel):
     token: str
@@ -908,40 +912,40 @@ async def root():
     return {"message": "SAAKSHYAM AI - Investigation Command Console"}
 
 
-@api_router.post("/auth/signup", response_model=LoginResponse)
+@api_router.post("/auth/signup")
 async def signup(officer_data: OfficerCreate):
-    existing = await db.officers.find_one({"officer_id": officer_data.officer_id}, {"_id": 0})
+    existing = await db.officers.find_one(
+        {"officer_id": {"$regex": f"^{re.escape(officer_data.officer_id.strip())}$", "$options": "i"}},
+        {"_id": 0}
+    )
     if existing:
         raise HTTPException(status_code=400, detail="Officer ID already exists")
     
     password_hash = hash_password(officer_data.password)
     officer = Officer(
-        officer_id=officer_data.officer_id,
+        officer_id=officer_data.officer_id.strip(),
         name=officer_data.name,
         department=officer_data.department,
         rank=officer_data.rank,
         district=officer_data.district,
         email=officer_data.email,
-        password_hash=password_hash
+        password_hash=password_hash,
+        credits=0,
+        approval_status="PENDING",
     )
     
     doc = officer.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.officers.insert_one(doc)
+    log_action(officer.officer_id, "SIGNUP_PENDING", 0, "SUCCESS", f"USER-{officer.officer_id}")
     
-    token = create_token(officer.officer_id)
-    officer_response = OfficerResponse(
-        id=officer.id,
-        officer_id=officer.officer_id,
-        name=officer.name,
-        department=officer.department,
-        rank=officer.rank,
-        district=officer.district,
-        email=officer.email,
-        subscription_plan=officer.subscription_plan
-    )
-    
-    return LoginResponse(token=token, officer=officer_response)
+    # Do NOT issue a token. Account is locked until an admin approves.
+    return {
+        "success": True,
+        "approval_status": "PENDING",
+        "officer_id": officer.officer_id,
+        "message": "Registration submitted. Your account is pending admin approval. You will be able to log in once approved.",
+    }
 
 
 @api_router.post("/auth/login", response_model=LoginResponse)
@@ -958,6 +962,20 @@ async def login(login_data: OfficerLogin):
     if not verify_password(login_data.password, officer_doc['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid password")
     
+    # Approval gate — block PENDING / REJECTED accounts. Admins / supervisors are
+    # always allowed (auto-approved when promoted) so this only affects officers.
+    approval = officer_doc.get('approval_status', 'APPROVED')
+    if approval == 'PENDING':
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending admin approval. Please wait for an administrator to approve your registration.",
+        )
+    if approval == 'REJECTED':
+        raise HTTPException(
+            status_code=403,
+            detail="Your registration was rejected by the administrator. Please contact your admin for details.",
+        )
+    
     token = create_token(officer_doc['officer_id'])
     officer_response = OfficerResponse(
         id=officer_doc['id'],
@@ -970,6 +988,8 @@ async def login(login_data: OfficerLogin):
         subscription_plan=officer_doc.get('subscription_plan', 'none'),
         role=officer_doc.get('role', 'admin' if officer_doc.get('is_admin') else 'officer'),
         is_admin=bool(officer_doc.get('is_admin', False)),
+        credits=int(officer_doc.get('credits', 0) or 0),
+        approval_status=approval,
     )
     
     return LoginResponse(
@@ -1200,6 +1220,8 @@ async def get_profile(officer_id: str = Depends(get_current_officer)):
         subscription_plan=officer_doc.get('subscription_plan', 'none'),
         role=officer_doc.get('role', 'admin' if officer_doc.get('is_admin') else 'officer'),
         is_admin=bool(officer_doc.get('is_admin', False)),
+        credits=int(officer_doc.get('credits', 0) or 0),
+        approval_status=officer_doc.get('approval_status', 'APPROVED'),
     )
 
 
@@ -3481,17 +3503,41 @@ async def get_pending_users(admin_id: str = Depends(verify_admin_or_supervisor))
 
 @api_router.post("/admin/approve-user/{user_id}")
 async def approve_user(user_id: str, admin_id: str = Depends(verify_admin)):
-    """Approve a pending user."""
-    result = await db.officers.update_one(
+    """Approve a pending user. Grants 20 free trial credits on first approval."""
+    # Determine current credits (so we don't double-grant the trial on re-approval)
+    officer = await db.officers.find_one(
         {"officer_id": user_id, "approval_status": "PENDING"},
-        {"$set": {"approval_status": "APPROVED", "approved_at": datetime.now(timezone.utc).isoformat()}}
+        {"_id": 0, "credits": 1, "trial_granted": 1}
     )
+    if not officer:
+        raise HTTPException(status_code=404, detail="User not found or already processed")
     
+    update_set = {
+        "approval_status": "APPROVED",
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    update_inc = {}
+    trial_credits = 20
+    if not officer.get("trial_granted"):
+        update_inc["credits"] = trial_credits
+        update_set["trial_granted"] = True
+        update_set["trial_granted_at"] = datetime.now(timezone.utc).isoformat()
+    
+    update_doc = {"$set": update_set}
+    if update_inc:
+        update_doc["$inc"] = update_inc
+    
+    result = await db.officers.update_one({"officer_id": user_id}, update_doc)
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="User not found or already processed")
     
+    granted = trial_credits if "credits" in update_inc else 0
     log_action(admin_id, "APPROVE_USER", 0, "SUCCESS", f"USER-{user_id}")
-    return {"success": True, "message": f"User {user_id} approved"}
+    return {
+        "success": True,
+        "message": f"User {user_id} approved" + (f" — granted {granted} trial credits" if granted else ""),
+        "trial_credits_granted": granted,
+    }
 
 
 @api_router.post("/admin/reject-user/{user_id}")
@@ -3507,6 +3553,336 @@ async def reject_user(user_id: str, admin_id: str = Depends(verify_admin)):
     
     log_action(admin_id, "REJECT_USER", 0, "SUCCESS", f"USER-{user_id}")
     return {"success": True, "message": f"User {user_id} rejected"}
+
+
+# ====================================================================
+# Admin — Manual Credit Grant (no payment)
+# ====================================================================
+class GrantCreditsRequest(BaseModel):
+    amount: int
+    reason: Optional[str] = ""
+
+
+@api_router.post("/admin/grant-credits/{officer_id}")
+async def admin_grant_credits(
+    officer_id: str,
+    payload: GrantCreditsRequest,
+    admin_id: str = Depends(verify_admin),
+):
+    """
+    Manually grant (or revoke, with negative amount) credits to a specific
+    officer or agency without a payment. Audit-trail logged.
+    """
+    if payload.amount == 0:
+        raise HTTPException(status_code=400, detail="Amount cannot be zero")
+    if abs(payload.amount) > 100000:
+        raise HTTPException(status_code=400, detail="Amount exceeds maximum (100000)")
+
+    officer = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1, "name": 1})
+    if not officer:
+        raise HTTPException(status_code=404, detail="Officer not found")
+
+    new_balance = int(officer.get("credits", 0) or 0) + payload.amount
+    if new_balance < 0:
+        raise HTTPException(status_code=400, detail=f"Revocation would make balance negative (current: {officer.get('credits', 0)})")
+
+    await db.officers.update_one({"officer_id": officer_id}, {"$inc": {"credits": payload.amount}})
+
+    # Persist a credit-ledger entry
+    await db.credit_grants.insert_one({
+        "id": str(uuid.uuid4()),
+        "officer_id": officer_id,
+        "officer_name": officer.get("name", ""),
+        "amount": payload.amount,
+        "reason": payload.reason or "",
+        "granted_by": admin_id,
+        "granted_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    log_action(
+        admin_id,
+        "GRANT_CREDITS" if payload.amount > 0 else "REVOKE_CREDITS",
+        abs(payload.amount),
+        "SUCCESS",
+        f"USER-{officer_id}",
+    )
+    return {
+        "success": True,
+        "officer_id": officer_id,
+        "amount_changed": payload.amount,
+        "new_balance": new_balance,
+        "message": f"Granted {payload.amount} credits to {officer_id}" if payload.amount > 0
+                   else f"Revoked {abs(payload.amount)} credits from {officer_id}",
+    }
+
+
+@api_router.get("/admin/credit-grants")
+async def admin_credit_grants(
+    limit: int = 100,
+    officer_id: Optional[str] = None,
+    admin_id: str = Depends(verify_admin_or_supervisor),
+):
+    """View manual credit-grant history (admin + supervisor read-only)."""
+    query: Dict[str, Any] = {}
+    if officer_id:
+        query["officer_id"] = officer_id
+    grants = await db.credit_grants.find(query, {"_id": 0}).sort("granted_at", -1).to_list(limit)
+    return {"grants": grants, "count": len(grants)}
+
+
+# ====================================================================
+# Credits & Payments — Stripe Checkout
+# ====================================================================
+# Server-side credit packs (DO NOT trust frontend amounts)
+CREDIT_PACKS: Dict[str, Dict[str, Any]] = {
+    "starter": {"credits": 100, "amount": 499.00, "currency": "inr", "label": "Starter"},
+    "pro": {"credits": 500, "amount": 1999.00, "currency": "inr", "label": "Pro"},
+    "agency": {"credits": 2000, "amount": 6999.00, "currency": "inr", "label": "Agency"},
+}
+CUSTOM_PRICE_PER_CREDIT_INR = 5.00  # ₹5 per credit for custom amount
+CUSTOM_MIN_CREDITS = 50
+CUSTOM_MAX_CREDITS = 10000
+
+
+class CheckoutSessionRequestBody(BaseModel):
+    pack_id: Optional[str] = None        # one of starter|pro|agency
+    custom_credits: Optional[int] = None  # for custom amount; ignored if pack_id set
+    origin_url: str                       # frontend window.location.origin
+
+
+@api_router.get("/credits/packs")
+async def list_credit_packs():
+    """Public list of available credit packs + custom pricing."""
+    return {
+        "packs": [
+            {"id": pid, **pack} for pid, pack in CREDIT_PACKS.items()
+        ],
+        "custom": {
+            "price_per_credit": CUSTOM_PRICE_PER_CREDIT_INR,
+            "currency": "inr",
+            "min_credits": CUSTOM_MIN_CREDITS,
+            "max_credits": CUSTOM_MAX_CREDITS,
+        },
+    }
+
+
+@api_router.post("/payments/checkout")
+async def create_checkout_session(
+    body: CheckoutSessionRequestBody,
+    http_request: Request,
+    officer_id: str = Depends(get_current_officer),
+):
+    """Create a Stripe Checkout Session for buying credits."""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+
+    # Resolve amount + credits server-side (DO NOT trust frontend)
+    if body.pack_id:
+        pack = CREDIT_PACKS.get(body.pack_id)
+        if not pack:
+            raise HTTPException(status_code=400, detail="Invalid pack_id")
+        amount = float(pack["amount"])
+        currency = pack["currency"]
+        credits = int(pack["credits"])
+        pack_label = pack["label"]
+    elif body.custom_credits is not None:
+        if body.custom_credits < CUSTOM_MIN_CREDITS or body.custom_credits > CUSTOM_MAX_CREDITS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Custom credits must be between {CUSTOM_MIN_CREDITS} and {CUSTOM_MAX_CREDITS}",
+            )
+        credits = int(body.custom_credits)
+        amount = round(credits * CUSTOM_PRICE_PER_CREDIT_INR, 2)
+        currency = "inr"
+        pack_label = "Custom"
+    else:
+        raise HTTPException(status_code=400, detail="Either pack_id or custom_credits is required")
+
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Payment provider not configured")
+
+    origin = (body.origin_url or "").rstrip("/")
+    if not origin.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid origin_url")
+    success_url = f"{origin}/credits/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/credits"
+
+    host_url = str(http_request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+
+    metadata = {
+        "officer_id": officer_id,
+        "pack_id": body.pack_id or "custom",
+        "credits": str(credits),
+        "pack_label": pack_label,
+    }
+    checkout_request = CheckoutSessionRequest(
+        amount=amount,
+        currency=currency,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
+    session = await stripe_checkout.create_checkout_session(checkout_request)
+
+    # Persist transaction (PENDING)
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()),
+        "session_id": session.session_id,
+        "officer_id": officer_id,
+        "pack_id": body.pack_id or "custom",
+        "pack_label": pack_label,
+        "credits": credits,
+        "amount": amount,
+        "currency": currency,
+        "status": "INITIATED",
+        "payment_status": "unpaid",
+        "metadata": metadata,
+        "credits_applied": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    log_action(officer_id, "CHECKOUT_INITIATED", 0, "SUCCESS", session.session_id)
+
+    return {
+        "url": session.url,
+        "session_id": session.session_id,
+        "amount": amount,
+        "currency": currency,
+        "credits": credits,
+        "pack_label": pack_label,
+    }
+
+
+@api_router.get("/payments/status/{session_id}")
+async def get_payment_status(
+    session_id: str,
+    officer_id: str = Depends(get_current_officer),
+):
+    """
+    Polled by the success page. Verifies status with Stripe and applies credits
+    exactly once on first 'paid' confirmation.
+    """
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+
+    txn = await db.payment_transactions.find_one(
+        {"session_id": session_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # If already finalized, return cached result (idempotency)
+    if txn.get("status") in ("PAID", "EXPIRED", "FAILED"):
+        return {
+            "session_id": session_id,
+            "status": txn["status"],
+            "payment_status": txn.get("payment_status", "unknown"),
+            "credits_applied": bool(txn.get("credits_applied", False)),
+            "credits": txn.get("credits", 0),
+            "amount": txn.get("amount"),
+            "currency": txn.get("currency"),
+        }
+
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Payment provider not configured")
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url="")
+    status_resp = await stripe_checkout.get_checkout_status(session_id)
+
+    new_status = "PENDING"
+    if status_resp.payment_status == "paid":
+        new_status = "PAID"
+    elif status_resp.status == "expired":
+        new_status = "EXPIRED"
+
+    update: Dict[str, Any] = {
+        "status": new_status,
+        "payment_status": status_resp.payment_status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    credits_applied_now = False
+    if new_status == "PAID" and not txn.get("credits_applied", False):
+        # Atomic guard: only apply credits if the doc still has credits_applied=false.
+        guard = await db.payment_transactions.update_one(
+            {"session_id": session_id, "credits_applied": {"$ne": True}},
+            {"$set": {**update, "credits_applied": True}},
+        )
+        if guard.modified_count == 1:
+            await db.officers.update_one(
+                {"officer_id": officer_id},
+                {"$inc": {"credits": int(txn["credits"])}},
+            )
+            credits_applied_now = True
+            log_action(officer_id, "PAYMENT_PAID", int(txn["credits"]), "SUCCESS", session_id)
+    else:
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": update},
+        )
+        if new_status in ("EXPIRED", "PENDING"):
+            log_action(officer_id, f"PAYMENT_{new_status}", 0, "INFO", session_id)
+
+    return {
+        "session_id": session_id,
+        "status": new_status,
+        "payment_status": status_resp.payment_status,
+        "credits_applied": txn.get("credits_applied", False) or credits_applied_now,
+        "credits": txn.get("credits", 0),
+        "amount": txn.get("amount"),
+        "currency": txn.get("currency"),
+    }
+
+
+@api_router.get("/payments/history")
+async def my_payment_history(
+    limit: int = 20,
+    officer_id: str = Depends(get_current_officer),
+):
+    txns = await db.payment_transactions.find(
+        {"officer_id": officer_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(limit)
+    return {"transactions": txns, "count": len(txns)}
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Stripe webhook handler. Idempotent — credits applied at most once."""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    api_key = os.environ.get("STRIPE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Payment provider not configured")
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    stripe_checkout = StripeCheckout(api_key=api_key, webhook_url="")
+    try:
+        evt = await stripe_checkout.handle_webhook(body, sig)
+    except Exception as e:
+        logger.error(f"Stripe webhook parse error: {e}")
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    if evt.payment_status == "paid" and evt.session_id:
+        txn = await db.payment_transactions.find_one(
+            {"session_id": evt.session_id}, {"_id": 0}
+        )
+        if txn and not txn.get("credits_applied", False):
+            guard = await db.payment_transactions.update_one(
+                {"session_id": evt.session_id, "credits_applied": {"$ne": True}},
+                {"$set": {
+                    "status": "PAID",
+                    "payment_status": "paid",
+                    "credits_applied": True,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            if guard.modified_count == 1:
+                await db.officers.update_one(
+                    {"officer_id": txn["officer_id"]},
+                    {"$inc": {"credits": int(txn["credits"])}},
+                )
+                log_action(txn["officer_id"], "PAYMENT_PAID_WEBHOOK", int(txn["credits"]), "SUCCESS", evt.session_id)
+    return {"received": True}
 
 
 @api_router.get("/admin/logs")
@@ -3747,6 +4123,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_backfill():
+    """One-time backfill: existing officers without approval_status get APPROVED.
+    New signups always start as PENDING."""
+    try:
+        result = await db.officers.update_many(
+            {"approval_status": {"$exists": False}},
+            {"$set": {"approval_status": "APPROVED", "credits": 0, "trial_granted": True}},
+        )
+        if result.modified_count:
+            logger.info(f"Backfilled approval_status=APPROVED on {result.modified_count} existing officers")
+        # Ensure all officers have a numeric credits field
+        await db.officers.update_many(
+            {"credits": {"$exists": False}},
+            {"$set": {"credits": 0}},
+        )
+    except Exception as e:
+        logger.error(f"Startup backfill failed: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

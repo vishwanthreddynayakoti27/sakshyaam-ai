@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Shield, 
-  Users, 
-  FileText, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Shield,
+  Users,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
   RefreshCw,
   Clock,
   Activity,
@@ -20,7 +20,11 @@ import {
   UserCog,
   Lock,
   KeyRound,
-  Copy
+  Copy,
+  Zap,
+  Plus,
+  Minus,
+  Search
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -38,6 +42,9 @@ const AdminDashboard = () => {
   const [allOfficers, setAllOfficers] = useState([]);
   const [resetRequests, setResetRequests] = useState([]);
   const [tempPassword, setTempPassword] = useState(null); // One-time display of generated temp password
+  const [creditGrants, setCreditGrants] = useState([]);
+  const [grantInputs, setGrantInputs] = useState({}); // { officer_id: { amount, reason } }
+  const [creditSearch, setCreditSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Resolve current user role for RBAC gating
@@ -77,6 +84,7 @@ const AdminDashboard = () => {
     else if (activeTab === 'usage') loadUsageData();
     else if (activeTab === 'roles') loadAllOfficers();
     else if (activeTab === 'resets') loadResetRequests();
+    else if (activeTab === 'credits') loadCreditsTab();
   }, [activeTab]);
 
   const loadPendingUsers = async () => {
@@ -177,6 +185,45 @@ const AdminDashboard = () => {
       toast.error('Failed to load password reset requests');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCreditsTab = async () => {
+    setLoading(true);
+    try {
+      const [officersRes, grantsRes] = await Promise.all([
+        api.get('/admin/officers'),
+        api.get('/admin/credit-grants?limit=100'),
+      ]);
+      setAllOfficers(officersRes.data?.officers || []);
+      setCreditGrants(grantsRes.data?.grants || []);
+    } catch (error) {
+      toast.error('Failed to load credit data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const grantCredits = async (officerId, sign = 1) => {
+    const input = grantInputs[officerId] || {};
+    const amount = sign * Math.abs(parseInt(input.amount, 10) || 0);
+    if (!amount) {
+      toast.error('Enter a credit amount');
+      return;
+    }
+    const verb = sign > 0 ? 'grant' : 'revoke';
+    if (!window.confirm(`${verb === 'grant' ? 'Grant' : 'Revoke'} ${Math.abs(amount)} credits ${sign > 0 ? 'to' : 'from'} ${officerId}?`)) return;
+    try {
+      const res = await api.post(`/admin/grant-credits/${officerId}`, {
+        amount,
+        reason: input.reason || '',
+      });
+      const data = res.data || res;
+      toast.success(`${verb === 'grant' ? 'Granted' : 'Revoked'} ${Math.abs(amount)} credits — new balance: ${data.new_balance}`);
+      setGrantInputs((prev) => ({ ...prev, [officerId]: { amount: '', reason: '' } }));
+      loadCreditsTab();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Grant failed');
     }
   };
 
@@ -297,6 +344,7 @@ const AdminDashboard = () => {
             { id: 'logs', label: 'System Logs', icon: FileText, count: logs.length, show: canRead },
             { id: 'issues', label: 'Issues', icon: AlertTriangle, count: issues.length, show: canRead },
             { id: 'usage', label: 'Translation Usage', icon: BarChart3, count: usageReport?.totals?.total_requests || 0, show: canRead },
+            { id: 'credits', label: 'Grant Credits', icon: Zap, count: 0, show: canWrite },
             { id: 'roles', label: 'Manage Roles', icon: UserCog, count: allOfficers.length, show: canWrite }
           ].filter((t) => t.show).map((tab) => (
             <button
@@ -821,6 +869,123 @@ const AdminDashboard = () => {
                           </div>
                         );
                       })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Grant Credits Tab (Admin ONLY) */}
+              {activeTab === 'credits' && canWrite && (
+                <div className="space-y-4" data-testid="credits-tab">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Zap className="text-accent" size={20} />
+                      Grant Credits
+                    </h2>
+                    <div className="relative w-full sm:w-72">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                      <input
+                        type="text"
+                        placeholder="Search by ID or name…"
+                        value={creditSearch}
+                        onChange={(e) => setCreditSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-md bg-[#030614] border border-white/10 text-white text-sm focus:outline-none focus:border-accent/50"
+                        data-testid="credits-search-input"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-white/50 text-xs">
+                    Manually credit (or revoke) an officer's account. Used for pilot rollouts, refunds, agency onboarding, or paid out-of-band.
+                  </p>
+
+                  <div className="rounded-lg bg-[#030614] border border-white/10 divide-y divide-white/5 max-h-[480px] overflow-y-auto" data-testid="credits-officer-list">
+                    {allOfficers
+                      .filter((o) => {
+                        if (!creditSearch) return true;
+                        const q = creditSearch.toLowerCase();
+                        return (o.officer_id || '').toLowerCase().includes(q)
+                          || (o.name || '').toLowerCase().includes(q)
+                          || (o.department || '').toLowerCase().includes(q);
+                      })
+                      .map((o) => {
+                        const input = grantInputs[o.officer_id] || { amount: '', reason: '' };
+                        const updateInput = (patch) =>
+                          setGrantInputs((prev) => ({ ...prev, [o.officer_id]: { ...input, ...patch } }));
+                        return (
+                          <div key={o.officer_id} className="px-4 py-3" data-testid={`grant-row-${o.officer_id}`}>
+                            <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                              <div>
+                                <p className="text-white font-medium">{o.name || o.officer_id}</p>
+                                <p className="text-white/40 text-xs font-mono">
+                                  {o.officer_id} · {o.department || '-'}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/30">
+                                <Zap size={12} className="text-accent" />
+                                <span className="text-accent font-bold" data-testid={`balance-${o.officer_id}`}>{o.credits ?? 0}</span>
+                                <span className="text-white/40 text-xs">credits</span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr_auto_auto] gap-2 items-center">
+                              <input
+                                type="number"
+                                placeholder="Amount"
+                                value={input.amount}
+                                onChange={(e) => updateInput({ amount: e.target.value })}
+                                className="px-3 py-2 rounded-md bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-accent/50"
+                                data-testid={`grant-amount-${o.officer_id}`}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Reason (e.g. pilot rollout)"
+                                value={input.reason}
+                                onChange={(e) => updateInput({ reason: e.target.value })}
+                                className="px-3 py-2 rounded-md bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-accent/50"
+                                data-testid={`grant-reason-${o.officer_id}`}
+                              />
+                              <button
+                                onClick={() => grantCredits(o.officer_id, 1)}
+                                className="px-3 py-2 rounded-md bg-success/15 border border-success/30 text-success hover:bg-success/25 text-sm flex items-center gap-1"
+                                data-testid={`grant-add-${o.officer_id}`}
+                              >
+                                <Plus size={14} /> Grant
+                              </button>
+                              <button
+                                onClick={() => grantCredits(o.officer_id, -1)}
+                                className="px-3 py-2 rounded-md bg-[#FF4655]/15 border border-[#FF4655]/30 text-[#FF4655] hover:bg-[#FF4655]/25 text-sm flex items-center gap-1"
+                                data-testid={`grant-revoke-${o.officer_id}`}
+                              >
+                                <Minus size={14} /> Revoke
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div className="rounded-lg bg-[#030614] border border-white/10 p-4" data-testid="credit-grants-history">
+                    <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
+                      <Clock size={14} /> Recent grants
+                    </h3>
+                    {creditGrants.length === 0 ? (
+                      <p className="text-white/40 text-sm">No grants yet.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {creditGrants.map((g, i) => (
+                          <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                            <div className="text-xs">
+                              <span className={g.amount >= 0 ? 'text-success' : 'text-[#FF4655]'}>
+                                {g.amount >= 0 ? '+' : ''}{g.amount}
+                              </span>
+                              <span className="text-white/60"> → {g.officer_name || g.officer_id}</span>
+                              {g.reason && <span className="text-white/40"> · "{g.reason}"</span>}
+                            </div>
+                            <div className="text-white/40 text-xs">
+                              by {g.granted_by} · {new Date(g.granted_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>

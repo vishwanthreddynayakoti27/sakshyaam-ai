@@ -23,6 +23,8 @@ import CCTNSBridge from './pages/CCTNSBridge';
 import RemandReport from './pages/RemandReport';
 import CDFFiller from './pages/CDFFiller';
 import AdminDashboard from './pages/AdminDashboard';
+import Credits from './pages/Credits';
+import CreditsSuccess from './pages/CreditsSuccess';
 import './App.css';
 
 function App() {
@@ -69,6 +71,9 @@ function App() {
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           {/* Admin */}
           <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          {/* Credits & Payments */}
+          <Route path="/credits" element={<ProtectedRoute><Credits /></ProtectedRoute>} />
+          <Route path="/credits/success" element={<ProtectedRoute><CreditsSuccess /></ProtectedRoute>} />
           {/* Redirects for old routes */}
           <Route path="/unified-pipeline" element={<Navigate to="/charge-sheet-fusion" replace />} />
         </Routes>

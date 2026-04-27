@@ -29,6 +29,7 @@ const Signup = ({ setIsAuthenticated }) => {
     password: ''
   });
   const [loading, setLoading] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,11 +37,20 @@ const Signup = ({ setIsAuthenticated }) => {
 
     try {
       const response = await auth.signup(formData);
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('officer', JSON.stringify(response.officer));
-      setIsAuthenticated(true);
-      toast.success('Account created successfully!');
-      navigate('/');
+      // New flow: account is queued for admin approval — no token issued.
+      if (response?.approval_status === 'PENDING') {
+        setPendingApproval(true);
+        toast.success('Registration submitted — pending admin approval');
+        return;
+      }
+      // Backwards-compatible (in case backend ever returns a token)
+      if (response?.token) {
+        localStorage.setItem('token', response.token);
+        localStorage.setItem('officer', JSON.stringify(response.officer));
+        setIsAuthenticated(true);
+        toast.success('Account created successfully!');
+        navigate('/');
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Signup failed');
     } finally {
@@ -56,6 +66,37 @@ const Signup = ({ setIsAuthenticated }) => {
         transition={{ duration: 0.6 }}
         className="w-full max-w-2xl px-6"
       >
+        {pendingApproval ? (
+          <div className="glassmorphism rounded-xl p-10 border border-accent/30 text-center" data-testid="pending-approval-card">
+            <div className="w-16 h-16 rounded-full bg-accent/15 border border-accent/40 flex items-center justify-center mx-auto mb-6">
+              <Shield className="w-8 h-8 text-accent" strokeWidth={1.5} />
+            </div>
+            <h1 className="text-3xl font-heading font-bold text-white mb-3">
+              Registration Submitted
+            </h1>
+            <p className="text-white/70 mb-2">
+              Officer ID: <span className="text-accent font-mono">{formData.officer_id}</span>
+            </p>
+            <div className="my-6 p-4 rounded-lg bg-[#FFB800]/10 border border-[#FFB800]/30 text-left">
+              <p className="text-[#FFB800] text-sm font-semibold mb-1">⏳ Pending admin approval</p>
+              <p className="text-white/70 text-sm">
+                Your account has been created but cannot be used until an administrator approves it.
+                Once approved, you will be granted <span className="text-accent font-semibold">20 free trial credits</span> to start using the platform.
+              </p>
+            </div>
+            <p className="text-white/50 text-xs mb-6">
+              Please contact your department admin if approval takes longer than expected.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="px-6 py-2.5 rounded-md bg-accent text-black font-semibold hover:bg-accent/90 transition"
+              data-testid="pending-approval-back-to-login"
+            >
+              Back to Login
+            </button>
+          </div>
+        ) : (
         <div className="glassmorphism rounded-xl p-8 border border-white/10">
           <div className="flex flex-col items-center mb-8">
             <Shield className="w-12 h-12 text-accent mb-3" strokeWidth={1.5} />
@@ -198,6 +239,7 @@ const Signup = ({ setIsAuthenticated }) => {
             </Link>
           </div>
         </div>
+        )}
       </motion.div>
     </div>
   );

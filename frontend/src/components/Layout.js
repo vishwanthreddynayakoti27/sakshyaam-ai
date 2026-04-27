@@ -21,7 +21,8 @@ import {
   Database,
   Activity,
   Shield,
-  Microscope
+  Microscope,
+  Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -181,6 +182,19 @@ const Layout = ({ children }) => {
           </nav>
 
           <div className="p-3 border-t border-white/10 space-y-1">
+            {/* Buy Credits */}
+            <Link
+              to="/credits"
+              data-testid="sidebar-credits"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                location.pathname.startsWith('/credits')
+                  ? 'bg-accent/20 text-accent border border-accent/30'
+                  : 'text-white/70 hover:bg-white/5 hover:text-white border border-transparent'
+              }`}
+            >
+              <Zap size={18} strokeWidth={1.5} />
+              {sidebarOpen && <span className="font-medium text-sm">Buy Credits</span>}
+            </Link>
             {/* Admin Dashboard - only show if admin */}
             <Link
               to="/admin"
