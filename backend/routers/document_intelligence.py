@@ -29,7 +29,7 @@ security = HTTPBearer()
 
 # Database connection
 db = None
-JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
+JWT_SECRET = os.environ['JWT_SECRET']
 
 def set_database(database):
     global db

@@ -23,7 +23,7 @@ security = HTTPBearer()
 # Database connection (will be set by main app)
 db = None
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
+JWT_SECRET = os.environ['JWT_SECRET']
 
 # Local storage for evidence files
 EVIDENCE_STORAGE_PATH = "/app/backend/evidence_files"

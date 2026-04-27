@@ -25,7 +25,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
+JWT_SECRET = os.environ['JWT_SECRET']
 GOOGLE_VISION_CREDENTIALS = os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
 GOOGLE_TRANSLATE_CREDENTIALS = os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')
 GOOGLE_SPEECH_CREDENTIALS = os.environ.get('GOOGLE_SPEECH_CREDENTIALS', '')
@@ -2479,6 +2479,159 @@ async def get_cdr_records(
 ):
     records = await db.cdr_records.find({"officer_id": officer_id, "case_id": case_id}, {"_id": 0}).to_list(5000)
     return {"records": records, "count": len(records)}
+
+
+@api_router.get("/cdr/imei-linkage/{case_id}")
+async def cdr_imei_linkage(
+    case_id: str,
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    IMEI Identity Linkage — group all phone numbers seen on the same IMEI device.
+    Critical for SIM-swap detection: one device used with multiple SIMs is a strong
+    investigative signal for cyber-crime / organised offenders.
+    Returns linkages sorted by suspicion score (number of distinct SIMs per device).
+    """
+    pipeline = [
+        {"$match": {
+            "officer_id": officer_id,
+            "case_id": case_id,
+            "imei": {"$nin": ["", None]},
+            "phone_number": {"$nin": ["", None]},
+        }},
+        {"$group": {
+            "_id": "$imei",
+            "phones": {"$addToSet": "$phone_number"},
+            "called_phones": {"$addToSet": "$called_number"},
+            "locations": {"$addToSet": "$location"},
+            "first_seen": {"$min": "$datetime_str"},
+            "last_seen": {"$max": "$datetime_str"},
+            "call_count": {"$sum": 1},
+        }},
+        {"$project": {
+            "_id": 0,
+            "imei": "$_id",
+            "phones": 1,
+            "called_phones": 1,
+            "locations": 1,
+            "first_seen": 1,
+            "last_seen": 1,
+            "call_count": 1,
+            "distinct_sims": {"$size": "$phones"},
+        }},
+        {"$sort": {"distinct_sims": -1, "call_count": -1}},
+    ]
+    raw = await db.cdr_records.aggregate(pipeline).to_list(500)
+    linkages = []
+    for row in raw:
+        sims = row.get("distinct_sims", 0)
+        # Suspicion: 1 SIM = normal, 2 = potential dual-SIM phone, 3+ = SIM swapping
+        if sims >= 3:
+            risk = "HIGH"
+        elif sims == 2:
+            risk = "MEDIUM"
+        else:
+            risk = "LOW"
+        linkages.append({
+            "imei": row["imei"],
+            "distinct_sims": sims,
+            "phones": [p for p in (row.get("phones") or []) if p],
+            "called_phones": [p for p in (row.get("called_phones") or []) if p][:20],
+            "locations": [loc for loc in (row.get("locations") or []) if loc][:10],
+            "first_seen": row.get("first_seen"),
+            "last_seen": row.get("last_seen"),
+            "call_count": row.get("call_count", 0),
+            "suspicion": risk,
+        })
+    high_risk = sum(1 for entry in linkages if entry["suspicion"] == "HIGH")
+    return {
+        "case_id": case_id,
+        "total_devices": len(linkages),
+        "high_risk_devices": high_risk,
+        "linkages": linkages,
+    }
+
+
+@api_router.get("/cdr/location-map/{case_id}")
+async def cdr_location_map(
+    case_id: str,
+    phone: Optional[str] = None,
+    imei: Optional[str] = None,
+    officer_id: str = Depends(get_current_officer)
+):
+    """
+    Location Mapping — aggregate tower / location frequency per phone or IMEI.
+    Optional `phone` or `imei` filter narrows down to a specific subject's movement.
+    Returns hot-spots sorted by visit frequency, plus first/last-seen timestamps
+    for each (phone/imei, location, tower_id) combination — enabling movement
+    pattern reconstruction.
+    """
+    match: Dict[str, Any] = {
+        "officer_id": officer_id,
+        "case_id": case_id,
+        "location": {"$nin": ["", None]},
+    }
+    if phone:
+        match["phone_number"] = phone
+    if imei:
+        match["imei"] = imei
+
+    pipeline = [
+        {"$match": match},
+        {"$group": {
+            "_id": {
+                "phone": "$phone_number",
+                "imei": "$imei",
+                "tower_id": "$tower_id",
+                "location": "$location",
+            },
+            "visit_count": {"$sum": 1},
+            "first_seen": {"$min": "$datetime_str"},
+            "last_seen": {"$max": "$datetime_str"},
+        }},
+        {"$project": {
+            "_id": 0,
+            "phone": "$_id.phone",
+            "imei": "$_id.imei",
+            "tower_id": "$_id.tower_id",
+            "location": "$_id.location",
+            "visit_count": 1,
+            "first_seen": 1,
+            "last_seen": 1,
+        }},
+        {"$sort": {"visit_count": -1}},
+        {"$limit": 500},
+    ]
+    points = await db.cdr_records.aggregate(pipeline).to_list(500)
+
+    # Hotspot summary (location-only)
+    hotspot_pipeline = [
+        {"$match": match},
+        {"$group": {
+            "_id": "$location",
+            "visit_count": {"$sum": 1},
+            "distinct_phones": {"$addToSet": "$phone_number"},
+            "distinct_towers": {"$addToSet": "$tower_id"},
+        }},
+        {"$project": {
+            "_id": 0,
+            "location": "$_id",
+            "visit_count": 1,
+            "distinct_phones_count": {"$size": "$distinct_phones"},
+            "distinct_towers_count": {"$size": "$distinct_towers"},
+        }},
+        {"$sort": {"visit_count": -1}},
+        {"$limit": 20},
+    ]
+    hotspots = await db.cdr_records.aggregate(hotspot_pipeline).to_list(20)
+
+    return {
+        "case_id": case_id,
+        "filter": {"phone": phone, "imei": imei},
+        "total_points": len(points),
+        "hotspots": hotspots,
+        "points": points,
+    }
 
 
 @api_router.post("/forensic/analyze", response_model=ForensicAnalysisResponse)

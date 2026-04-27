@@ -38,7 +38,7 @@ security = HTTPBearer()
 # Database connection (will be set by main app)
 db = None
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'nyaya-prahari-secret-key-2025-secure')
+JWT_SECRET = os.environ['JWT_SECRET']
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 GOOGLE_VISION_CREDENTIALS = os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
 GOOGLE_TRANSLATE_CREDENTIALS = os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')

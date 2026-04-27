@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, Upload, Search, Filter, BarChart3, MapPin, Clock, Users, Hash } from 'lucide-react';
+import { Phone, Upload, Search, Filter, BarChart3, MapPin, Clock, Users, Hash, Smartphone, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -18,6 +18,12 @@ const CDRAnalyzer = () => {
   const [columnsDetected, setColumnsDetected] = useState([]);
   const [recordsCount, setRecordsCount] = useState(0);
   const [searchResults, setSearchResults] = useState(null);
+  const [imeiLinkage, setImeiLinkage] = useState(null);
+  const [locationMap, setLocationMap] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [showImeiSection, setShowImeiSection] = useState(true);
+  const [showLocationSection, setShowLocationSection] = useState(true);
+  const [locationFilter, setLocationFilter] = useState({ phone: '', imei: '' });
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
@@ -57,6 +63,8 @@ const CDRAnalyzer = () => {
         setColumnsDetected(data.columns_detected || []);
         setRecordsCount(data.records_processed || 0);
         toast.success(`CDR parsed! ${data.records_processed} records analyzed`);
+        // Auto-load IMEI linkage + location map for this case
+        loadAdvancedAnalytics(caseId);
       } else {
         toast.info(data.message || 'CDR uploaded');
       }
@@ -131,6 +139,42 @@ const CDRAnalyzer = () => {
     setSearchResults(null);
     setSearchTerm('');
     setNameSearchTerm('');
+  };
+
+  const loadAdvancedAnalytics = async (cid) => {
+    if (!cid) return;
+    setAnalyticsLoading(true);
+    try {
+      const [linkRes, locRes] = await Promise.all([
+        api.get(`/cdr/imei-linkage/${cid}`),
+        api.get(`/cdr/location-map/${cid}`),
+      ]);
+      setImeiLinkage(linkRes.data || linkRes);
+      setLocationMap(locRes.data || locRes);
+    } catch (err) {
+      console.error('Advanced analytics failed:', err);
+      toast.error('Failed to load IMEI / location analytics');
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  const refreshLocationMap = async () => {
+    if (!caseId) return;
+    setAnalyticsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (locationFilter.phone) params.append('phone', locationFilter.phone);
+      if (locationFilter.imei) params.append('imei', locationFilter.imei);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await api.get(`/cdr/location-map/${caseId}${qs}`);
+      setLocationMap(res.data || res);
+      toast.success('Location map refreshed');
+    } catch (err) {
+      toast.error('Filter failed');
+    } finally {
+      setAnalyticsLoading(false);
+    }
   };
 
   return (
@@ -432,6 +476,197 @@ const CDRAnalyzer = () => {
             </div>
           )}
         </motion.div>
+
+        {/* IMEI Identity Linkage */}
+        {(imeiLinkage || analyticsLoading) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-6 glassmorphism rounded-xl p-6 border border-white/10"
+            data-testid="imei-linkage-section"
+          >
+            <button
+              onClick={() => setShowImeiSection(!showImeiSection)}
+              className="w-full flex items-center justify-between mb-4"
+              data-testid="toggle-imei-section"
+            >
+              <h3 className="text-xl font-heading font-bold text-white flex items-center gap-2">
+                <Smartphone size={20} className="text-accent" />
+                IMEI Identity Linkage
+                {imeiLinkage?.high_risk_devices > 0 && (
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FF4655]/15 text-[#FF4655] border border-[#FF4655]/30">
+                    <AlertTriangle size={10} /> {imeiLinkage.high_risk_devices} HIGH-risk
+                  </span>
+                )}
+              </h3>
+              {showImeiSection ? <ChevronUp size={18} className="text-white/50" /> : <ChevronDown size={18} className="text-white/50" />}
+            </button>
+
+            {showImeiSection && (
+              <>
+                <p className="text-white/50 text-xs mb-4">
+                  Detects SIM-swapping: a single IMEI used with multiple phone numbers (3+ SIMs ⇒ HIGH suspicion).
+                </p>
+                {analyticsLoading && !imeiLinkage && (
+                  <p className="text-white/40 text-sm">Analyzing devices…</p>
+                )}
+                {imeiLinkage?.linkages?.length === 0 && (
+                  <p className="text-white/50 text-sm">No IMEI data found in this CDR. Upload data with an IMEI column to enable device linkage.</p>
+                )}
+                {imeiLinkage?.linkages?.length > 0 && (
+                  <div className="space-y-2 max-h-96 overflow-y-auto" data-testid="imei-linkage-list">
+                    {imeiLinkage.linkages.map((dev, i) => {
+                      const riskColor = dev.suspicion === 'HIGH' ? 'text-[#FF4655] border-[#FF4655]/40 bg-[#FF4655]/5'
+                        : dev.suspicion === 'MEDIUM' ? 'text-[#FFB800] border-[#FFB800]/40 bg-[#FFB800]/5'
+                        : 'text-[#00FFB3] border-[#00FFB3]/30 bg-[#00FFB3]/5';
+                      return (
+                        <div key={i} className={`p-3 rounded-lg border ${riskColor}`} data-testid={`imei-row-${i}`}>
+                          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                            <span className="font-mono text-sm text-white">{dev.imei}</span>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="px-2 py-0.5 rounded-full font-semibold border border-current">
+                                {dev.suspicion}
+                              </span>
+                              <span className="text-white/60">{dev.distinct_sims} SIM{dev.distinct_sims !== 1 ? 's' : ''}</span>
+                              <span className="text-white/50">·</span>
+                              <span className="text-white/60">{dev.call_count} calls</span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-white/70 space-y-1">
+                            <div>
+                              <span className="text-white/40">Phones: </span>
+                              <span className="font-mono">{dev.phones.join(', ')}</span>
+                            </div>
+                            {dev.locations?.length > 0 && (
+                              <div>
+                                <span className="text-white/40">Seen in: </span>
+                                <span>{dev.locations.slice(0, 5).join(', ')}{dev.locations.length > 5 ? '…' : ''}</span>
+                              </div>
+                            )}
+                            {(dev.first_seen || dev.last_seen) && (
+                              <div className="text-white/40">
+                                {dev.first_seen} → {dev.last_seen}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </motion.div>
+        )}
+
+        {/* Location Mapping */}
+        {(locationMap || analyticsLoading) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="mt-6 glassmorphism rounded-xl p-6 border border-white/10"
+            data-testid="location-map-section"
+          >
+            <button
+              onClick={() => setShowLocationSection(!showLocationSection)}
+              className="w-full flex items-center justify-between mb-4"
+              data-testid="toggle-location-section"
+            >
+              <h3 className="text-xl font-heading font-bold text-white flex items-center gap-2">
+                <MapPin size={20} className="text-success" />
+                Location Mapping & Movement Patterns
+              </h3>
+              {showLocationSection ? <ChevronUp size={18} className="text-white/50" /> : <ChevronDown size={18} className="text-white/50" />}
+            </button>
+
+            {showLocationSection && (
+              <>
+                <p className="text-white/50 text-xs mb-4">
+                  Aggregates tower / location frequency and reconstructs movement timelines. Filter by a specific phone or IMEI to track one subject.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                  <Input
+                    placeholder="Filter by phone…"
+                    value={locationFilter.phone}
+                    onChange={(e) => setLocationFilter({ ...locationFilter, phone: e.target.value })}
+                    className="bg-white/5 border-white/10 text-white"
+                    data-testid="location-filter-phone"
+                  />
+                  <Input
+                    placeholder="Filter by IMEI…"
+                    value={locationFilter.imei}
+                    onChange={(e) => setLocationFilter({ ...locationFilter, imei: e.target.value })}
+                    className="bg-white/5 border-white/10 text-white"
+                    data-testid="location-filter-imei"
+                  />
+                  <Button
+                    onClick={refreshLocationMap}
+                    className="bg-accent text-black hover:bg-accent/90"
+                    data-testid="apply-location-filter"
+                  >
+                    Apply Filter
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                      <BarChart3 size={16} className="text-success" />
+                      Top Hotspots ({locationMap?.hotspots?.length || 0})
+                    </h4>
+                    <div className="space-y-2 max-h-64 overflow-y-auto" data-testid="hotspots-list">
+                      {locationMap?.hotspots?.length > 0 ? locationMap.hotspots.map((h, i) => (
+                        <div key={i} className="p-2 bg-white/5 rounded border border-white/10">
+                          <div className="flex items-center justify-between">
+                            <span className="text-white text-sm">{h.location}</span>
+                            <span className="text-success font-bold text-sm">{h.visit_count}×</span>
+                          </div>
+                          <div className="text-xs text-white/40 mt-1">
+                            {h.distinct_phones_count} phone{h.distinct_phones_count !== 1 ? 's' : ''} · {h.distinct_towers_count} tower{h.distinct_towers_count !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                      )) : (
+                        <p className="text-white/50 text-sm">No location data found.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                      <Clock size={16} className="text-accent" />
+                      Movement Timeline ({locationMap?.total_points || 0} points)
+                    </h4>
+                    <div className="space-y-2 max-h-64 overflow-y-auto" data-testid="movement-points">
+                      {locationMap?.points?.slice(0, 30).map((p, i) => (
+                        <div key={i} className="p-2 bg-white/5 rounded border border-white/10 text-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-mono text-white">{p.phone || '—'}</span>
+                            <span className="text-accent">{p.visit_count}×</span>
+                          </div>
+                          <div className="text-white/60">
+                            <MapPin size={10} className="inline mr-1" />{p.location}
+                            {p.tower_id && <span className="text-white/40"> · Tower {p.tower_id}</span>}
+                          </div>
+                          {(p.first_seen || p.last_seen) && (
+                            <div className="text-white/40 mt-0.5">
+                              {p.first_seen} → {p.last_seen}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {(!locationMap?.points || locationMap.points.length === 0) && (
+                        <p className="text-white/50 text-sm">No movement points found.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </motion.div>
+        )}
       </div>
     </Layout>
   );

@@ -149,6 +149,17 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
 
+### 2026-04-27: IMEI Identity Linkage + Location Mapping (CDR Analyzer)
+- ✅ New endpoint `GET /api/cdr/imei-linkage/{case_id}` — MongoDB aggregation groups all phone numbers used per IMEI; flags **HIGH suspicion** for 3+ distinct SIMs (SIM-swap pattern), MEDIUM for 2 SIMs, LOW for 1
+- ✅ New endpoint `GET /api/cdr/location-map/{case_id}?phone=&imei=` — aggregates tower/location frequency with first/last-seen timestamps; supports phone or IMEI filter for per-subject movement reconstruction; returns hotspot summary + detailed points
+- ✅ Frontend `CDRAnalyzer.js`: two new collapsible sections (IMEI Linkage + Location Mapping) auto-loaded after upload; risk badges (HIGH=red, MEDIUM=amber, LOW=green); phone/IMEI filter UI with Apply button; movement timeline with first→last seen
+- ✅ Test suite `/app/backend/tests/test_imei_linkage.py` — seeds 8 records across 3 IMEIs, verifies 1 HIGH/1 MEDIUM/1 LOW classification, hotspot counts (Mumbai 2 phones), and IMEI-filter + phone-filter both working — **6/6 assertions pass**
+
+### 2026-04-27: GitHub Push Hardening — Removed Hardcoded JWT Fallback
+- ✅ Removed hardcoded `JWT_SECRET` fallback string `'nyaya-prahari-secret-key-2025-secure'` from 7 files (`server.py` + 6 routers); now `JWT_SECRET = os.environ['JWT_SECRET']` (fails fast if missing)
+- ✅ Unblocks GitHub "Save to Github" feature which detected the embedded secret
+- ✅ Verified login still works post-change
+
 ### 2026-04-27: Encrypted Translation/Petition Cache (At-Rest Encryption)
 - ✅ Petition/complaint translation + entity-extraction results cached in MongoDB `document_cache` collection are now **encrypted at rest** with AES-128-CBC + HMAC-SHA256 (Fernet)
 - ✅ Per-record Data Encryption Key derived via **HKDF-SHA256** from a master `CACHE_ENCRYPTION_KEY` env var + 16-byte random salt; leaking one record's key cannot decrypt others
