@@ -149,6 +149,30 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
 
+### 2026-04-27: Credit & Payment System (Stripe + Approval Gate + Manual Grant)
+- ✅ **Officer model**: added `credits:int=0`, `approval_status: PENDING|APPROVED|REJECTED` (default PENDING for new signups). Startup backfill marks all pre-existing officers APPROVED so live users aren't locked out
+- ✅ **Approval gate on /auth/login**: PENDING → 403 with "pending admin approval" detail; REJECTED → 403 with "rejected" detail
+- ✅ **Signup flow rewritten**: /auth/signup no longer issues a token — returns `{approval_status:"PENDING", officer_id, message}`. Frontend Signup.js renders a "Pending Admin Approval" card (`pending-approval-card`) with Back-to-Login button, no auto-login
+- ✅ **20 free trial credits** granted on first admin approval (idempotent — `trial_granted` flag prevents double-grant on re-approve)
+- ✅ **Stripe Checkout integration** via emergentintegrations:
+  - `GET /api/credits/packs` (public): 3 packs (starter ₹499/100cr, pro ₹1999/500cr, agency ₹6999/2000cr) + custom config (₹5/credit, 50–10000 range)
+  - `POST /api/payments/checkout`: server-side amount/credit resolution (frontend cannot tamper); creates Stripe session + persists `payment_transactions` row with `credits_applied:false`
+  - `GET /api/payments/status/{session_id}`: polled by success page; applies credits exactly once via atomic `credits_applied:false → true` guard
+  - `POST /api/webhook/stripe`: idempotent webhook with same atomic guard
+  - `GET /api/payments/history`: user's own transactions
+- ✅ **Admin manual credit grant**: `POST /api/admin/grant-credits/{officer_id}` (positive=grant, negative=revoke) with reason; full audit trail in `credit_grants` collection. Guard: revokes that would push balance negative are rejected with 400. Non-admins blocked with 403. `GET /api/admin/credit-grants` lists history
+- ✅ **Balance-floor guard** added to all credit-consuming endpoints (Triple Fusion 5cr, Intelligent Charge Sheet 3cr, Intelligent Case Diary 2cr): pre-check returns 402 with friendly "Insufficient credits — Buy more at /credits" before any deduction
+- ✅ **Frontend new pages**:
+  - `/credits` — current balance card, 3 pack cards (Most-popular badge on Pro), custom amount with live ₹ calculation, payment history
+  - `/credits/success` — polls /payments/status with 8 attempts × 2s timeout; shows +N credits added or failure card
+  - Sidebar "Buy Credits" link visible on every Layout page
+  - Admin Dashboard new "Grant Credits" tab — officer list with current balance + amount/reason inputs + Grant/Revoke buttons + recent grants ledger with admin attribution
+- ✅ **Tests** (3 new test files):
+  - `test_credits_payments.py` — 14/14 pass (signup approval gate, login block, trial grant, packs, real Stripe checkout session, custom price tampering, manual grant, revoke guard, audit ledger, RBAC, REJECTED login)
+  - `test_credit_balance_gate.py` — 3/3 pass (insufficient-credit 402 on charge sheet + case diary; gate clears at exact threshold)
+- ✅ **Backfill**: 2 officers with pre-existing negative credit balances (from before the gate) reset to 0
+- ✅ E2E verified by testing agent (iteration 16): backend 14/14 + frontend 14/14 — real Stripe checkout redirect confirmed working end-to-end
+
 ### 2026-04-27: IMEI Identity Linkage + Location Mapping (CDR Analyzer)
 - ✅ New endpoint `GET /api/cdr/imei-linkage/{case_id}` — MongoDB aggregation groups all phone numbers used per IMEI; flags **HIGH suspicion** for 3+ distinct SIMs (SIM-swap pattern), MEDIUM for 2 SIMs, LOW for 1
 - ✅ New endpoint `GET /api/cdr/location-map/{case_id}?phone=&imei=` — aggregates tower/location frequency with first/last-seen timestamps; supports phone or IMEI filter for per-subject movement reconstruction; returns hotspot summary + detailed points

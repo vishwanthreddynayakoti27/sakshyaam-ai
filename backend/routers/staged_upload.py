@@ -405,6 +405,21 @@ async def generate_triple_fusion(
     if not metadata.get("files"):
         raise HTTPException(status_code=400, detail="No files staged for fusion")
 
+    # Credit balance pre-check (idempotent: cached fusions cost 0 and skip this)
+    if db is not None:
+        cached = await db.triple_fusions.find_one(
+            {"case_id": case_id, "officer_id": officer_id, "status": "completed"},
+            {"_id": 0, "status": 1}
+        )
+        if not cached:
+            officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
+            current = int((officer_doc or {}).get("credits", 0) or 0)
+            if current < 5:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Insufficient credits — Triple Fusion costs 5 credits, you have {current}. Buy more at /credits.",
+                )
+
     # Fast path: return cached fusion if already completed
     if db is not None:
         existing_fusion = await db.triple_fusions.find_one(
@@ -869,6 +884,15 @@ async def generate_intelligent_charge_sheet_endpoint(
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
+    # Credit balance pre-check
+    officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
+    current = int((officer_doc or {}).get("credits", 0) or 0)
+    if current < credits_to_deduct:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient credits — Intelligent Charge Sheet costs {credits_to_deduct} credits, you have {current}. Buy more at /credits.",
+        )
+
     existing = await db.triple_fusions.find_one(
         {"case_id": case_id, "officer_id": officer_id},
         {"_id": 0}
@@ -1020,6 +1044,15 @@ async def generate_intelligent_case_diary_endpoint(
 
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Credit balance pre-check
+    officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
+    current = int((officer_doc or {}).get("credits", 0) or 0)
+    if current < credits_to_deduct:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient credits — Intelligent Case Diary costs {credits_to_deduct} credits, you have {current}. Buy more at /credits.",
+        )
 
     ics = await db.intelligent_chargesheets.find_one(
         {"case_id": case_id, "officer_id": officer_id},
