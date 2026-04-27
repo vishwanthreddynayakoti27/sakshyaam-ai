@@ -149,6 +149,17 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
 
+### 2026-04-27: Encrypted Translation/Petition Cache (At-Rest Encryption)
+- ✅ Petition/complaint translation + entity-extraction results cached in MongoDB `document_cache` collection are now **encrypted at rest** with AES-128-CBC + HMAC-SHA256 (Fernet)
+- ✅ Per-record Data Encryption Key derived via **HKDF-SHA256** from a master `CACHE_ENCRYPTION_KEY` env var + 16-byte random salt; leaking one record's key cannot decrypt others
+- ✅ New service `/app/backend/services/cache_crypto.py` with `encrypt_payload()` / `decrypt_payload()` / `encryption_enabled()`
+- ✅ Updated `document_cache.py`: `set_cached_result` writes `cached_data_enc={v:1, salt, ct}`, drops legacy plaintext fields via `$unset`; `get_cached_result` decrypts at read time, falls back to plaintext for legacy records
+- ✅ Tampered ciphertext → HMAC integrity check fails → record treated as cache miss (no silent corruption)
+- ✅ `GET /api/admin/cache-stats` now exposes `encryption_enabled` + `encryption_algorithm`
+- ✅ Admin Dashboard "Document Cache" card shows green "🔒 Encrypted at rest" badge (or red warning if key missing)
+- ✅ Test suite `/app/backend/tests/test_cache_encryption.py` verifies: (1) no plaintext leakage of names/locations/translations in MongoDB, (2) MISS→SET→HIT round-trip, (3) tamper rejection, (4) stats expose flag — **6/6 checks pass**
+- ✅ Master key `CACHE_ENCRYPTION_KEY` (Fernet 256-bit URL-safe base64) added to `backend/.env`
+
 ### 2026-04-19: Intelligent Case Diary Part-I Generator
 - ✅ New service `/app/backend/services/intelligent_case_diary.py` — takes the already-corrected ICGS JSON as input, composes chronological IO investigation log via Claude Sonnet 4.5
 - ✅ System prompt enforces 3rd-person station style, date-ordered entries: FIR registration → scene panchanama + rough sketch + S.180 BNSS statements → medical examination + wound certificate → 35(3) BNSS notice → accused appearance + address proof + release → charge sheet filing

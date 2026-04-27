@@ -16,6 +16,8 @@ from typing import Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 
+from services.cache_crypto import encrypt_payload, decrypt_payload, encryption_enabled
+
 logger = logging.getLogger(__name__)
 
 # Database connection
@@ -68,6 +70,18 @@ async def get_cached_result(text: str, operation: str = "translation") -> Option
                 }
             )
             logger.info(f"Cache HIT for {operation}: {cache_key}")
+            # Decrypt payload at read time
+            encrypted_blob = result.get("cached_data_enc")
+            if encrypted_blob is not None:
+                decrypted = decrypt_payload(encrypted_blob)
+                if decrypted is None:
+                    logger.error(f"Cache decryption failed for {cache_key} — treating as miss")
+                    return None
+                # The envelope wraps {cached_data, text_preview, metadata}
+                if isinstance(decrypted, dict) and "cached_data" in decrypted:
+                    return decrypted["cached_data"]
+                return decrypted
+            # Legacy unencrypted records (pre-encryption rollout)
             return result.get("cached_data")
         
         logger.info(f"Cache MISS for {operation}: {cache_key}")
@@ -106,10 +120,14 @@ async def set_cached_result(
             "cache_key": cache_key,
             "operation": operation,
             "text_length": len(text),
-            "text_preview": text[:200] + "..." if len(text) > 200 else text,
+            # Encrypt sensitive plaintext fields together
+            "cached_data_enc": encrypt_payload({
+                "cached_data": result_data,
+                "text_preview": text[:200] + "..." if len(text) > 200 else text,
+                "metadata": metadata or {},
+            }),
+            "encrypted": encryption_enabled(),
             "source_language": source_language,
-            "cached_data": result_data,
-            "metadata": metadata or {},
             "hit_count": 0,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_accessed": datetime.now(timezone.utc).isoformat()
@@ -117,7 +135,11 @@ async def set_cached_result(
         
         await db.document_cache.update_one(
             {"cache_key": cache_key},
-            {"$set": cache_entry},
+            {
+                "$set": cache_entry,
+                # Drop any legacy plaintext fields from older records
+                "$unset": {"cached_data": "", "text_preview": "", "metadata": ""},
+            },
             upsert=True
         )
         
@@ -155,7 +177,9 @@ async def get_cache_stats() -> Dict[str, Any]:
             "total_entries": total_entries,
             "by_operation": {op["_id"]: {"count": op["count"], "hits": op["total_hits"]} for op in by_operation},
             "total_cache_hits": total_hits,
-            "estimated_cost_savings_usd": round(estimated_savings, 2)
+            "estimated_cost_savings_usd": round(estimated_savings, 2),
+            "encryption_enabled": encryption_enabled(),
+            "encryption_algorithm": "AES-128-CBC + HMAC-SHA256 (Fernet) with HKDF-SHA256 per-record DEK" if encryption_enabled() else None
         }
         
     except Exception as e:

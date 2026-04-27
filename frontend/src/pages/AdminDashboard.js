@@ -625,9 +625,28 @@ const AdminDashboard = () => {
                     </div>
 
                     <div className="p-4 rounded-lg bg-[#030614] border border-white/10" data-testid="cache-stats-card">
-                      <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
-                        <Database size={14} /> Document Cache
-                      </h3>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                          <Database size={14} /> Document Cache
+                        </h3>
+                        {cacheStats?.encryption_enabled ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#00FFB3]/15 text-[#00FFB3] border border-[#00FFB3]/30"
+                            title={cacheStats?.encryption_algorithm || 'Encrypted at rest'}
+                            data-testid="cache-encryption-badge"
+                          >
+                            <Lock size={10} /> Encrypted at rest
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FF4655]/15 text-[#FF4655] border border-[#FF4655]/30"
+                            title="CACHE_ENCRYPTION_KEY not set"
+                            data-testid="cache-encryption-badge"
+                          >
+                            <Lock size={10} /> Plaintext (set CACHE_ENCRYPTION_KEY)
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <p className="text-white/40 text-xs">Total Entries</p>
