@@ -18,7 +18,8 @@ import {
   Database,
   Camera,
   Microscope,
-  User
+  User,
+  Zap
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -28,7 +29,7 @@ const BACKGROUND_IMAGE = "https://customer-assets.emergentagent.com/job_nyaya-pr
 const Dashboard = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [officer, setOfficer] = useState({ name: 'Officer', role: 'Sub-Inspector', station: 'Cyber Cell' });
+  const [officer, setOfficer] = useState({ name: 'Officer', role: 'Sub-Inspector', station: 'Cyber Cell', credits: null });
 
   useEffect(() => {
     const storedOfficer = localStorage.getItem('officer');
@@ -37,9 +38,23 @@ const Dashboard = () => {
       setOfficer({
         name: data.name || 'Officer',
         role: data.rank || 'Sub-Inspector',
-        station: data.district || 'Cyber Cell'
+        station: data.district || 'Cyber Cell',
+        credits: typeof data.credits === 'number' ? data.credits : null,
       });
     }
+    // Refresh credit balance from server so the dashboard is always accurate
+    import('../utils/api').then(({ api }) => {
+      api.get('/auth/profile')
+        .then((res) => {
+          const d = res.data || res;
+          setOfficer((prev) => ({ ...prev, credits: typeof d.credits === 'number' ? d.credits : prev.credits }));
+          try {
+            const merged = { ...(JSON.parse(localStorage.getItem('officer') || '{}')), ...d };
+            localStorage.setItem('officer', JSON.stringify(merged));
+          } catch (e) { /* ignore */ }
+        })
+        .catch(() => {});
+    });
   }, []);
 
   // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
@@ -73,19 +88,35 @@ const Dashboard = () => {
     <div className="h-screen overflow-hidden relative bg-[#030614]" data-testid="dashboard">
       {/* System Status Warning Bar at TOP */}
       <div className="relative z-20 bg-gradient-to-r from-[#FFB800]/20 via-[#FF3B3B]/20 to-[#FFB800]/20 border-b border-[#FFB800]/50">
-        <div className="max-w-[1800px] mx-auto px-4 py-1.5 flex items-center justify-center gap-4">
-          <AlertTriangle className="text-[#FFB800] animate-pulse" size={16} />
-          <div className="flex items-center gap-4 text-xs">
-            <span className="text-[#FFB800] font-bold">System Status:</span>
-            <span className="text-white/80">Pre-CCTNS Intelligence System</span>
-            <span className="text-white/40">|</span>
-            <span className="text-white/80">BNS 2023 & BSA Sec. 63 Compliant</span>
-            <span className="text-white/40">|</span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#00FFB3] animate-pulse"></span>
-              <span className="text-[#00FFB3] font-semibold">All Systems Online</span>
-            </span>
+        <div className="max-w-[1800px] mx-auto px-4 py-1.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <AlertTriangle className="text-[#FFB800] animate-pulse" size={16} />
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-[#FFB800] font-bold">System Status:</span>
+              <span className="text-white/80">Pre-CCTNS Intelligence System</span>
+              <span className="text-white/40 hidden md:inline">|</span>
+              <span className="text-white/80 hidden md:inline">BNS 2023 & BSA Sec. 63 Compliant</span>
+              <span className="text-white/40 hidden md:inline">|</span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#00FFB3] animate-pulse"></span>
+                <span className="text-[#00FFB3] font-semibold">All Systems Online</span>
+              </span>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/credits')}
+            data-testid="dashboard-buy-credits"
+            className="flex items-center gap-2 px-3 py-1 rounded-full bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 transition-all text-xs font-semibold shrink-0"
+            title="Buy more credits"
+          >
+            <Zap size={12} />
+            <span data-testid="dashboard-credit-balance">
+              {officer.credits === null ? '—' : officer.credits} credits
+            </span>
+            <span className="hidden sm:inline text-white/60 font-normal">·</span>
+            <span className="hidden sm:inline">Buy more</span>
+          </button>
         </div>
       </div>
 
