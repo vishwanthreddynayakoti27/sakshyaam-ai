@@ -298,7 +298,7 @@ Build a production-ready, highly modular backend document generation pipeline fo
   - Click-to-toggle phrase selection with up/down reordering and remove
   - Optional case-meta panel (FIR/PS/IO/Complainant/Accused/Sections/Occurrence/Custom intro)
   - Composed narration shown in editable Textarea with Copy-to-clipboard button
-- ✅ Sidebar nav item with `PenTool` icon + NEW badge, route `/narration-generator` (Layout component)
+- ✅ Sidebar nav item with `PenTool` icon + NEW badge, route `/narration-generator` (Layout component AND homepage Dashboard Command Center)
 - ✅ Backend tests: 9/9 in `/app/backend/tests/test_narration.py` (auth, categories, keyword search, compose, accused-names join, no-LLM determinism)
 
 ## In Progress / Pending

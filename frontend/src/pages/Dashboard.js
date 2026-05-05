@@ -19,7 +19,8 @@ import {
   Camera,
   Microscope,
   User,
-  Zap
+  Zap,
+  PenTool
 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 
@@ -60,6 +61,7 @@ const Dashboard = () => {
   // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
   const adminWing = [
     { icon: Workflow, title: 'Charge Sheet Fusion', path: '/charge-sheet-fusion', color: '#00C2FF', badge: 'NEW' },
+    { icon: PenTool, title: 'Narration Generator', path: '/narration-generator', color: '#FFB800', badge: 'NEW' },
     { icon: Shield, title: 'Remand Report', path: '/remand-report', color: '#FF3B3B', badge: 'NEW' },
     { icon: FileStack, title: 'CDF Filler', path: '/cdf-filler', color: '#FFB800', badge: 'NEW' },
     { icon: FileCheck, title: 'Document Generator', path: '/document-generator', color: '#4F7EFF' },
