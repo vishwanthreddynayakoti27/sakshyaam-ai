@@ -21,7 +21,45 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    
+
+    // Auto-report failures (≥500, network failures, 502/504 timeouts) to the
+    // Admin Issues log. Silent — never throws. Skips reporting auth-refresh
+    // and the report endpoint itself to avoid loops.
+    try {
+      const status = error.response?.status;
+      const url = (originalRequest?.url || '');
+      const isReportEndpoint = url.includes('/admin/log-frontend-error');
+      const isAuthRefresh = url.includes('/auth/login') && originalRequest?._retry;
+      const shouldReport =
+        !isReportEndpoint &&
+        !isAuthRefresh &&
+        (
+          !error.response ||                  // network/CORS failure
+          status === 502 || status === 503 || status === 504 ||
+          (status >= 500 && status < 600)     // any 5xx
+        );
+      if (shouldReport) {
+        const fullUrl = `${originalRequest?.method?.toUpperCase() || 'GET'} ${url}`;
+        const detail = error.response?.data?.detail
+          || error.message
+          || 'Request failed';
+        // fire-and-forget; don't await — must not block the rejection chain
+        axios.post(`${API}/admin/log-frontend-error`, {
+          error_type: status ? `HTTP_${status}` : 'NETWORK_FAILURE',
+          message: typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 500),
+          url: fullUrl,
+          component: 'axios',
+          status_code: status || null,
+          stack: (error.stack || '').slice(0, 4000),
+        }, {
+          headers: localStorage.getItem('token')
+            ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            : {},
+          timeout: 8000,
+        }).catch(() => { /* ignore — don't recurse */ });
+      }
+    } catch (_) { /* never throw from the interceptor */ }
+
     // If token expired (401) and we haven't retried yet
     if (error.response?.status === 401 && 
         (error.response?.data?.detail === 'Token expired' || error.response?.data?.detail === 'Invalid token') &&

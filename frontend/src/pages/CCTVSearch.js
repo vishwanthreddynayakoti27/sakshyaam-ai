@@ -115,11 +115,39 @@ const CCTVSearch = () => {
       formData.append('search_type', stype);
       formData.append('sample_interval', '1.5');
 
-      toast.info('Analyzing video frames with AI vision — this may take 30–60s for short clips…');
-      const response = await api.post('/cctv/analyze', formData, {
+      toast.info('Analyzing video frames with AI vision — this may take 30s–3 minutes for longer clips…');
+      const startResp = await api.post('/cctv/analyze', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 600000, // 10 minutes — real per-frame Gemini calls take time
+        timeout: 120000, // 2 minutes — only for the upload+enqueue
       });
+      const jobId = startResp.data?.job_id;
+      if (!jobId) throw new Error('No job_id returned from server');
+
+      // Poll for completion every 3 seconds (max 8 minutes)
+      const maxAttempts = 160;
+      let response = null;
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        let status;
+        try {
+          status = await api.get(`/cctv/analyze/status/${jobId}`);
+        } catch (pollErr) {
+          // Transient poll error — continue polling
+          continue;
+        }
+        const job = status.data || {};
+        if (job.status === 'completed') {
+          response = { data: job.result };
+          break;
+        }
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'Analysis failed on the server');
+        }
+        // still processing
+      }
+      if (!response) {
+        throw new Error('Analysis timed out after 8 minutes — try a shorter clip or larger sample interval');
+      }
 
       if (response.data.success) {
         // Map API results to our display format

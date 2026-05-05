@@ -114,8 +114,24 @@ const AdminDashboard = () => {
   const loadIssues = async () => {
     setLoading(true);
     try {
-      const response = await api.get('/admin/issues');
-      setIssues(response.data.issues || []);
+      const [issuesRes, feRes] = await Promise.all([
+        api.get('/admin/issues'),
+        api.get('/admin/frontend-errors?limit=50'),
+      ]);
+      const backendIssues = issuesRes.data.issues || [];
+      const frontendErrors = (feRes.data?.errors || []).map((e) => ({
+        timestamp: e.timestamp,
+        user: e.user,
+        action: `[FE] ${e.error_type}: ${e.message}`,
+        status: 'FAILED',
+        correlation_id: `FE-${e.id}`,
+        url: e.url,
+        is_frontend: true,
+      }));
+      const merged = [...backendIssues, ...frontendErrors].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      setIssues(merged);
     } catch (error) {
       toast.error('Failed to load issues');
     } finally {

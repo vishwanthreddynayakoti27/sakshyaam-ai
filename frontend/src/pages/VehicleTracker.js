@@ -66,12 +66,34 @@ const VehicleTracker = () => {
       fd.append('camera_metadata', JSON.stringify(meta));
       camsWithFiles.forEach((c) => fd.append('files', c.file));
 
-      toast.info(`Tracking ${plate} across ${camsWithFiles.length} camera${camsWithFiles.length > 1 ? 's' : ''}… per-frame AI analysis can take 30-90s.`);
-      const res = await api.post('/cctv/track-vehicle', fd, {
+      toast.info(`Tracking ${plate} across ${camsWithFiles.length} camera${camsWithFiles.length > 1 ? 's' : ''}… per-frame AI analysis can take 1-5 minutes.`);
+      const startRes = await api.post('/cctv/track-vehicle', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 600000,
+        timeout: 180000, // 3 minutes for the upload+enqueue
       });
-      const data = res.data || res;
+      const jobId = startRes.data?.job_id;
+      if (!jobId) throw new Error('No job_id returned from server');
+
+      // Poll for completion every 3 seconds (max 10 minutes)
+      let data = null;
+      for (let i = 0; i < 200; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const stat = await api.get(`/cctv/analyze/status/${jobId}`);
+          const job = stat.data || {};
+          if (job.status === 'completed') {
+            data = job.result;
+            break;
+          }
+          if (job.status === 'failed') {
+            throw new Error(job.error || 'Tracking failed on the server');
+          }
+        } catch (pollErr) {
+          if (pollErr.message?.includes('Tracking failed')) throw pollErr;
+          // transient — keep polling
+        }
+      }
+      if (!data) throw new Error('Tracking timed out after 10 minutes — try fewer cameras or shorter clips');
       setResult(data);
       if (data.total_sightings === 0) {
         toast.warning('No sightings of that plate in any uploaded camera. Try a coarser sample interval or check the plate spelling.');

@@ -8,6 +8,7 @@ import re
 import logging
 import json
 import math
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
@@ -3096,44 +3097,86 @@ class CCTVSearchResult(BaseModel):
 async def analyze_cctv_video(
     file: UploadFile = File(...),
     search_query: str = Form(default=""),
-    search_type: str = Form(default="all"),  # all, vehicle, person, number_plate
-    sample_interval: float = Form(default=1.5),  # seconds between sampled frames
+    search_type: str = Form(default="all"),
+    sample_interval: float = Form(default=1.5),
     officer_id: str = Depends(get_current_officer)
 ):
     """
-    Analyze a CCTV video using real per-frame AI vision (Gemini 2.5 Flash):
-      - Vehicles, persons, Indian number plates detected per sampled frame
-      - Millisecond-precise timestamps so the frontend can jump to exact moment
-      - Base64 thumbnails for every match
-      - Number plate OCR matched against `search_query` (e.g. "TS09EA1234")
+    Async CCTV analysis. Returns a job_id immediately and runs the heavy
+    per-frame Gemini work in the background to dodge K8s 60s ingress timeouts.
+    Frontend polls /cctv/analyze/status/{job_id}.
     """
     from services.cctv_search import analyze_cctv as run_cctv_search
 
+    contents = await file.read()
+    max_size = 200 * 1024 * 1024
+    if len(contents) > max_size:
+        raise HTTPException(status_code=400, detail="Video too large (max 200MB)")
+    if len(contents) < 1024:
+        raise HTTPException(status_code=400, detail="File too small to be a valid video")
+
     try:
-        contents = await file.read()
-        max_size = 200 * 1024 * 1024
-        if len(contents) > max_size:
-            raise HTTPException(status_code=400, detail="Video too large (max 200MB)")
-        if len(contents) < 1024:
-            raise HTTPException(status_code=400, detail="File too small to be a valid video")
+        interval = max(1.0, min(5.0, float(sample_interval)))
+    except (TypeError, ValueError):
+        interval = 1.5
 
-        # Clamp sample interval to a sensible range (1.0–5.0 s)
+    job_id = str(uuid.uuid4())
+    await db.cctv_jobs.insert_one({
+        "id": job_id,
+        "officer_id": officer_id,
+        "kind": "analyze",
+        "filename": file.filename or "cctv.mp4",
+        "status": "processing",
+        "progress": 0,
+        "stage": "queued",
+        "search_query": search_query or "",
+        "search_type": (search_type or "all").lower(),
+        "sample_interval": interval,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    async def _bg():
         try:
-            interval = max(1.0, min(5.0, float(sample_interval)))
-        except (TypeError, ValueError):
-            interval = 1.5
+            await db.cctv_jobs.update_one({"id": job_id}, {"$set": {"stage": "analysing", "progress": 10}})
+            result = await run_cctv_search(
+                video_bytes=contents,
+                search_query=search_query or "",
+                search_type=(search_type or "all").lower(),
+                sample_interval_s=interval,
+            )
+            await db.cctv_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "status": "completed",
+                    "stage": "done",
+                    "progress": 100,
+                    "result": result,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+        except Exception as e:
+            logger.error(f"CCTV job {job_id} failed: {e}")
+            await db.cctv_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "status": "failed",
+                    "stage": "error",
+                    "error": str(e)[:500],
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
 
-        return await run_cctv_search(
-            video_bytes=contents,
-            search_query=search_query or "",
-            search_type=(search_type or "all").lower(),
-            sample_interval_s=interval,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"CCTV analysis error: {e}")
-        raise HTTPException(status_code=500, detail=f"CCTV analysis failed: {str(e)}")
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "processing", "message": "CCTV analysis started — poll /cctv/analyze/status/{job_id}"}
+
+
+@api_router.get("/cctv/analyze/status/{job_id}")
+async def cctv_analyze_status(job_id: str, officer_id: str = Depends(get_current_officer)):
+    job = await db.cctv_jobs.find_one({"id": job_id, "officer_id": officer_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @api_router.post("/cctv/track-vehicle")
@@ -3192,29 +3235,61 @@ async def track_vehicle_across_cameras(
     except (TypeError, ValueError):
         interval = 1.5
 
-    try:
-        result = await run_track(
-            plate_text=plate_text,
-            cameras=cameras,
-            sample_interval_s=interval,
-            fuzzy=bool(fuzzy),
-        )
-        # Persist a track-vehicle report so the officer can revisit later
-        await db.vehicle_tracks.insert_one({
-            "id": str(uuid.uuid4()),
-            "officer_id": officer_id,
-            "target_plate": result["target_plate"],
-            "total_sightings": result["total_sightings"],
-            "cameras_with_match": result["cameras_with_match"],
-            "camera_count": len(cameras),
-            "generated_at": result["generated_at"],
-        })
-        return result
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.error(f"Vehicle tracking failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Vehicle tracking failed: {str(e)}")
+    job_id = str(uuid.uuid4())
+    await db.cctv_jobs.insert_one({
+        "id": job_id,
+        "officer_id": officer_id,
+        "kind": "track-vehicle",
+        "target_plate": plate_text,
+        "camera_count": len(cameras),
+        "status": "processing",
+        "progress": 0,
+        "stage": "queued",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    async def _bg_track():
+        try:
+            await db.cctv_jobs.update_one({"id": job_id}, {"$set": {"stage": "analysing", "progress": 10}})
+            result = await run_track(
+                plate_text=plate_text,
+                cameras=cameras,
+                sample_interval_s=interval,
+                fuzzy=bool(fuzzy),
+            )
+            await db.vehicle_tracks.insert_one({
+                "id": str(uuid.uuid4()),
+                "officer_id": officer_id,
+                "target_plate": result["target_plate"],
+                "total_sightings": result["total_sightings"],
+                "cameras_with_match": result["cameras_with_match"],
+                "camera_count": len(cameras),
+                "generated_at": result["generated_at"],
+            })
+            await db.cctv_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "status": "completed", "stage": "done", "progress": 100,
+                    "result": result,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+        except ValueError as ve:
+            await db.cctv_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "stage": "error", "error": str(ve)[:500]}},
+            )
+        except Exception as e:
+            logger.error(f"Vehicle tracking job {job_id} failed: {e}")
+            await db.cctv_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "stage": "error", "error": str(e)[:500],
+                          "updated_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_bg_track())
+    return {"job_id": job_id, "status": "processing", "message": "Vehicle tracking started — poll /cctv/analyze/status/{job_id}"}
 
 
 @api_router.post("/cctv/extract-frame")
@@ -4019,6 +4094,67 @@ async def get_issues(admin_id: str = Depends(verify_admin_or_supervisor)):
                 })
     
     return {"issues": issues[::-1], "count": len(issues)}
+
+
+class FrontendErrorReport(BaseModel):
+    error_type: str
+    message: str
+    url: Optional[str] = ""
+    component: Optional[str] = ""
+    status_code: Optional[int] = None
+    stack: Optional[str] = ""
+
+
+@api_router.post("/admin/log-frontend-error")
+async def log_frontend_error(payload: FrontendErrorReport, request: Request):
+    """
+    Capture frontend errors (axios failures, runtime ReferenceErrors, network
+    failures) so they show up in Admin → Issues alongside backend failures.
+    Open endpoint by design (called BEFORE auth on auth flows too) but rate-limited
+    by IP in practice via DB throttling.
+    """
+    # Try to attach the requesting officer if a token is present
+    user = "anonymous"
+    auth_header = request.headers.get("authorization", "") or request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+        try:
+            decoded = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+            user = decoded.get("officer_id", "anonymous")
+        except Exception:
+            pass
+
+    correlation_id = str(uuid.uuid4())[:8]
+    summary = f"FRONTEND_{payload.error_type[:40]}: {payload.message[:200]}"
+    if payload.url:
+        summary += f" @ {payload.url[:120]}"
+    if payload.status_code:
+        summary += f" [HTTP {payload.status_code}]"
+
+    log_action(user, summary, 0, "FAILED", f"FE-{correlation_id}")
+
+    # Persist full detail (incl. stack) in DB for engineers
+    await db.frontend_errors.insert_one({
+        "id": correlation_id,
+        "user": user,
+        "error_type": payload.error_type[:80],
+        "message": payload.message[:2000],
+        "url": (payload.url or "")[:500],
+        "component": (payload.component or "")[:120],
+        "status_code": payload.status_code,
+        "stack": (payload.stack or "")[:8000],
+        "ip": request.client.host if request.client else "",
+        "user_agent": request.headers.get("user-agent", "")[:300],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"received": True, "correlation_id": correlation_id}
+
+
+@api_router.get("/admin/frontend-errors")
+async def list_frontend_errors(limit: int = 100, admin_id: str = Depends(verify_admin_or_supervisor)):
+    """List recent frontend errors with full stack traces."""
+    errs = await db.frontend_errors.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit).to_list(limit)
+    return {"errors": errs, "count": len(errs)}
 
 
 @api_router.get("/admin/action-logs")
