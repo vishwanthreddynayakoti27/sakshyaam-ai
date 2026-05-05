@@ -26,6 +26,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Credits from './pages/Credits';
 import CreditsSuccess from './pages/CreditsSuccess';
 import VehicleTracker from './pages/VehicleTracker';
+import NarrationGenerator from './pages/NarrationGenerator';
 import './App.css';
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           {/* WING 1: ADMIN */}
           <Route path="/charge-sheet-fusion" element={<ProtectedRoute><ChargeSheetFusion /></ProtectedRoute>} />
+          <Route path="/narration-generator" element={<ProtectedRoute><NarrationGenerator /></ProtectedRoute>} />
           <Route path="/remand-report" element={<Navigate to="/charge-sheet-fusion" replace />} />
           <Route path="/cdf-filler" element={<ProtectedRoute><CDFFiller /></ProtectedRoute>} />
           <Route path="/document-generator" element={<ProtectedRoute><DocumentGenerator /></ProtectedRoute>} />

@@ -1,0 +1,65 @@
+{
+  "summary": "Iteration 18 — Verified rewritten fixed-layout DOCX renderer (matches authentic Telangana samples) AND brand-new Narration Generator (Wing-1 tool). Backend pytest 16/17 PASS (1 regression: Aadhaar auto-extraction broken in new charge-sheet renderer). Narration Generator backend 9/9 PASS. Frontend: Narration Generator page fully functional on /narration-generator — all 8 expected testids render, 111 phrase chips load, search filter narrows correctly (q=arrest → 1 chip), phrase selection toggles (SELECTED count updates), Compose Narration produces a properly stitched paragraph with case-meta intro and both selected phrases verbatim. Sidebar shows 'Narration Generator' (NEW badge, PenTool icon) above 'Document Generator' inside Layout. Existing fixed-layout unit test (tests/test_fixed_layout.py) prints 6/6 OK. Endpoint integration tests pass for charge_sheet/case_diary_part1/remand_report happy path, 0-credit guarantee, auth, invalid doc_type, missing case.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/staging/render-fixed/charge_sheet/{case_id}",
+        "issue": "REGRESSION in rewritten fixed_layout_renderer.py: extract_aadhaar_from_files() result is no longer merged into accused[0] in the rendered charge sheet. The Aadhaar number ('1234 5678 9012') from staged files[].ocr_text is missing from the output DOCX. Worse: the charge-sheet 18-row table mis-maps Aadhaar fields when accused[0] is empty — A1 row shows 'Sri. Unique Identification Authority of India' as the name and 'DOB 12/05/1989 years' inside the Age cell. iteration_17 had this working; the rewrite broke it. test_fixed_layout_endpoint.py::test_aadhaar_auto_extraction now fails.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "NarrationGenerator.js",
+        "issue": "data-testid='narration-output' appears to wrap only the 'COMPOSED NARRATION' heading + Copy button row (inner_text returns only 24 chars: 'COMPOSED NARRATION\\n\\nCopy'). The actual rendered narration text sits in a sibling/child element without a testid, so automated tests cannot assert on the narration body via this testid. Visually the narration renders correctly. Recommend moving data-testid='narration-output' onto the <pre>/<div> that holds the actual narration text (or add a separate narration-output-text testid).",
+        "selector": "[data-testid='narration-output']",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dashboard / homepage (/)",
+        "issues": ["Homepage uses a DIFFERENT command-center sidebar (Charge Sheet Fusion, Remand Report, CDF Filler, Document Generator…) that does NOT include 'Narration Generator'. Only the Layout-component sidebar (visible inside /narration-generator and other inner pages) includes the new tool. If the user expects the new tool to be accessible from the homepage sidebar too, the home command-center component (likely SaakshyamCommandCenter) needs the same nav addition."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_narration.py",
+    "/app/backend/tests/test_fixed_layout_endpoint.py",
+    "/app/backend/tests/test_fixed_layout.py",
+    "/app/test_reports/pytest/iteration_18_results.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): /app/backend/services/fixed_layout_renderer.py — re-wire extract_aadhaar_from_files() so the extracted aadhaar_number/dob/gender/address are merged into accused[0] (or each accused) BEFORE the 18-row table is rendered. Also stop putting 'Unique Identification Authority of India' / 'DOB ...' tokens into the accused name/age cells when accused list is empty.",
+    "FIX (MED): /app/frontend/src/pages/NarrationGenerator.js — move data-testid='narration-output' onto the element that actually holds the narration text (or add data-testid='narration-output-text') so automation can read it.",
+    "CONSIDER: add 'Narration Generator' to the homepage command-center Wing-1 sidebar (SaakshyamCommandCenter component) so it is reachable from / as well as from inner Layout pages."
+  ],
+  "critical_code_review_comments": [
+    "Good: /api/narration/* router uses HTTPBearer + JWT decode consistently with other routers; returns 401 on missing/invalid token (verified).",
+    "Good: narration_generator service is fully deterministic (no LLM call) — predictable output for legal documentation, matches user's stated requirement.",
+    "Good: KEYWORD_BANK has exactly 10 categories totalling 113 phrases (verified via /categories endpoint: total_keywords=113); category sizes match expected (Scene of Offence = 12, Closing Phrases = 6, etc.).",
+    "Good: compose_narration() correctly stitches custom_intro + station/FIR/IO/complainant intro + body + accused/sections outro; supports list-of-accused with proper 'and' joining.",
+    "Issue: services/fixed_layout_renderer.py rewrite REGRESSED Aadhaar auto-extraction integration — the extract function still works (unit test 5 passes) but its output is no longer plugged into render_charge_sheet's A1 row.",
+    "Issue: charge-sheet renderer now appears to mistakenly write OCR header tokens ('Unique Identification Authority of India', 'DOB ...') into the A1.name and A1.age positions when accused list is empty. Should fall back to BLANK if accused[0] absent rather than scraping ocr_text into name/age.",
+    "Minor: /api/narration/keywords accepts unknown category and returns []; consider 400 with friendly error or include known categories in response for better UX, though current behaviour is acceptable.",
+    "Minor: /api/narration/compose returns 200 even with empty selected_phrases (only the meta intro); acceptable but the frontend should disable the Compose button when nothing is selected to prevent meaningless calls.",
+    "Note: data-testid coverage on NarrationGenerator.js is good (search-panel, categories, library, selected, compose-btn, search-input, cat-all, narration-output, copy-narration-btn, meta-* fields, phrase-* chips) — only one misplaced (narration-output)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_narration.py (NEW — 9 pytest tests for narration router: 3 auth + 4 keywords/categories + 2 compose)"
+  ],
+  "success_rate": {
+    "backend": "94% (16/17 pytest endpoint + 9/9 narration + 6/6 renderer unit). 1 regression: Aadhaar auto-extraction broken in new charge-sheet renderer.",
+    "frontend": "95% (Narration Generator: page renders, 111 chips load, search filter works, phrase selection toggles, compose produces correct narration with meta intro; sidebar item appears in Layout; minor: narration-output testid misplaced; cosmetic: homepage sidebar is a different component without the new tool)"
+  },
+  "test_credentials": "TEST001 / Test123! (officer) used for both backend and frontend.",
+  "seed_data_creation": "Backend test_aadhaar_auto_extraction seeds /app/backend/staging/TEST001/CASE-TESTAADHAAR-*/metadata.json then cleans up; create-case test creates a CASE-* under TEST001/.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Narration: GET /api/narration/categories → {categories: [10 strings], total_keywords: 113, keywords_by_category: {...}}. GET /api/narration/keywords?q=&category=. POST /api/narration/compose → {narration, word_count}. All require Bearer token (HTTPBearer). Frontend page /narration-generator uses 3-column grid; testids: narration-search-input, cat-all + cat-{category-slug}, phrase-{cat-slug}-{idx}, narration-search-panel, narration-categories, narration-library, narration-selected, meta-{fir_number|police_station|io_name|complainant_name|accused_names|occurrence_dtp|sections}, compose-narration-btn, narration-output (currently wraps only heading row, NOT the rendered text), copy-narration-btn. To run tests: `export REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2) && cd /app/backend && python -m pytest tests/test_narration.py tests/test_fixed_layout_endpoint.py -v`. The Aadhaar regression is reproducible via the seeded metadata.json approach in test_fixed_layout_endpoint.py::test_aadhaar_auto_extraction.",
+  "rca of the issue": "REGRESSION RCA — Aadhaar auto-extraction (test_fixed_layout_endpoint.py::test_aadhaar_auto_extraction): The rewrite of /app/backend/services/fixed_layout_renderer.py to match the 18-numbered-row authentic Telangana charge-sheet layout retained the extract_aadhaar_from_files() helper (unit test 5 still passes — it correctly returns aadhaar_number=123456789012, dob=12/05/1989, etc.) but the new render_charge_sheet() function no longer merges that result back into accused[0] before constructing the A1 row. As a side-effect, with an empty accused list the renderer appears to scrape file OCR text directly into the name/age cells (A1 shows 'Unique Identification Authority of India' as name and 'DOB 12/05/1989 years' inside the Age slot — these are clearly OCR-text fragments, not the cleanly extracted dict from extract_aadhaar_from_files). Mitigation: in render_charge_sheet (and likely render_remand_report), after loading metadata, call extract_aadhaar_from_files(metadata.get('files', [])) and update accused[0] (creating it if absent) with aadhaar_number/dob/gender/address; then format the A1 cell to include the Aadhaar number explicitly (e.g., 'A1. <name>, S/o <father>, Aadhaar: 1234 5678 9012, ...'). Verification: re-run `python -m pytest tests/test_fixed_layout_endpoint.py::test_aadhaar_auto_extraction -v` — should pass when the merge is restored."
+}

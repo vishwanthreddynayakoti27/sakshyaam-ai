@@ -4313,7 +4313,7 @@ async def admin_set_role(
 
 
 # Import new routers for Unified Intelligence Pipeline
-from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion, staged_upload, document_intelligence
+from routers import case_context, document_generator, evidence_manager, charge_sheet_fusion, staged_upload, document_intelligence, narration
 
 # Set database for new routers
 case_context.set_database(db)
@@ -4329,6 +4329,7 @@ api_router.include_router(evidence_manager.router)
 api_router.include_router(charge_sheet_fusion.router)
 api_router.include_router(staged_upload.router)
 api_router.include_router(document_intelligence.router)
+api_router.include_router(narration.router)
 
 # Static file download for generated documents
 from fastapi.responses import FileResponse

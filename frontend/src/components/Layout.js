@@ -23,7 +23,8 @@ import {
   Activity,
   Shield,
   Microscope,
-  Zap
+  Zap,
+  PenTool
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -50,6 +51,7 @@ const Layout = ({ children }) => {
   // WING 1: SAAKSHYAM ADMIN - Investigation & Documentation
   const adminWing = [
     { icon: Workflow, label: 'Charge Sheet Fusion', path: '/charge-sheet-fusion', isNew: true },
+    { icon: PenTool, label: 'Narration Generator', path: '/narration-generator', isNew: true },
     { icon: FileCheck, label: 'Document Generator', path: '/document-generator' },
     { icon: Database, label: 'CCTNS Bridge', path: '/cctns-bridge' },
     { icon: Languages, label: 'Language Intelligence', path: '/language-intelligence' },
