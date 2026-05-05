@@ -21,6 +21,7 @@ import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
+import { api } from '../utils/api';
 
 const CCTVSearch = () => {
   const [videoFile, setVideoFile] = useState(null);
