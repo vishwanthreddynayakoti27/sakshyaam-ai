@@ -36,6 +36,7 @@ const CCTVSearch = () => {
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [personClothing, setPersonClothing] = useState('');
+  const [plateNumber, setPlateNumber] = useState('');
 
   const handleVideoUpload = (e) => {
     const file = e.target.files[0];
@@ -98,11 +99,25 @@ const CCTVSearch = () => {
     try {
       const formData = new FormData();
       formData.append('file', videoFile);
-      formData.append('search_query', vehicleType || vehicleColor || personClothing || '');
-      formData.append('search_type', vehicleType ? 'vehicle' : (personClothing ? 'person' : 'all'));
+      // Build search query — plate gets priority over other attributes since
+      // it's the most precise identifier
+      const plateNorm = (plateNumber || '').replace(/\s|-/g, '').toUpperCase().trim();
+      const query = plateNorm
+        || vehicleType
+        || vehicleColor
+        || personClothing
+        || '';
+      const stype = plateNorm
+        ? 'number_plate'
+        : (vehicleType ? 'vehicle' : (personClothing ? 'person' : 'all'));
+      formData.append('search_query', query);
+      formData.append('search_type', stype);
+      formData.append('sample_interval', '1.5');
 
+      toast.info('Analyzing video frames with AI vision — this may take 30–60s for short clips…');
       const response = await api.post('/cctv/analyze', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000, // 10 minutes — real per-frame Gemini calls take time
       });
 
       if (response.data.success) {
@@ -111,25 +126,29 @@ const CCTVSearch = () => {
           timestamp: r.timestamp_formatted,
           timestamp_ms: r.timestamp_ms,
           type: r.object_type === 'vehicle' ? 'Vehicle' : r.object_type === 'person' ? 'Person' : 'Number Plate',
-          description: r.ocr_text || r.label,
-          confidence: Math.round(r.confidence * 100),
-          thumbnail: r.thumbnail_base64
+          description: r.plate_text || r.ocr_text || r.label,
+          plate_text: r.plate_text || r.ocr_text || null,
+          confidence: Math.round((r.confidence || 0) * 100),
+          thumbnail: r.thumbnail_base64,
+          object_type: r.object_type,
         }));
-        
+
         setSearchResults(results);
-        toast.success(`Found ${results.length} matches with millisecond precision!`);
+        if (results.length === 0) {
+          toast.warning(query
+            ? `No matches for "${query}" in ${response.data.frames_sampled || 0} sampled frames. Try a broader query or different sample interval.`
+            : `No detections found in ${response.data.frames_sampled || 0} sampled frames.`);
+        } else {
+          toast.success(`Found ${results.length} matches — click any result to jump to that exact moment in the video`);
+        }
+      } else {
+        toast.error('Analysis returned no data');
       }
     } catch (error) {
       console.error('Analysis error:', error);
-      toast.error('Analysis failed. Using demo results.');
-      
-      // Fallback to mock results
-      const mockResults = [
-        { timestamp: '00:01:23.456', timestamp_ms: 83456, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 94 },
-        { timestamp: '00:02:45.123', timestamp_ms: 165123, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 87 },
-        { timestamp: '00:05:12.789', timestamp_ms: 312789, type: 'Vehicle', description: `${vehicleColor || 'Dark'} ${vehicleType || 'Car'}`, confidence: 91 },
-      ];
-      setSearchResults(mockResults);
+      const detail = error?.response?.data?.detail || error?.message || 'Analysis failed';
+      toast.error(`Analysis failed: ${detail}`);
+      setSearchResults([]);
     } finally {
       setIsAnalyzing(false);
     }
@@ -286,11 +305,23 @@ const CCTVSearch = () => {
                   </div>
                   
                   <div>
-                    <label className="text-white/50 text-xs">Number/Model (Optional)</label>
+                    <label className="text-white/50 text-xs">Registration Plate (highest priority)</label>
+                    <Input
+                      value={plateNumber}
+                      onChange={(e) => setPlateNumber(e.target.value)}
+                      placeholder="e.g. TS09EA1234 (no spaces)"
+                      className="bg-[#0B0F1A] border-white/20 text-white text-sm font-mono uppercase"
+                      data-testid="cctv-plate-input"
+                    />
+                    <p className="text-white/30 text-[10px] mt-0.5">If you enter a plate, it will be matched via OCR on every sampled frame.</p>
+                  </div>
+
+                  <div>
+                    <label className="text-white/50 text-xs">Model (Optional)</label>
                     <Input
                       value={vehicleModel}
                       onChange={(e) => setVehicleModel(e.target.value)}
-                      placeholder="e.g., TS 09 XX 1234"
+                      placeholder="e.g. Swift, Innova"
                       className="bg-[#0B0F1A] border-white/20 text-white text-sm"
                     />
                   </div>

@@ -149,6 +149,27 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
 
+### 2026-04-27: CCTV Search — Replaced Mock with Real Per-Frame AI Detection
+- ✅ **Root cause of all 3 reported bugs** was that `/cctv/analyze` was 100% mocked: random timestamps, hardcoded plate strings (`TS09EA1234`, `AP07AB5678`, `TG11CD9012`), and `thumbnail_base64=None`. This is why videos didn't jump to the right frame, custom plate searches never matched, and thumbnails were always missing
+- ✅ New service `/app/backend/services/cctv_search.py` — real implementation:
+  - **OpenCV** samples 1 frame every 1.5s (configurable 1.0–5.0s) — millisecond-precise timestamps
+  - **Gemini 2.5 Flash** runs on every sampled frame **in parallel** (asyncio.gather, sem=6) — detects vehicles, persons, and Indian-format number plates with OCR
+  - **Real base64 JPEG thumbnails** generated per match (320px max-edge, optimised) so the frontend list always shows previews
+  - **Plate normalisation** — strips spaces/hyphens, uppercases, so search "TS 09 EA 1234" matches "TS09EA1234"
+- ✅ Frontend `CCTVSearch.js`:
+  - New **"Registration Plate (highest priority)"** input (`cctv-plate-input`) that wires into the search query and forces `search_type=number_plate` for higher-precision OCR matching
+  - Removed mock fallback that was silently masking real errors — now shows real backend error messages
+  - Increased axios timeout to 10 minutes (real per-frame Gemini calls take 5–60s for typical CCTV clips)
+  - Result list shows plate text from `plate_text` field with priority over generic label
+- ✅ Test `/app/backend/tests/test_cctv_search.py` builds a 6-second synthetic CCTV video (yellow Indian-style plate "TS09EA1234" on a moving red car) and verifies — **8/8 assertions pass**:
+  - duration_ms=6000 (real, not mocked)
+  - 6 frames sampled, 8–10 detections returned
+  - All thumbnails decode to valid JPEGs >500 bytes
+  - Timestamps are sorted, within video duration
+  - Search "TS09EA1234" returns **6 plate-text matches** (Gemini OCR'd it on every frame)
+  - plate_text normalised to uppercase, no spaces
+- ✅ Endpoint `/cctv/analyze` now accepts `sample_interval` form param (1.0–5.0s) for finer/coarser sampling
+
 ### 2026-04-27: Real Deepfake Detection (Gemini 2.5 Pro Multimodal Vision)
 - ✅ New service `/app/backend/services/deepfake_detector.py` — replaces the heuristic-only verdict for images and videos with real AI multimodal forensic analysis using **Gemini 2.5 Pro** via Emergent LLM key (no extra API cost)
 - ✅ Strict 3-class classifier: **REAL** (camera capture), **AI_GENERATED** (Stable Diffusion / Midjourney / DALL·E / SDXL / Flux / non-photographic graphics), **DEEP_FAKE** (face-swap / lip-sync manipulation)
