@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Trash2,
   BookOpen,
+  Lock,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -461,7 +462,12 @@ const ChargeSheetFusion = () => {
                   caseId={caseId}
                 />
               ) : (
-                <FusionIdleView filesReady={stagedFiles.length > 0} firReady={!!firNumber.trim()} />
+                <FusionIdleView
+                  filesReady={stagedFiles.length > 0}
+                  firReady={!!firNumber.trim()}
+                  caseId={caseId}
+                  firNumber={firNumber}
+                />
               )}
             </div>
           </div>
@@ -475,7 +481,42 @@ const ChargeSheetFusion = () => {
 // Status-Card Subviews (no HTML preview — avoids dangerouslySetInnerHTML errors)
 // ============================================================================
 
-const FusionIdleView = ({ filesReady, firReady }) => (
+const FusionIdleView = ({ filesReady, firReady, caseId, firNumber }) => {
+  const [fxLoading, setFxLoading] = React.useState(null);
+
+  const downloadFixed = async (docType) => {
+    if (!caseId) {
+      toast.error('Upload at least one file first');
+      return;
+    }
+    setFxLoading(docType);
+    try {
+      const resp = await api.get(`/staging/render-fixed/${docType}/${caseId}`, { responseType: 'blob' });
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const labelMap = { charge_sheet: 'ChargeSheet', case_diary_part1: 'CaseDiary', remand_report: 'Remand' };
+      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_Fixed${labelMap[docType] || docType}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Fixed-layout document downloaded (0 credits)');
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Fixed-layout render failed';
+      if (error.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await error.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setFxLoading(null);
+    }
+  };
+
+  return (
   <div className="text-center max-w-md" data-testid="fusion-idle-view">
     <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-[#00C2FF]/20 to-[#4F7EFF]/20 border border-[#00C2FF]/30 flex items-center justify-center mb-5">
       <FileStack className="text-[#00C2FF]" size={36} />
@@ -494,8 +535,38 @@ const FusionIdleView = ({ filesReady, firReady }) => (
         At least one file uploaded
       </div>
     </div>
+
+    {filesReady && caseId && (
+      <div className="mt-8 p-4 rounded-lg bg-[#030614] border border-[#00FFB3]/30 text-left" data-testid="fixed-layout-idle-section">
+        <div className="flex items-center gap-2 mb-2">
+          <Lock size={14} className="text-[#00FFB3]" />
+          <p className="text-[#00FFB3] text-xs font-semibold uppercase tracking-wider">Skip AI — Download Fixed Templates (0 credits)</p>
+        </div>
+        <p className="text-white/50 text-xs mb-3 leading-relaxed">
+          Hard-coded layouts. Aadhaar auto-extracted from your uploads. Missing fields print as <span className="font-mono text-[#00FFB3]">_____</span>.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          <Button onClick={() => downloadFixed('charge_sheet')} disabled={fxLoading !== null}
+            className="h-9 bg-[#00FFB3]/15 border border-[#00FFB3]/40 text-[#00FFB3] hover:bg-[#00FFB3]/25 text-xs font-medium"
+            data-testid="idle-download-fixed-chargesheet">
+            {fxLoading === 'charge_sheet' ? <Loader2 className="animate-spin" size={12} /> : 'Charge Sheet'}
+          </Button>
+          <Button onClick={() => downloadFixed('case_diary_part1')} disabled={fxLoading !== null}
+            className="h-9 bg-[#4F7EFF]/15 border border-[#4F7EFF]/40 text-[#4F7EFF] hover:bg-[#4F7EFF]/25 text-xs font-medium"
+            data-testid="idle-download-fixed-casediary">
+            {fxLoading === 'case_diary_part1' ? <Loader2 className="animate-spin" size={12} /> : 'Case Diary'}
+          </Button>
+          <Button onClick={() => downloadFixed('remand_report')} disabled={fxLoading !== null}
+            className="h-9 bg-[#FFB800]/15 border border-[#FFB800]/40 text-[#FFB800] hover:bg-[#FFB800]/25 text-xs font-medium"
+            data-testid="idle-download-fixed-remand">
+            {fxLoading === 'remand_report' ? <Loader2 className="animate-spin" size={12} /> : 'Remand'}
+          </Button>
+        </div>
+      </div>
+    )}
   </div>
-);
+  );
+};
 
 const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
   const stageMap = {
@@ -550,6 +621,39 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
   const [diaryLoading, setDiaryLoading] = React.useState(false);
   const [corrections, setCorrections] = React.useState(null);
   const [hasChargeSheet, setHasChargeSheet] = React.useState(false);
+  const [fixedLoading, setFixedLoading] = React.useState(null); // 'charge_sheet' | 'case_diary_part1' | 'remand_report' | null
+
+  const downloadFixedLayout = async (docType) => {
+    if (!caseId) {
+      toast.error('No case selected');
+      return;
+    }
+    setFixedLoading(docType);
+    try {
+      const resp = await api.get(`/staging/render-fixed/${docType}/${caseId}`, { responseType: 'blob' });
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const labelMap = { charge_sheet: 'ChargeSheet', case_diary_part1: 'CaseDiary', remand_report: 'Remand' };
+      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_Fixed${labelMap[docType] || docType}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Fixed-layout document downloaded (0 credits — deterministic template)');
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Fixed-layout render failed';
+      if (error.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await error.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setFixedLoading(null);
+    }
+  };
 
   const downloadSmartChargeSheet = async () => {
     if (!caseId) {
@@ -749,6 +853,45 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         {!hasChargeSheet && (
           <p className="mt-2 text-xs text-white/40 italic">Generate the charge sheet above first.</p>
         )}
+      </div>
+
+      {/* FIXED-LAYOUT (NO AI) DETERMINISTIC TEMPLATES */}
+      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#00FFB3]/10 to-[#00C2FF]/5 border border-[#00FFB3]/30" data-testid="fixed-layout-section">
+        <div className="flex items-start gap-3 mb-3">
+          <Lock className="text-[#00FFB3] shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h4 className="text-[#00FFB3] font-bold text-base">Fixed-Layout Documents (0 credits)</h4>
+            <p className="text-white/60 text-xs mt-1 leading-relaxed">
+              Strict station-format templates. Layout never changes. Aadhaar fields auto-extracted from your uploaded files. Missing fields render as <span className="font-mono text-[#00FFB3]">_____</span> for manual editing in Word. No AI · no hallucination · always identical structure.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <Button
+            onClick={() => downloadFixedLayout('charge_sheet')}
+            disabled={fixedLoading !== null}
+            className="h-10 bg-[#00FFB3]/20 border border-[#00FFB3]/40 text-[#00FFB3] hover:bg-[#00FFB3]/30 font-medium text-xs"
+            data-testid="download-fixed-chargesheet"
+          >
+            {fixedLoading === 'charge_sheet' ? <Loader2 className="animate-spin" size={14} /> : <><Download size={14} className="mr-1.5" />Charge Sheet</>}
+          </Button>
+          <Button
+            onClick={() => downloadFixedLayout('case_diary_part1')}
+            disabled={fixedLoading !== null}
+            className="h-10 bg-[#4F7EFF]/20 border border-[#4F7EFF]/40 text-[#4F7EFF] hover:bg-[#4F7EFF]/30 font-medium text-xs"
+            data-testid="download-fixed-casediary"
+          >
+            {fixedLoading === 'case_diary_part1' ? <Loader2 className="animate-spin" size={14} /> : <><Download size={14} className="mr-1.5" />Case Diary</>}
+          </Button>
+          <Button
+            onClick={() => downloadFixedLayout('remand_report')}
+            disabled={fixedLoading !== null}
+            className="h-10 bg-[#FFB800]/20 border border-[#FFB800]/40 text-[#FFB800] hover:bg-[#FFB800]/30 font-medium text-xs"
+            data-testid="download-fixed-remand"
+          >
+            {fixedLoading === 'remand_report' ? <Loader2 className="animate-spin" size={14} /> : <><Download size={14} className="mr-1.5" />Remand</>}
+          </Button>
+        </div>
       </div>
 
       {/* Original (pipeline) download buttons */}

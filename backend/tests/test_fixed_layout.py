@@ -136,11 +136,18 @@ docs_b = [render_charge_sheet(case_b), render_case_diary_part1(case_b), render_r
 for da, db, name in zip(docs_a, docs_b, ["charge_sheet", "case_diary", "remand"]):
     headings_a = [p.text for p in Document(io.BytesIO(da)).paragraphs if p.text and any(r.bold for r in p.runs if r.text)]
     headings_b = [p.text for p in Document(io.BytesIO(db)).paragraphs if p.text and any(r.bold for r in p.runs if r.text)]
-    # Strip case-specific lines (containing FIR / PS / officer name) — only compare structural headings
-    structural_a = [h for h in headings_a if "FIR" not in h and "Place:" not in h and "Date:" not in h
-                    and ":" not in h and "PS" not in h]
-    structural_b = [h for h in headings_b if "FIR" not in h and "Place:" not in h and "Date:" not in h
-                    and ":" not in h and "PS" not in h]
+    # Strip case-specific lines (containing FIR / PS / officer name / per-row A#/LW# subheadings)
+    # — only compare top-level structural section headings
+    import re as _re
+    def _is_structural(h):
+        if "FIR" in h or "Place:" in h or "Date:" in h or ":" in h or "PS" in h:
+            return False
+        # Drop dynamic per-accused (A1., A2., …) and per-witness (LW1., …) labels
+        if _re.match(r"^(A|LW|MO)\d+\.?$", h.strip()):
+            return False
+        return True
+    structural_a = [h for h in headings_a if _is_structural(h)]
+    structural_b = [h for h in headings_b if _is_structural(h)]
     assert structural_a == structural_b, (
         f"{name} structural headings differ between cases!\n"
         f"  case A: {structural_a}\n  case B: {structural_b}"

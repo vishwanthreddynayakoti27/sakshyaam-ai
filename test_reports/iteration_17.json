@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 17 — Fixed-layout DOCX renderer (Charge Sheet, Case Diary Part-I, Remand Report) end-to-end verified. Backend 8/8 pytest pass on /app/backend/tests/test_fixed_layout_endpoint.py: (1) unauth → 401, (2) invalid doc_type → 400, (3) missing case folder → 404, (4)(5)(6) all three doc_types render valid DOCX (PK header, content-type officedocument.wordprocessingml.document, content-disposition with .docx filename, expected headings present, police_station+fir_number rendered, '_____' blanks for missing fields), (7) zero-credit verified via /api/auth/profile delta = 0 across 3 renders, (8) Aadhaar auto-extraction from staged metadata.json files[].ocr_text populates A1.aadhaar_number ('1234 5678 9012'). Existing unit test /app/backend/tests/test_fixed_layout.py also still passes 6/6 when invoked directly. Frontend Playwright on https://legal-fusion-queue.preview.emergentagent.com: TEST001 login → /charge-sheet-fusion → fill FIR (TESTUI/57/2026) → upload 1×1 PNG → fixed-layout-idle-section appears with 'SKIP AI — DOWNLOAD FIXED TEMPLATES (0 CREDITS)' header → all 3 idle buttons (idle-download-fixed-chargesheet/casediary/remand) trigger real .docx downloads with filenames TESTUI-57-2026_FixedChargeSheet.docx / FixedCaseDiary.docx / FixedRemand.docx and toast 'Fixed-layout document downloaded (0 credits)' appears.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fixed_layout_endpoint.py",
+    "/app/backend/tests/test_fixed_layout.py",
+    "/app/test_reports/pytest/iteration_17_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Good: render-fixed endpoint correctly returns 400 for unknown doc_type and 404 for missing case folder/metadata.json — proper status codes with meaningful detail strings.",
+    "Good: 0-credit guarantee enforced — endpoint never touches officers.credits; verified via /api/auth/profile delta=0 before/after 3 renders.",
+    "Good: Aadhaar auto-extraction (extract_aadhaar_from_files) walks staged files[].ocr_text mechanically (regex 12-digit + 'Government of India' marker), no AI inference — matches user's strict-layout requirement.",
+    "Good: BLANK constant '_____' applied uniformly when fields missing; structural-equality test (case A vs B with very different accused/witness counts) confirms layout is identical (11 charge_sheet headings, 11 case_diary, 9 remand).",
+    "Good: FusionIdleView panel only renders after caseId is set (i.e., a file has actually uploaded) — UX correctly gates the download buttons behind a real staged case.",
+    "Good: data-testids present and stable: fixed-layout-idle-section, idle-download-fixed-{chargesheet|casediary|remand}, fixed-layout-section, download-fixed-{chargesheet|casediary|remand}.",
+    "Note (from prior iteration_16, NOT re-verified this run): pc72 admin had -53 credit balance from missing balance-floor guard in consumer endpoints — still pending main agent fix.",
+    "Minor: STAGING_BASE in routers/staged_upload.py is '/app/backend/staging' (the testing prompt incorrectly stated '/app/backend/staged_uploads'). Doc-aware future tests must use the actual path.",
+    "Minor: render_fixed_layout_doc has a generic 500 'Rendering failed' Exception catch that masks the underlying error class; consider logging exception type + traceback for production debuggability.",
+    "Minor: FusionCompletedView fixed-layout buttons were verified to exist in source (lines 859/874/882/890 of ChargeSheetFusion.js) using the SAME downloadFixedLayout helper that hits /api/staging/render-fixed; not exercised end-to-end via UI because reaching the completed state requires a full Triple Fusion job. Backend endpoint coverage already proves the network path works."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fixed_layout_endpoint.py (NEW — 8 pytest integration tests for /api/staging/render-fixed)"
+  ],
+  "success_rate": {"backend": "100% (8/8 endpoint pytest + 6/6 renderer unit tests)", "frontend": "100% (idle view: testids present, panel gates on caseId, all 3 buttons trigger real .docx downloads with correct filenames + 0-credit toast)"},
+  "test_credentials": "TEST001 / Test123! (officer) used for both backend and frontend tests",
+  "seed_data_creation": "Backend tests create CASE-* folders under /app/backend/staging/TEST001/ via create-case API; Aadhaar test seeds /app/backend/staging/TEST001/CASE-TESTAADHAAR-*/metadata.json and cleans up in finally. Frontend test leaves one staged case (TESTUI/57/2026) in TEST001's staging folder with 1×1 PNG.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Endpoint: GET /api/staging/render-fixed/{doc_type}/{case_id}, doc_type ∈ {charge_sheet, case_diary_part1, remand_report}. STAGING_BASE = /app/backend/staging (NOT staged_uploads). Profile endpoint = /api/auth/profile (NOT /auth/me). Backend pytest run: `export REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2) && cd /app/backend && python -m pytest tests/test_fixed_layout_endpoint.py -v --junitxml=/app/test_reports/pytest/iteration_17_results.xml`. Frontend testids verified: fusion-idle-view, fixed-layout-idle-section, idle-download-fixed-{chargesheet|casediary|remand}, fir-number-input, file-drop-zone (and inside FusionCompletedView: fixed-layout-section + download-fixed-{chargesheet|casediary|remand}). Login uses placeholder 'Enter Officer ID' / 'Enter Password' and button 'SECURE LOGIN'.",
+  "rca of the issue": "N/A — feature works as designed end-to-end. Backend integration + DOCX validation + zero-credit + Aadhaar auto-extraction + identical-layout structural guarantee + frontend UI + actual file downloads all confirmed."
+}
