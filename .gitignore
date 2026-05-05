@@ -79,19 +79,9 @@ agenthub/agents/youtube/db
 .cache/
 frontend/node_modules/.cache/
 
-# NOTE: .env files ARE intentionally tracked so the Emergent Kubernetes
+# NOTE: .env files ARE intentionally TRACKED so the Emergent Kubernetes
 # deployer can ship them. Real production secrets must be injected via
 # the platform's secret manager, not via committed .env values.
-frontend/node_modules/.cache/default-development/1.pack
+# DO NOT add .env / .env.* / *.env patterns below this line.
 frontend/node_modules/.cache/default-development/24.pack
-frontend/node_modules/.cache/default-development/9.pack
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
 frontend/node_modules/.cache/default-development/11.pack

@@ -2502,10 +2502,25 @@ async def upload_cdr(
 @api_router.get("/cdr/records")
 async def get_cdr_records(
     case_id: str,
+    limit: int = 200,
+    skip: int = 0,
     officer_id: str = Depends(get_current_officer)
 ):
-    records = await db.cdr_records.find({"officer_id": officer_id, "case_id": case_id}, {"_id": 0}).to_list(5000)
-    return {"records": records, "count": len(records)}
+    limit = max(1, min(int(limit or 200), 1000))
+    skip = max(0, int(skip or 0))
+    cur = (
+        db.cdr_records
+          .find(
+              {"officer_id": officer_id, "case_id": case_id},
+              {"_id": 0, "id": 1, "phone_number": 1, "called_number": 1, "imei": 1,
+               "tower_id": 1, "location": 1, "datetime_str": 1, "duration": 1, "case_id": 1}
+          )
+          .skip(skip)
+          .limit(limit)
+    )
+    records = await cur.to_list(limit)
+    total = await db.cdr_records.count_documents({"officer_id": officer_id, "case_id": case_id})
+    return {"records": records, "count": len(records), "total": total, "limit": limit, "skip": skip}
 
 
 @api_router.get("/cdr/imei-linkage/{case_id}")
