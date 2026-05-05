@@ -34,6 +34,9 @@ backend/credentials/
 backend/credentials/*
 **/credentials/*.json
 
+# Test/admin credentials documentation (contains real passwords)
+memory/test_credentials.md
+
 # Logs and debug files
 npm-debug.log*
 yarn-debug.log*
@@ -81,3 +84,4 @@ frontend/node_modules/.cache/
 # the platform's secret manager, not via committed .env values.
 frontend/node_modules/.cache/default-development/1.pack
 frontend/node_modules/.cache/default-development/24.pack
+frontend/node_modules/.cache/default-development/9.pack

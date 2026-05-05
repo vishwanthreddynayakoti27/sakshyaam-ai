@@ -18,6 +18,7 @@ import {
   Workflow,
   FileCheck,
   Camera,
+  Crosshair,
   Database,
   Activity,
   Shield,
@@ -64,6 +65,7 @@ const Layout = ({ children }) => {
     { icon: Phone, label: 'CDR Analyzer', path: '/cdr-analyzer' },
     { icon: Microscope, label: 'Media Forensic', path: '/media-forensic', isNew: true },
     { icon: Camera, label: 'CCTV Search', path: '/cctv-search' },
+    { icon: Crosshair, label: 'Track Vehicle', path: '/cctv/track' },
     { icon: Package, label: 'e-Sakshya & Hash', path: '/evidence-hash' },
   ];
 

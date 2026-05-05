@@ -25,6 +25,7 @@ import CDFFiller from './pages/CDFFiller';
 import AdminDashboard from './pages/AdminDashboard';
 import Credits from './pages/Credits';
 import CreditsSuccess from './pages/CreditsSuccess';
+import VehicleTracker from './pages/VehicleTracker';
 import './App.css';
 
 function App() {
@@ -74,6 +75,8 @@ function App() {
           {/* Credits & Payments */}
           <Route path="/credits" element={<ProtectedRoute><Credits /></ProtectedRoute>} />
           <Route path="/credits/success" element={<ProtectedRoute><CreditsSuccess /></ProtectedRoute>} />
+          {/* Vehicle multi-camera tracker */}
+          <Route path="/cctv/track" element={<ProtectedRoute><VehicleTracker /></ProtectedRoute>} />
           {/* Redirects for old routes */}
           <Route path="/unified-pipeline" element={<Navigate to="/charge-sheet-fusion" replace />} />
         </Routes>

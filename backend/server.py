@@ -3136,6 +3136,87 @@ async def analyze_cctv_video(
         raise HTTPException(status_code=500, detail=f"CCTV analysis failed: {str(e)}")
 
 
+@api_router.post("/cctv/track-vehicle")
+async def track_vehicle_across_cameras(
+    plate_text: str = Form(...),
+    files: List[UploadFile] = File(...),
+    camera_metadata: str = Form(default="[]"),  # JSON: [{camera_name, location, recording_start}, ...]
+    sample_interval: float = Form(default=1.5),
+    fuzzy: bool = Form(default=True),
+    officer_id: str = Depends(get_current_officer),
+):
+    """
+    Track a target license plate across multiple CCTV clips (one per camera).
+    Returns a chronological movement timeline with per-camera sighting counts
+    and base64 thumbnails — the chase-the-vehicle workflow.
+
+    Form fields:
+      - plate_text:      target plate (e.g. "TS09EA1234")
+      - files:           N video files (one per camera, 2-8 recommended)
+      - camera_metadata: JSON array (parallel to `files`) with optional
+                         {camera_name, location, recording_start (ISO8601)}
+      - sample_interval: seconds between sampled frames (1.0–5.0)
+      - fuzzy:           match plates with up to 1-char OCR difference
+    """
+    from services.vehicle_tracker import track_vehicle_across_cameras as run_track
+
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="At least one video clip is required")
+    if len(files) > 8:
+        raise HTTPException(status_code=400, detail="Maximum 8 cameras supported per request")
+
+    try:
+        meta_list = json.loads(camera_metadata) if camera_metadata else []
+    except json.JSONDecodeError:
+        meta_list = []
+    if not isinstance(meta_list, list):
+        meta_list = []
+
+    cameras = []
+    total_size = 0
+    for idx, uf in enumerate(files):
+        bytes_ = await uf.read()
+        total_size += len(bytes_)
+        if total_size > 800 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Combined video size exceeds 800MB")
+        meta = meta_list[idx] if idx < len(meta_list) and isinstance(meta_list[idx], dict) else {}
+        cameras.append({
+            "camera_name": (meta.get("camera_name") or uf.filename or f"Camera #{idx + 1}")[:120],
+            "location": (meta.get("location") or "")[:200],
+            "recording_start": meta.get("recording_start"),
+            "video_bytes": bytes_,
+        })
+
+    try:
+        interval = max(1.0, min(5.0, float(sample_interval)))
+    except (TypeError, ValueError):
+        interval = 1.5
+
+    try:
+        result = await run_track(
+            plate_text=plate_text,
+            cameras=cameras,
+            sample_interval_s=interval,
+            fuzzy=bool(fuzzy),
+        )
+        # Persist a track-vehicle report so the officer can revisit later
+        await db.vehicle_tracks.insert_one({
+            "id": str(uuid.uuid4()),
+            "officer_id": officer_id,
+            "target_plate": result["target_plate"],
+            "total_sightings": result["total_sightings"],
+            "cameras_with_match": result["cameras_with_match"],
+            "camera_count": len(cameras),
+            "generated_at": result["generated_at"],
+        })
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Vehicle tracking failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Vehicle tracking failed: {str(e)}")
+
+
 @api_router.post("/cctv/extract-frame")
 async def extract_video_frame(
     timestamp_ms: int = Form(...),
