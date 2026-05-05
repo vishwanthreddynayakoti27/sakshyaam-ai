@@ -357,7 +357,7 @@ const NarrationGenerator = () => {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-xl bg-[#0A0F2C]/60 border border-[#00FFB3]/30 p-4"
-                data-testid="narration-output"
+                data-testid="narration-output-container"
               >
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[#00FFB3] text-xs uppercase tracking-wider font-semibold">Composed Narration</p>
@@ -374,7 +374,7 @@ const NarrationGenerator = () => {
                   value={narration}
                   onChange={(e) => setNarration(e.target.value)}
                   className="bg-[#030614] border-white/10 text-white text-sm min-h-[300px] leading-relaxed"
-                  data-testid="narration-textarea"
+                  data-testid="narration-output"
                 />
               </motion.div>
             )}

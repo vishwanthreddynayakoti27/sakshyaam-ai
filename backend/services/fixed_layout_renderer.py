@@ -181,6 +181,15 @@ def _format_person_block(p: Dict[str, Any]) -> str:
         pieces.append(f"Ph.{phone}")
     else:
         pieces.append("Ph._____")
+    aadhaar = p.get("aadhaar_number")
+    if aadhaar:
+        # Format 12-digit aadhaar as "1234 5678 9012" for readability
+        digits = re.sub(r"\D", "", str(aadhaar))
+        if len(digits) == 12:
+            aadhaar_disp = f"{digits[:4]} {digits[4:8]} {digits[8:]}"
+        else:
+            aadhaar_disp = aadhaar
+        pieces.append(f"Aadhaar: {aadhaar_disp}")
     return ", ".join(pieces)
 
 
@@ -200,6 +209,33 @@ _AADHAAR_NUM_RE = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
 _DOB_RE = re.compile(r"\b(?:DOB|D\.O\.B|Date of Birth|Year of Birth|YOB)[:\s]*([\d/.\-]+)", re.I)
 _GENDER_RE = re.compile(r"\b(Male|Female|MALE|FEMALE)\b")
 _NAME_RE = re.compile(r"^[A-Z][a-zA-Z. ]{2,40}\s+[A-Z][a-zA-Z. ]{2,40}$")
+
+# Keywords commonly found at the top of an Aadhaar card that look like a name
+# but ARE NOT a person — used to filter false positives in name detection.
+_AADHAAR_NAME_BLOCKLIST = {
+    "Government Of India",
+    "Government of India",
+    "Unique Identification Authority Of India",
+    "Unique Identification Authority of India",
+    "Aadhaar Number",
+    "Date Of Birth",
+    "Date of Birth",
+    "Address",
+    "Father Name",
+    "Mother Name",
+    "MAIL DAK",
+}
+
+
+def _looks_like_aadhaar_header(line: str) -> bool:
+    cleaned = re.sub(r"\s+", " ", line).strip()
+    if cleaned in _AADHAAR_NAME_BLOCKLIST:
+        return True
+    low = cleaned.lower()
+    return any(b.lower() in low for b in [
+        "government", "unique identification", "authority", "aadhaar",
+        "uidai", "issue date", "vid:", "enrolment",
+    ])
 
 
 def extract_aadhaar_from_files(files_meta: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -231,7 +267,9 @@ def extract_aadhaar_from_files(files_meta: List[Dict[str, Any]]) -> Dict[str, st
             out["aadhaar_gender"] = m.group(1).title()
         for line in text.splitlines()[:30]:
             line = line.strip()
-            if _NAME_RE.match(line) and "Government" not in line and "Aadhaar" not in line:
+            if _looks_like_aadhaar_header(line):
+                continue
+            if _NAME_RE.match(line):
                 if not out["aadhaar_name"]:
                     out["aadhaar_name"] = line
                     break

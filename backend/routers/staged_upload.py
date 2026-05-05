@@ -1209,10 +1209,14 @@ def _build_case_data_from_metadata(metadata: dict, officer: dict, doc_type: str)
             a1["name"] = aad["aadhaar_name"]
         if not a1.get("permanent_address") and aad.get("aadhaar_address"):
             a1["permanent_address"] = aad["aadhaar_address"]
+            # Also set the generic 'address' so the renderer's R/o block uses it
+            if not a1.get("address"):
+                a1["address"] = aad["aadhaar_address"]
         if not a1.get("gender") and aad.get("aadhaar_gender"):
             a1["gender"] = aad["aadhaar_gender"]
-        if not a1.get("age") and aad.get("aadhaar_dob"):
-            a1["age"] = f"DOB {aad['aadhaar_dob']}"
+        # DOB is metadata, not the literal age — keep it in a separate field
+        if not a1.get("dob") and aad.get("aadhaar_dob"):
+            a1["dob"] = aad["aadhaar_dob"]
         case["accused"][0] = a1
 
     return case

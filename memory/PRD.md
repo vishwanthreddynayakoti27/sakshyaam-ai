@@ -250,15 +250,56 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Spatial clustering for table detection
 - ✅ Rule-based extraction calibrated on real samples
 
-### 2026-04-27: Fixed-Layout DOCX Generation (0-credit, NO AI)
-- ✅ Service `/app/backend/services/fixed_layout_renderer.py` — strict deterministic templates for Charge Sheet (Form-VII style), Case Diary Part-I (S.193(8) BNSS), Remand Report (S.187 BNSS). Hard-coded structure, missing fields render as `_____` blanks
-- ✅ Aadhaar auto-extraction (`extract_aadhaar_from_files`) walks staged `files[].ocr_text` mechanically — no AI inference. Populates A1.aadhaar_number/name/address/gender/age when an Aadhaar pattern (12-digit + "Government of India" marker) is detected
-- ✅ Endpoint `GET /api/staging/render-fixed/{doc_type}/{case_id}` — auth-required, returns DOCX directly, 0 credits deducted (verified via /auth/profile delta=0 across 3 renders)
-- ✅ Frontend `ChargeSheetFusion.js` wired in TWO places:
-  - `FusionIdleView` — "Skip AI — Download Fixed Templates (0 credits)" panel appears once `caseId` is set (after first file upload). Testids: `fixed-layout-idle-section`, `idle-download-fixed-{chargesheet|casediary|remand}`
-  - `FusionCompletedView` — "Fixed-Layout Documents (0 credits)" section alongside the AI options. Testids: `fixed-layout-section`, `download-fixed-{chargesheet|casediary|remand}`
-- ✅ Test: 6/6 unit tests in `/app/backend/tests/test_fixed_layout.py` (renderer correctness, sparse blanks, aadhaar extraction, identical-structure guarantee across cases) + 8/8 integration tests in `/app/backend/tests/test_fixed_layout_endpoint.py` (auth, validation, DOCX content, zero-credit, aadhaar autofill)
-- ✅ End-to-end frontend verified: TEST001 → upload PNG → all 3 idle buttons trigger real .docx downloads with correct FIR-number-prefixed filenames + 0-credit toast
+### 2026-04-27: Fixed-Layout DOCX Generation — REWRITTEN to match real Telangana samples
+**Initial release** (2026-04-27):
+- Service `/app/backend/services/fixed_layout_renderer.py` — strict deterministic templates for Charge Sheet, Case Diary Part-I, Remand Report
+- Endpoint `GET /api/staging/render-fixed/{doc_type}/{case_id}` — auth-required, returns DOCX directly, 0 credits
+- Frontend `ChargeSheetFusion.js` wired in idle and completed views
+
+**REWRITE** (2026-04-27 — same day, after user feedback):
+- ❌ User feedback: "Three layer fusion is completely wrong... layout should be fixed and wen I upload details you should fill the details and generate the exact human made doc"
+- ✅ Re-extracted EXACT layouts from user's real samples (`57-26 Chargesheet.pdf`, `57-26 CD 1.pdf`, `236 remand.pdf`) via `extract_file_tool`
+- ✅ Charge sheet now reproduces the authentic Telangana Form-VII layout:
+  - Title: "CHARGE-SHEET" + "(UNDER SECTION 193 BNSS.)" + "IN THE COURT OF JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL"
+  - 18-numbered-row 2-column table (1. Dist/PS/FIR/Date strip, 2-13 fields, 14-16 brief facts paragraphs, 17-18 ack/dispatch)
+  - Person blocks formatted in station style: "Sri. <Name> S/o <Father>, Age: N years, Caste: X, Occ: Y, R/o <Address>, Ph.<phone>, Aadhaar: 1234 5678 9012"
+  - Witness sub-table: LW-#, Name & Address, Role columns
+  - "Hence charge sheet." + "Submitting charge-sheet." signature block
+- ✅ Case Diary Part-I now reproduces the authentic format:
+  - Header strip: PS, Dist, F.I.R No., Date/Time/Place of occurrence, CD Dt., Offence U/s
+  - 8 numbered fields (1. Date and time of report ... 8. Witnesses examined)
+  - Brief Facts + Steps Taken paragraphs
+  - "Closed the CD for the day; further progress follows." + "Copy submitted to the SDPO ... f.f.i."
+- ✅ Remand Case Diary now reproduces the authentic letter format:
+  - "REMAND CASE DIARY" + "Part-I" + "IN THE COURT OF JUDICIAL MAGISTRATE OF FIRST CLASS AT [DIST]"
+  - "Honoured Sir," opener
+  - 10 numbered fields + Brief Facts + Investigation Done So Far + "Reasons for arrest:"
+  - "Hence the remand report." + verbatim prayer clause "The arrested accused person(s) A1 to AN herewith produced before the Hon'ble Court under proper escort with a pray to send {them|him/her} for {police|judicial} remand custody as the court deems fit."
+  - Encl: list + Escort: line
+- ✅ Aadhaar auto-extraction improved:
+  - `_AADHAAR_NAME_BLOCKLIST` filters out OCR header garbage like "Government Of India" / "Unique Identification Authority of India" so they don't get picked as the accused's name
+  - Extracted aadhaar_number is now displayed in the A1 person block as "Aadhaar: 1234 5678 9012" (formatted with spaces for readability)
+  - DOB stored separately (no longer poisoning the Age cell)
+- ✅ Tests: `test_fixed_layout.py` 6/6 unit tests pass with new layout-string assertions; `test_fixed_layout_endpoint.py` 8/8 integration tests pass; end-to-end Aadhaar flow verified manually (number + name appear in rendered DOCX, header garbage absent)
+
+### 2026-04-27: Narration Generator — "Wing 1" Tool (NEW)
+- ✅ User reported: "I don't see a narrative generator tool anywhere"
+- ✅ Backend service `/app/backend/services/narration_generator.py`:
+  - Curated `KEYWORD_BANK` with 113 station-style phrases across 10 categories: Offence Registration, Scene of Offence, Witness Examination, Medical Examination, Accused Handling, Property/Recovery, Investigation Steps, Brief Facts Phrases, Section-Specific Phrases (BNS), Closing Phrases
+  - `compose_narration()` deterministic stitcher (NO LLM) that joins selected phrases with a station-style intro (FIR/PS/IO/complainant) and outro (accused names, sections)
+- ✅ Backend router `/app/backend/routers/narration.py` (under `/api/narration`):
+  - `GET /categories` — returns 10 categories + total count
+  - `GET /keywords?category=&q=` — filterable keyword list
+  - `POST /compose` — returns `{narration, word_count}`
+  - All endpoints auth-required (HTTPBearer JWT)
+- ✅ Frontend page `/app/frontend/src/pages/NarrationGenerator.js`:
+  - 3-column desktop grid: search + categories (left) | phrase library (middle) | selected phrases + compose + output (right)
+  - Real-time keyword filter (case-insensitive, debounced 200ms)
+  - Click-to-toggle phrase selection with up/down reordering and remove
+  - Optional case-meta panel (FIR/PS/IO/Complainant/Accused/Sections/Occurrence/Custom intro)
+  - Composed narration shown in editable Textarea with Copy-to-clipboard button
+- ✅ Sidebar nav item with `PenTool` icon + NEW badge, route `/narration-generator` (Layout component)
+- ✅ Backend tests: 9/9 in `/app/backend/tests/test_narration.py` (auth, categories, keyword search, compose, accused-names join, no-LLM determinism)
 
 ## In Progress / Pending
 
