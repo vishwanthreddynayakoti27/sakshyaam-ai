@@ -1130,3 +1130,131 @@ async def generate_intelligent_case_diary_endpoint(
             detail=f"Case Diary generation failed. NO CREDITS DEDUCTED. Error: {str(e)}"
         )
 
+
+
+# ============================================================
+# FIXED-LAYOUT DOCUMENT GENERATION
+# (Charge Sheet, Case Diary Part-I, Remand Report)
+# Layout never changes. Missing fields render as blank "_____".
+# Aadhaar is auto-extracted from already-staged files when present.
+# ============================================================
+
+from services.fixed_layout_renderer import render_fixed_doc, extract_aadhaar_from_files
+from fastapi.responses import StreamingResponse
+
+
+def _build_case_data_from_metadata(metadata: dict, officer: dict, doc_type: str) -> dict:
+    """
+    Walk the staged metadata + per-file extracted_data and build a normalised
+    `case_data` dict the renderer understands. We stay strictly mechanical here
+    — no AI, no inference. Whatever the OCR/parser produced is what we plug in.
+    """
+    files = metadata.get("files", []) or []
+    case = {
+        "police_station": metadata.get("police_station") or metadata.get("ps_name") or "",
+        "district": metadata.get("district") or "",
+        "fir_number": metadata.get("fir_number") or metadata.get("fir_no") or "",
+        "fir_date": metadata.get("fir_date") or "",
+        "sections": metadata.get("sections") or "",
+        "place": metadata.get("place") or metadata.get("police_station") or "",
+        "today_date": datetime.now().strftime("%d-%m-%Y"),
+        "io": {
+            "name": officer.get("name", ""),
+            "designation": officer.get("rank") or officer.get("role", ""),
+            "phone": officer.get("phone", ""),
+        },
+        "complainant": metadata.get("complainant") or {},
+        "accused": metadata.get("accused") or [],
+        "witnesses": metadata.get("witnesses") or [],
+        "material_objects": metadata.get("material_objects") or [],
+        "brief_facts": metadata.get("brief_facts") or "",
+        # Case-diary-specific
+        "diary_no": metadata.get("diary_no", ""),
+        "diary_date": metadata.get("diary_date", ""),
+        "places_visited": metadata.get("places_visited", ""),
+        "distance_travelled": metadata.get("distance_travelled", ""),
+        "time_departure": metadata.get("time_departure", ""),
+        "time_arrival": metadata.get("time_arrival", ""),
+        "witnesses_examined": metadata.get("witnesses_examined", []),
+        "search_seizure": metadata.get("search_seizure", ""),
+        "material_seized": metadata.get("material_seized", ""),
+        "actions_today": metadata.get("actions_today", ""),
+        "findings": metadata.get("findings", ""),
+        "next_steps": metadata.get("next_steps", ""),
+        # Remand-specific
+        "court_name": metadata.get("court_name", ""),
+        "court_address": metadata.get("court_address", ""),
+        "arrest_datetime": metadata.get("arrest_datetime", ""),
+        "production_datetime": metadata.get("production_datetime", ""),
+        "grounds_of_arrest": metadata.get("grounds_of_arrest", ""),
+        "investigation_done": metadata.get("investigation_done", ""),
+        "reasons_for_remand": metadata.get("reasons_for_remand", ""),
+        "further_investigation": metadata.get("further_investigation", ""),
+        "remand_type": metadata.get("remand_type", ""),
+        "remand_duration": metadata.get("remand_duration", ""),
+        "remand_from": metadata.get("remand_from", ""),
+        "remand_to": metadata.get("remand_to", ""),
+    }
+
+    # Auto-extract Aadhaar fields from any staged file with OCR text and
+    # plug them into A1 if A1 has no aadhaar number yet.
+    aad = extract_aadhaar_from_files(files)
+    if aad.get("aadhaar_number"):
+        if not case["accused"]:
+            case["accused"] = [{}]
+        a1 = case["accused"][0] if isinstance(case["accused"][0], dict) else {}
+        if not a1.get("aadhaar_number"):
+            a1["aadhaar_number"] = aad["aadhaar_number"]
+        if not a1.get("name") and aad.get("aadhaar_name"):
+            a1["name"] = aad["aadhaar_name"]
+        if not a1.get("permanent_address") and aad.get("aadhaar_address"):
+            a1["permanent_address"] = aad["aadhaar_address"]
+        if not a1.get("gender") and aad.get("aadhaar_gender"):
+            a1["gender"] = aad["aadhaar_gender"]
+        if not a1.get("age") and aad.get("aadhaar_dob"):
+            a1["age"] = f"DOB {aad['aadhaar_dob']}"
+        case["accused"][0] = a1
+
+    return case
+
+
+@router.get("/render-fixed/{doc_type}/{case_id}")
+async def render_fixed_layout_doc(
+    doc_type: str,
+    case_id: str,
+    officer: dict = Depends(get_current_officer)
+):
+    """
+    Generate one of the 3 fixed-layout documents from the staged case files.
+    Layout is hard-coded; values are taken from metadata.json + auto-extracted
+    Aadhaar fields. Missing fields render as `_____` blanks for the officer
+    to fill in Word.
+
+    doc_type ∈ {charge_sheet, case_diary_part1, remand_report}
+    """
+    if doc_type not in ("charge_sheet", "case_diary_part1", "remand_report"):
+        raise HTTPException(status_code=400, detail="Invalid doc_type")
+
+    folder = get_case_folder(officer.get("officer_id", "unknown"), case_id)
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail="Case folder not found")
+
+    metadata_path = folder / "metadata.json"
+    if not metadata_path.exists():
+        raise HTTPException(status_code=404, detail="Case metadata not found — upload files first")
+
+    with open(metadata_path) as f:
+        metadata = json.load(f)
+
+    try:
+        case_data = _build_case_data_from_metadata(metadata, officer, doc_type)
+        docx_bytes, filename = render_fixed_doc(doc_type, case_data)
+    except Exception as e:
+        logger.error(f"Fixed-layout render failed for {doc_type}/{case_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Rendering failed: {str(e)}")
+
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
