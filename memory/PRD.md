@@ -149,6 +149,27 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Verified against FIR 57/2026 — 7 corrections applied (complainant moved from accused, garbled OCR dropped, procedural sections stripped, Smt. salutation inferred, witnesses re-numbered, chargesheet date preserved)
 - ✅ Output matches real station-written charge sheet format by Y. Bhagya Lakshmi Reddy (verified via extract_file_tool)
 
+### 2026-04-27: Real Deepfake Detection (Gemini 2.5 Pro Multimodal Vision)
+- ✅ New service `/app/backend/services/deepfake_detector.py` — replaces the heuristic-only verdict for images and videos with real AI multimodal forensic analysis using **Gemini 2.5 Pro** via Emergent LLM key (no extra API cost)
+- ✅ Strict 3-class classifier: **REAL** (camera capture), **AI_GENERATED** (Stable Diffusion / Midjourney / DALL·E / SDXL / Flux / non-photographic graphics), **DEEP_FAKE** (face-swap / lip-sync manipulation)
+- ✅ For videos: extracts 5 evenly-spaced frames via OpenCV, sends multi-image message so model can detect face-boundary flicker, identity drift, lip-sync mismatch across frames
+- ✅ Image normalisation pipeline: re-encodes to JPEG (max 1280px long-edge, q=85) before sending — handles WEBP/PNG/animated GIF correctly
+- ✅ Strict JSON output schema with police-grade fields: `{verdict, confidence, indicators[], red_flags[], reasoning}`. Model prompt enumerates 11 specific deepfake artefact families (skin texture, asymmetric eyes, melted ears, lighting mismatch, Synthia/SoraSig watermarks, etc.)
+- ✅ `ForensicAnalysisResponse` extended with `ai_confidence`, `indicators[]`, `red_flags[]`, `ai_model` so frontend can surface the model's reasoning
+- ✅ Authenticity-score mapping rewritten with floors: REAL→max(50, conf), AI_GENERATED→100-max(50,conf), DEEP_FAKE→100-max(70,conf) — prevents confusing 0% scores when model returns ambiguous confidence
+- ✅ Frontend `MediaForensic.js` now displays the AI model's confidence next to authenticity score, plus dedicated **Red Flags** (bordered red panel) and **Supporting Indicators** lists from the AI verdict
+- ✅ Audio still uses heuristic (audio deepfake needs dedicated spectral model — out of scope)
+- ✅ Test suite `/app/backend/tests/test_deepfake_detection.py` — 3/3 pass: realistic-photo path, obvious-synthetic path, MongoDB persistence of `ai_analysis` block (verdict + indicators + red flags). Real Gemini API hit confirmed, returns ~10 indicators and 5 red flags per image with police-grade reasoning paragraph
+
+### 2026-04-27: GitHub Push Protection — History-Rewrite Cleanup
+- ✅ `git filter-branch` purged `backend/credentials/` from ALL git commits (was triggering GitHub secret scanner on commit `630a26c`)
+- ✅ Total commits reduced 127 → 125 (2 empty commits pruned). Local history is fully clean — no commit anywhere references the credentials directory
+- ✅ Strengthened `.gitignore`: `backend/credentials/` + `**/credentials/*.json` patterns prevent re-introduction
+- ✅ Disk files preserved (Google Vision/NLP/Translate/Speech keep working). Recommendation made to user to rotate the keys in GCP Console as a definitive security fix
+
+### 2026-04-27: Dashboard Buy-Credits CTA
+- ✅ Added compact credit-balance pill in the Dashboard top status bar (`dashboard-buy-credits` testid) — live balance fetched from `/auth/profile`, click navigates to `/credits`. No Layout migration required (preserves bespoke hero design)
+
 ### 2026-04-27: Credit & Payment System (Stripe + Approval Gate + Manual Grant)
 - ✅ **Officer model**: added `credits:int=0`, `approval_status: PENDING|APPROVED|REJECTED` (default PENDING for new signups). Startup backfill marks all pre-existing officers APPROVED so live users aren't locked out
 - ✅ **Approval gate on /auth/login**: PENDING → 403 with "pending admin approval" detail; REJECTED → 403 with "rejected" detail

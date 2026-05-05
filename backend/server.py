@@ -226,8 +226,12 @@ class ForensicAnalysisResponse(BaseModel):
     analysis_summary: str
     message: str
     verdict: str = ""  # REAL, AI_GENERATED, or DEEP_FAKE
-    confidence: float = 0.0  # Confidence percentage
+    confidence: float = 0.0  # Authenticity score: 0=fully synthetic, 100=fully real
     details: str = ""  # Additional details
+    ai_confidence: int = 0  # AI model's own confidence in its verdict (0-100)
+    indicators: List[str] = []
+    red_flags: List[str] = []
+    ai_model: Optional[str] = None
 
 class FraudRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -2802,6 +2806,71 @@ async def analyze_media_forensic(
             "is_authentic": is_authentic
         }
         
+        # =================================================================
+        # AI-powered deepfake detection (Gemini 2.5 Pro multimodal vision)
+        # Overrides the heuristic verdict for images and videos. Audio still
+        # uses the legacy heuristic since it needs a dedicated spectral model.
+        # =================================================================
+        ai_verdict_block = None
+        if media_type in ("image", "video"):
+            try:
+                from services.deepfake_detector import (
+                    analyze_image_for_deepfake,
+                    analyze_video_for_deepfake,
+                )
+                if media_type == "image":
+                    ai_verdict_block = await analyze_image_for_deepfake(contents, file.filename)
+                else:
+                    ai_verdict_block = await analyze_video_for_deepfake(contents, file.filename)
+            except Exception as ai_err:
+                logger.error(f"AI deepfake detection failed, falling back to heuristic: {ai_err}")
+                ai_verdict_block = {
+                    "error": str(ai_err)[:300],
+                    "fallback": "heuristic",
+                }
+
+        if ai_verdict_block and "verdict" in ai_verdict_block:
+            # Promote AI verdict to the primary response.
+            # Map verdict + confidence to a single 0-100 authenticity score where
+            # 100 = certainly real, 0 = certainly synthetic. We apply a floor on
+            # confidence so that a low-confidence AI claim never accidentally
+            # produces a high authenticity score.
+            verdict = ai_verdict_block["verdict"]
+            ai_conf = int(ai_verdict_block["confidence"] or 0)
+            if verdict == "REAL":
+                authenticity_score = max(50, ai_conf)  # 50–100
+            elif verdict == "AI_GENERATED":
+                authenticity_score = 100 - max(50, ai_conf)  # 0–50
+            else:  # DEEP_FAKE
+                authenticity_score = 100 - max(70, ai_conf)  # 0–30
+            # Merge AI indicators / red flags with the heuristic ones (AI first)
+            indicators = (ai_verdict_block.get("indicators") or []) + indicators
+            red_flags = (ai_verdict_block.get("red_flags") or []) + red_flags
+            details = ai_verdict_block.get("reasoning") or details
+            confidence_level = (
+                "HIGH" if ai_conf >= 75
+                else ("MEDIUM" if ai_conf >= 50 else "LOW")
+            )
+            risk_level = (
+                "HIGH" if verdict == "DEEP_FAKE"
+                else ("MEDIUM" if verdict == "AI_GENERATED" else "LOW")
+            )
+            verdict_description = {
+                "REAL": "Authentic camera capture — no AI/deepfake artefacts detected",
+                "AI_GENERATED": "Likely AI-generated (Stable Diffusion / Midjourney / DALL·E / SDXL family) or non-photographic digital content",
+                "DEEP_FAKE": "Likely deepfake — face-swap or identity manipulation detected",
+            }.get(verdict, verdict_description)
+            analysis_details.update({
+                "verdict": verdict,
+                "is_authentic": verdict == "REAL",
+                "indicators": indicators,
+                "red_flags": red_flags,
+                "ai_analysis": ai_verdict_block,
+                "ai_model": "gemini-2.5-pro",
+                "indicator_count": len(indicators),
+                "red_flag_count": len(red_flags),
+            })
+
         forensic_report = ForensicReport(
             officer_id=officer_id,
             file_name=file.filename,
@@ -2826,7 +2895,11 @@ async def analyze_media_forensic(
             message=f"[{verdict}] - {details}",
             verdict=verdict,
             confidence=authenticity_score,
-            details=details
+            details=details,
+            ai_confidence=int((ai_verdict_block or {}).get("confidence", 0) or 0),
+            indicators=indicators[:12],
+            red_flags=red_flags[:12],
+            ai_model=("gemini-2.5-pro" if ai_verdict_block and "verdict" in ai_verdict_block else None),
         )
         
     except HTTPException as e:

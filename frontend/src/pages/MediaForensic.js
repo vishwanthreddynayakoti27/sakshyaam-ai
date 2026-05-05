@@ -53,8 +53,12 @@ const MediaForensic = () => {
       // Map the response to our expected format
       const analysisResult = {
         verdict: response.data.verdict || 'UNKNOWN',
-        confidence: response.data.confidence || response.data.probability_score || 0,
-        details: response.data.details || response.data.analysis_summary || ''
+        confidence: response.data.confidence ?? response.data.probability_score ?? 0,
+        ai_confidence: response.data.ai_confidence ?? 0,
+        details: response.data.details || response.data.analysis_summary || '',
+        indicators: response.data.indicators || [],
+        red_flags: response.data.red_flags || [],
+        ai_model: response.data.ai_model || null,
       };
       
       setResult(analysisResult);
@@ -279,16 +283,18 @@ const MediaForensic = () => {
                             <p className="text-white/70">{config.description}</p>
                           </div>
 
-                          {/* Confidence Score */}
-                          <div className="p-4 rounded-lg bg-[#030614] border border-white/10">
+                          {/* Authenticity Score */}
+                          <div className="p-4 rounded-lg bg-[#030614] border border-white/10" data-testid="authenticity-score-card">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-white/60 text-sm flex items-center gap-2">
                                 <Percent size={16} />
-                                Confidence Score
+                                Authenticity Score
+                                <span className="text-white/30 text-xs">(0 = synthetic · 100 = real)</span>
                               </span>
                               <span 
                                 className="text-2xl font-bold"
                                 style={{ color: config.color }}
+                                data-testid="authenticity-score"
                               >
                                 {result.confidence?.toFixed(1) || 0}%
                               </span>
@@ -302,13 +308,51 @@ const MediaForensic = () => {
                                 style={{ backgroundColor: config.color }}
                               />
                             </div>
+                            {result.ai_confidence > 0 && (
+                              <p className="text-white/40 text-xs mt-2">
+                                AI model is <span className="text-white/70 font-semibold">{result.ai_confidence}%</span> confident in this verdict
+                                {result.ai_model && (
+                                  <span className="text-white/30"> · powered by <span className="text-white/50">{result.ai_model}</span></span>
+                                )}
+                              </p>
+                            )}
                           </div>
 
                           {/* Analysis Details */}
                           {result.details && (
-                            <div className="p-4 rounded-lg bg-[#030614] border border-white/10">
-                              <p className="text-white/50 text-xs mb-1">ANALYSIS DETAILS</p>
-                              <p className="text-white">{result.details}</p>
+                            <div className="p-4 rounded-lg bg-[#030614] border border-white/10" data-testid="analysis-reasoning">
+                              <p className="text-white/50 text-xs mb-1">FORENSIC REASONING</p>
+                              <p className="text-white text-sm leading-relaxed">{result.details}</p>
+                            </div>
+                          )}
+
+                          {/* Red Flags */}
+                          {result.red_flags?.length > 0 && (
+                            <div className="p-4 rounded-lg bg-[#FF4655]/5 border border-[#FF4655]/30" data-testid="red-flags-list">
+                              <p className="text-[#FF4655] text-xs mb-2 font-semibold uppercase tracking-wider">⚠ Red Flags ({result.red_flags.length})</p>
+                              <ul className="space-y-1">
+                                {result.red_flags.map((flag, idx) => (
+                                  <li key={idx} className="text-white/80 text-sm flex items-start gap-2">
+                                    <span className="text-[#FF4655] mt-0.5">•</span>
+                                    <span>{flag}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Indicators */}
+                          {result.indicators?.length > 0 && (
+                            <div className="p-4 rounded-lg bg-[#030614] border border-white/10" data-testid="indicators-list">
+                              <p className="text-white/50 text-xs mb-2 font-semibold uppercase tracking-wider">Supporting Indicators ({result.indicators.length})</p>
+                              <ul className="space-y-1">
+                                {result.indicators.map((ind, idx) => (
+                                  <li key={idx} className="text-white/70 text-sm flex items-start gap-2">
+                                    <span className="text-white/40 mt-0.5">•</span>
+                                    <span>{ind}</span>
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
                           )}
 
