@@ -250,6 +250,16 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Spatial clustering for table detection
 - ✅ Rule-based extraction calibrated on real samples
 
+### 2026-04-27: Fixed-Layout DOCX Generation (0-credit, NO AI)
+- ✅ Service `/app/backend/services/fixed_layout_renderer.py` — strict deterministic templates for Charge Sheet (Form-VII style), Case Diary Part-I (S.193(8) BNSS), Remand Report (S.187 BNSS). Hard-coded structure, missing fields render as `_____` blanks
+- ✅ Aadhaar auto-extraction (`extract_aadhaar_from_files`) walks staged `files[].ocr_text` mechanically — no AI inference. Populates A1.aadhaar_number/name/address/gender/age when an Aadhaar pattern (12-digit + "Government of India" marker) is detected
+- ✅ Endpoint `GET /api/staging/render-fixed/{doc_type}/{case_id}` — auth-required, returns DOCX directly, 0 credits deducted (verified via /auth/profile delta=0 across 3 renders)
+- ✅ Frontend `ChargeSheetFusion.js` wired in TWO places:
+  - `FusionIdleView` — "Skip AI — Download Fixed Templates (0 credits)" panel appears once `caseId` is set (after first file upload). Testids: `fixed-layout-idle-section`, `idle-download-fixed-{chargesheet|casediary|remand}`
+  - `FusionCompletedView` — "Fixed-Layout Documents (0 credits)" section alongside the AI options. Testids: `fixed-layout-section`, `download-fixed-{chargesheet|casediary|remand}`
+- ✅ Test: 6/6 unit tests in `/app/backend/tests/test_fixed_layout.py` (renderer correctness, sparse blanks, aadhaar extraction, identical-structure guarantee across cases) + 8/8 integration tests in `/app/backend/tests/test_fixed_layout_endpoint.py` (auth, validation, DOCX content, zero-credit, aadhaar autofill)
+- ✅ End-to-end frontend verified: TEST001 → upload PNG → all 3 idle buttons trigger real .docx downloads with correct FIR-number-prefixed filenames + 0-credit toast
+
 ## In Progress / Pending
 
 ### ~~P0 - Triple Fusion Endpoint~~ ✅ FIXED (2026-04-19)
