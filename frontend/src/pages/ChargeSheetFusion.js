@@ -622,6 +622,20 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
   const [corrections, setCorrections] = React.useState(null);
   const [hasChargeSheet, setHasChargeSheet] = React.useState(false);
   const [fixedLoading, setFixedLoading] = React.useState(null); // 'charge_sheet' | 'case_diary_part1' | 'remand_report' | null
+  const [smartElapsed, setSmartElapsed] = React.useState(0);
+  const [diaryElapsed, setDiaryElapsed] = React.useState(0);
+
+  // Live elapsed-time counters so the user sees real progress, not a stuck "~20s" hint
+  React.useEffect(() => {
+    if (!smartLoading) { setSmartElapsed(0); return; }
+    const t = setInterval(() => setSmartElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [smartLoading]);
+  React.useEffect(() => {
+    if (!diaryLoading) { setDiaryElapsed(0); return; }
+    const t = setInterval(() => setDiaryElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [diaryLoading]);
 
   const downloadFixedLayout = async (docType) => {
     if (!caseId) {
@@ -667,7 +681,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       const resp = await api.post(
         `/staging/generate-intelligent-charge-sheet/${caseId}`,
         null,
-        { responseType: 'blob' }
+        { responseType: 'blob', timeout: 180000 }
       );
       // Pull corrections count from response headers
       const correctionsCount = resp.headers['x-corrections-count'] || resp.headers['X-Corrections-Count'];
@@ -722,7 +736,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       const resp = await api.post(
         `/staging/generate-intelligent-case-diary/${caseId}`,
         null,
-        { responseType: 'blob' }
+        { responseType: 'blob', timeout: 180000 }
       );
       const entries = resp.headers['x-entries-count'] || resp.headers['X-Entries-Count'];
       const blob = new Blob([resp.data], {
@@ -805,7 +819,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
           data-testid="download-intelligent-chargesheet"
         >
           {smartLoading ? (
-            <><Loader2 className="animate-spin mr-2" size={16} /> Running AI (~20s)...</>
+            <><Loader2 className="animate-spin mr-2" size={16} /> Running AI · {smartElapsed}s elapsed...</>
           ) : (
             <><Sparkles size={16} className="mr-2" /> Generate Station-Format Charge Sheet</>
           )}
@@ -845,7 +859,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
           title={!hasChargeSheet ? 'Generate Station-Format Charge Sheet first' : 'Generate & download Case Diary Part-I'}
         >
           {diaryLoading ? (
-            <><Loader2 className="animate-spin mr-2" size={16} /> Composing entries (~20s)...</>
+            <><Loader2 className="animate-spin mr-2" size={16} /> Composing entries · {diaryElapsed}s elapsed...</>
           ) : (
             <><BookOpen size={16} className="mr-2" /> Generate Case Diary Part-I</>
           )}
