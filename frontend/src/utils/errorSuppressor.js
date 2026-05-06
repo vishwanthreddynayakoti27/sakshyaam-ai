@@ -1,15 +1,32 @@
 /**
- * Suppress noisy non-actionable error events:
- *  - "Script error." with no message/file (cross-origin opaque errors,
- *    common on mobile Chrome / Android WebView with strict CSP)
- *  - ResizeObserver loop limit warnings
- *  - ChunkLoadError (handled by graceful reload below)
+ * Suppress noisy non-actionable error events from React's dev-mode error
+ * overlay (`react-error-overlay`). Real errors still:
+ *   - log to the browser console
+ *   - get POSTed to /api/admin/log-frontend-error via the axios interceptor
  *
- * Real errors with a stack trace still bubble through to the React error
- * overlay and our /admin/log-frontend-error reporter.
+ * The overlay was popping `"Script error."` with no useful detail on mobile
+ * Chrome — opaque cross-origin error events that the overlay can't unwrap.
+ * This prevents officers from interacting with the page even when the app
+ * actually rendered fine.
+ *
+ * NB: react-error-overlay only ships in CRA dev mode. In production builds
+ * the import below is dead code and harmless.
  */
 
-// Patterns that we know are non-actionable noise
+// Disable the dev overlay's window-level error listeners.
+try {
+  // eslint-disable-next-line global-require
+  const reo = require('react-error-overlay');
+  if (reo && typeof reo.stopReportingRuntimeErrors === 'function') {
+    reo.stopReportingRuntimeErrors();
+  }
+} catch (e) {
+  /* package not present in production build — fine */
+}
+
+// Belt-and-suspenders: a capture-phase listener that swallows the residual
+// "Script error." / ResizeObserver-loop noise so it doesn't reach any other
+// global handler that might display it.
 const NOISE_PATTERNS = [
   /^Script error\.?$/i,
   /^ResizeObserver loop limit exceeded$/i,
@@ -17,33 +34,26 @@ const NOISE_PATTERNS = [
 ];
 
 function isNoise(message) {
-  if (!message) return true; // empty messages are always noise
-  const m = String(message);
-  return NOISE_PATTERNS.some((rx) => rx.test(m.trim()));
+  if (!message) return true;
+  const m = String(message).trim();
+  return NOISE_PATTERNS.some((rx) => rx.test(m));
 }
 
 window.addEventListener(
   'error',
   function (event) {
-    // event.message === '' or 'Script error.' with no event.error → cross-origin
-    // opaque error; nothing actionable for us. Stop it from triggering the
-    // React-error-overlay panel.
-    const msg = event?.message;
-    const hasUsefulError = event?.error && event.error.stack;
-    if (!hasUsefulError && isNoise(msg)) {
+    const hasUseful = event?.error && event.error.stack;
+    if (!hasUseful && isNoise(event?.message)) {
       event.stopImmediatePropagation();
       event.preventDefault();
-      // Quietly note it in the console so we still know it happened
-      // (don't recurse into our error logger)
       // eslint-disable-next-line no-console
-      console.debug('[suppressed non-actionable error]', msg || '(empty)', event?.filename, event?.lineno);
+      console.debug('[suppressed non-actionable error]', event?.message || '(empty)');
       return false;
     }
   },
-  true // capture phase — beat React's listener
+  true
 );
 
-// Same for unhandled promise rejections that have no useful payload
 window.addEventListener(
   'unhandledrejection',
   function (event) {
