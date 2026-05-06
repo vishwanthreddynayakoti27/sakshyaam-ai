@@ -87,27 +87,51 @@ full_case = {
 cs1 = render_charge_sheet(full_case)
 assert cs1[:2] == b"PK", "Not a valid DOCX"
 text1 = docx_text(cs1)
-# Title
-assert "CHARGE-SHEET" in text1
+# Title (verbatim from sample: spaced-out "C H A R G E – S H E E T")
+assert "C H A R G E – S H E E T" in text1
 assert "(UNDER SECTION 193 BNSS.)" in text1
 assert "JUDICIAL FIRST CLASS MAGISTRATE" in text1.upper()
 assert "MAKTHAL" in text1.upper()
+# 18 mandatory section labels (must appear verbatim — sample-matched)
+mandatory_labels = [
+    "Charge Sheet No.",                                    # 02
+    "Date of Charge",                                      # 03
+    "Act and Section of Law",                              # 04
+    "Type of the final report",                            # 05
+    "If final report is un-occurred",                      # 06
+    "If charge sheet is original or supplementary.",       # 07
+    "Name and rank of the I.O (s)",                        # 08
+    "Name and Address of the complainant or informant",    # 09
+    "Details of property seized during the course of investigation.",  # 10
+    "Particulars of accused persons charge sheeted",       # 11
+    "Particulars of the accused persons not charge sheeted",  # 12
+    "Particulars of witnesses to be examined",             # 13 (heading paragraph)
+    "If F.R. is false, indicate action taken",             # 14
+    "Result of Laboratory Analysis",                       # 15
+    "Brief facts of the case",                             # 16
+    "Is ack. copy of notice to complainant is enclosed",   # 17
+    "Dispatched on",                                       # 18
+]
+for lbl in mandatory_labels:
+    assert lbl in text1, f"Missing mandatory section label: {lbl!r}"
+
 # Header strip
 assert "Narayanpet" in text1
 assert "57/2026" in text1
 assert "22.02.2026" in text1
 # IO
 assert "Bhagya Lakshmi Reddy" in text1
-assert "Sri. Chandapuram Manikanta" in text1
+assert "Buddamolla" not in text1  # sanity — ours has different complainant
+assert "Chandapuram Manikanta" in text1
 # Accused
 assert "Pujari Nandakishor" in text1
 assert "A1." in text1
 # Witness
 assert "LW-1" in text1
 # Closing
-assert "Hence charge sheet" in text1
-assert "Submitting charge-sheet" in text1
-print("[OK] 1. Charge Sheet renders authentic 18-row Telangana Form-VII layout")
+assert "Hence the charge sheet." in text1
+assert "Submitting chargesheet" in text1
+print("[OK] 1. Charge Sheet renders authentic 18-section Telangana layout (verbatim)")
 
 
 # --- Test 2: sparse data → blanks render as `_____` ---
@@ -118,8 +142,12 @@ assert "Test PS" in text2
 assert "1/2026" in text2
 assert text2.count(BLANK) >= 5, f"Expected ≥5 BLANK placeholders, got {text2.count(BLANK)}"
 # Required fixed-text elements still present even with sparse data
-for must in ["CHARGE-SHEET", "Particulars of charge sheeted Person", "Particulars of the witnesses",
-             "Hence charge sheet", "Submitting charge-sheet"]:
+for must in ["C H A R G E – S H E E T", "Particulars of accused persons charge sheeted",
+             "Particulars of witnesses to be examined", "Hence the charge sheet.",
+             "Submitting chargesheet", "Charge Sheet No.", "Date of Charge",
+             "Act and Section of Law", "Type of the final report",
+             "Result of Laboratory Analysis", "Brief facts of the case",
+             "Is ack. copy of notice to complainant is enclosed", "Dispatched on"]:
     assert must in text2, f"Missing fixed element: {must!r}"
 print(f"[OK] 2. Sparse data: {text2.count(BLANK)} BLANK placeholders, all fixed text intact")
 

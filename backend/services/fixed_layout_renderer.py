@@ -283,168 +283,291 @@ def extract_aadhaar_from_files(files_meta: List[Dict[str, Any]]) -> Dict[str, st
 
 
 # ============================================================
-# 1. CHARGE SHEET — Telangana Form-VII (18-row table) layout
+# 1. CHARGE SHEET — Telangana Form-VII (18-section layout)
 # ============================================================
-# This matches the user's sample 57-26 Chargesheet.pdf exactly.
-_CHARGE_SHEET_ROWS = [
-    # (number, label) — Each pair is one row of the 2-column body table.
-    # Row 1 is split into 4 sub-cells (handled separately below).
-    ("2", "Final Report/Charge Sheet No."),
-    ("3", "Date"),
-    ("4", "Act/Sections."),
-    ("5", "Type of Final form (charge Sheet/Untraced/not Charge sheeted for want of Evidence/Offence abated/Un occurred)"),
-    ("6", "F.R. Un occurred (False/Mistake of fact/Mistake of Law/Non cognizable/Civil Nature)"),
-    ("7", "If Charge sheet (Original/supplementary)"),
-    ("8", "Names of the investigating officers"),
-    ("9", "Name of the complaint informant with father's/Husband's name."),
-    ("10", "Detail of properties/Articles/Documents Recovered/Seized during investigation and relied upon."),
-]
+# This matches reference samples 156.2025 CS.docx and 13.2025 CS.docx
+# (Makthal PS) section-by-section. See render_charge_sheet() below for
+# the verbatim section list.
 
 
 def render_charge_sheet(case: Dict[str, Any]) -> bytes:
+    """
+    Reproduces the EXACT 18-section Telangana Police charge sheet layout
+    from reference samples 156.2025 CS.docx and 13.2025 CS.docx (Makthal PS).
+
+    Sections (HARD-CODED — never renamed, never skipped):
+      01. Dist / PS / FIR No / Date (compound row)
+      02. Charge Sheet No.
+      03. Date of Charge
+      04. Act and Section of Law
+      05. Type of the final report
+      06. If final report is un-occurred
+      07. If charge sheet is original or supplementary.
+      08. Name and rank of the I.O (s)
+      09. Name and Address of the complainant or informant
+      10. Details of property seized during the course of investigation.
+      11. Particulars of accused persons charge sheeted (+ sub-rows a/b/c/d)
+      12. Particulars of the accused persons not charge sheeted
+      13. Particulars of witnesses to be examined  (+ witness sub-table)
+      14. If F.R. is false, indicate action taken U/S 217/238 BNS
+      15. Result of Laboratory Analysis
+      16. Brief facts of the case  (+ narrative paragraphs)
+      17. Is ack. copy of notice to complainant is enclosed
+      18. Dispatched on
+      → "Hence the charge sheet." → Signature block
+
+    Missing data is rendered literally as `_____` so the officer fills
+    the value by hand.
+    """
     doc = Document()
     _set_margins(doc, top=1.2, right=1.5, bottom=1.5, left=1.5)
 
-    # ── Title block ────────────────────────────────────────────────
-    _para(doc, "CHARGE-SHEET", bold=True, size=14, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _para(doc, "(UNDER SECTION 193 BNSS.)", italic=True, size=11, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _para(doc, "", size=4)
-    court_name = _val(case, "court_name", default="JUDICIAL FIRST CLASS MAGISTRATE")
-    court_place = _val(case, "court_place", default=_val(case, "place", default="MAKTHAL"))
-    _para(doc, f"IN THE COURT OF {court_name.upper()}", bold=True, size=12,
+    # ── Title block (matches sample exactly: "C H A R G E – S H E E T") ──
+    _para(doc, "C H A R G E – S H E E T", bold=True, size=16,
           align=WD_ALIGN_PARAGRAPH.CENTER)
-    _para(doc, f"AT {court_place.upper()}", bold=True, size=12, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _para(doc, "", size=4)
+    _para(doc, "(UNDER SECTION 193 BNSS.)", size=11,
+          align=WD_ALIGN_PARAGRAPH.CENTER)
+    court_name = _val(case, "court_name",
+                      default="ADDL. JUDICIAL FIRST CLASS MAGISTRATE")
+    court_place = _val(case, "court_place",
+                       default=_val(case, "place", default="MAKTHAL"))
+    _para(doc, f"IN THE COURT OF {court_name.upper()}", size=11,
+          align=WD_ALIGN_PARAGRAPH.CENTER)
+    _para(doc, f"AT {court_place.upper()}", size=11,
+          align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
-    # ── Row 1 — top header strip (PS / FIR / Date) ─────────────────
-    top = _make_table(doc, 1, 1, widths_cm=[16.0])
-    top_cell = top.rows[0].cells[0]
-    _cell_para(
-        top_cell,
-        f"1.  Dist.:- {_val(case, 'district')}    "
-        f"Police Station: {_val(case, 'police_station')}    "
-        f"FIR. No: {_val(case, 'fir_number')}    "
-        f"Dated: {_val(case, 'fir_date')}",
-        bold=True, size=11,
-    )
+    # ── 5-column body table (Sno | Field | : | Value | Value-merge) ──
+    body = _make_table(doc, 0, 5, widths_cm=[1.0, 6.5, 0.4, 4.0, 4.1])
 
-    # ── Body 2-column table — rows 2..10 ───────────────────────────
-    body = _make_table(doc, 0, 2, widths_cm=[8.5, 7.5])
-    for num, label in _CHARGE_SHEET_ROWS:
+    def _add_row(sno: str, label: str, value: str, sep: str = ":"):
         row = body.add_row()
-        c1, c2 = row.cells
-        _cell_para(c1, f"{num}.  {label}", size=10)
-        _set_borders(c1)
-        # Map row → value
-        val_map = {
-            "2": _val(case, "charge_sheet_no"),
-            "3": _val(case, "today_date", default=datetime.now().strftime("%d.%m.%Y")),
-            "4": _val(case, "sections"),
-            "5": _val(case, "final_report_type", default="Charge sheet"),
-            "6": _val(case, "fr_unoccurred", default="---"),
-            "7": _val(case, "charge_sheet_kind", default="Original"),
-            "8": _format_io_block(case.get("io") or {}, _val(case, "police_station", default="")),
-            "9": _format_person_block(case.get("complainant") or {}),
-            "10": _val(case, "properties_seized"),
-        }
-        _cell_para(c2, val_map.get(num, BLANK), size=10)
-        _set_borders(c2)
+        c = row.cells
+        _cell_para(c[0], sno, bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+        _cell_para(c[1], label, size=10)
+        _cell_para(c[2], sep, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+        # merge cols 3+4 for the value cell
+        merged = c[3].merge(c[4])
+        _cell_para(merged, value, size=10)
+        for cell in row.cells:
+            _set_borders(cell)
+        return row
 
-    # ── Row 11 — Particulars of charge-sheeted persons ────────────
-    r11 = body.add_row()
-    _cell_para(r11.cells[0], "11.  Particulars of charge sheeted Person.:-", size=10)
+    # 01 — combined Dist/PS/FIR row (matches sample: special compound layout)
+    row01 = body.add_row()
+    cells = row01.cells
+    _cell_para(cells[0], "01", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+    _cell_para(
+        cells[1],
+        f"Dist: {_val(case, 'district')}\nPS. : {_val(case, 'police_station')}",
+        bold=True, size=10,
+    )
+    _cell_para(cells[2], ":", size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+    merged = cells[3].merge(cells[4])
+    _cell_para(
+        merged,
+        f"FIR. No. {_val(case, 'fir_number')},   "
+        f"Dtd: {_val(case, 'fir_date')}",
+        bold=True, size=10,
+    )
+    for cell in row01.cells:
+        _set_borders(cell)
+
+    # 02 — Charge Sheet No.
+    cs_no = _val(case, "charge_sheet_no", default="")
+    if cs_no == BLANK or not cs_no:
+        cs_no = f"{BLANK}/{datetime.now().year}"
+    _add_row("02", "Charge Sheet No.", cs_no)
+
+    # 03 — Date of Charge
+    _add_row("03", "Date of Charge",
+             _val(case, "today_date",
+                  default=datetime.now().strftime("%d.%m.%Y")))
+
+    # 04 — Act and Section of Law
+    sections_val = _val(case, "sections")
+    if sections_val and sections_val != BLANK and not sections_val.upper().startswith("U/S"):
+        sections_val = f"U/S {sections_val}"
+    _add_row("04", "Act and Section of Law", sections_val)
+
+    # 05 — Type of final report
+    _add_row("05", "Type of the final report",
+             _val(case, "final_report_type", default="Charge Sheet."))
+
+    # 06 — If final report is un-occurred
+    _add_row("06", "If final report is un-occurred",
+             _val(case, "fr_unoccurred", default="----"))
+
+    # 07 — Original / supplementary
+    _add_row("07", "If charge sheet is original or supplementary.",
+             _val(case, "charge_sheet_kind", default="Original."))
+
+    # 08 — IO name & rank (verbatim sample format)
+    io_dict = case.get("io") or {}
+    io_name = _val(io_dict, "name") if isinstance(io_dict, dict) else BLANK
+    io_rank = _val(io_dict, "designation",
+                   default=_val(io_dict, "rank", default="Sub inspector of Police"))
+    io_value = (
+        f"1. Sri. {io_name}, {io_rank}, PS {_val(case, 'police_station')}.\n"
+        f"                                     (IO & filed Charge sheet)"
+    )
+    _add_row("08", "Name and rank of the I.O (s)", io_value)
+
+    # 09 — Complainant
+    _add_row("09", "Name and Address of the complainant or informant",
+             _format_person_block(case.get("complainant") or {}))
+
+    # 10 — Property seized
+    _add_row("10", "Details of property seized during the course of investigation.",
+             _val(case, "properties_seized", default="---"))
+
+    # 11 — Particulars of accused persons charge sheeted
     accused = case.get("accused") or [{}]
     if not isinstance(accused, list) or not accused:
         accused = [{}]
-    a_lines = []
-    for i, a in enumerate(accused, 1):
-        a_lines.append(f"A{i}.  {_format_person_block(a)}")
-    _cell_para(r11.cells[1], "\n".join(a_lines), size=10)
-    for c in r11.cells:
-        _set_borders(c)
+    accused_block = "Particulars of accused persons charge sheeted ::-\n" + "\n\n".join(
+        f"A{i}. {_format_person_block(a)}" for i, a in enumerate(accused, 1)
+    )
+    # 11 row uses a different visual: label cell holds the entire accused block
+    row11 = body.add_row()
+    _cell_para(row11.cells[0], "11", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+    merged = row11.cells[1].merge(row11.cells[2]).merge(row11.cells[3]).merge(row11.cells[4])
+    _cell_para(merged, accused_block, size=10)
+    for cell in row11.cells:
+        _set_borders(cell)
 
-    # 11(a) Date of arrest
-    for sub_label, sub_key, sub_default in [
-        ("a) Date of arrest, release, Forwarded to Court.", "arrest_release", BLANK),
-        ("b) Particulars of sureties if Released on bail.", "sureties", "--"),
-        ("c) Previous convictions if any.", "previous_convictions", "--"),
-        ("d) Particulars of accused Persons absconding.", "absconding", "--"),
-    ]:
-        row = body.add_row()
-        _cell_para(row.cells[0], "      " + sub_label, size=10)
-        _cell_para(row.cells[1], _val(case, sub_key, default=sub_default), size=10)
-        for c in row.cells:
-            _set_borders(c)
+    # 11(a) Date of arrest, release / forwarded to court
+    _add_row("", "a). Date of arrest, release\n      forwarded to court.",
+             _val(case, "arrest_release", default="--"))
+    # 11(b) Sureties
+    _add_row("", "b) Particulars of sureties if\n      Released on bail.",
+             _val(case, "sureties", default="--"))
+    # 11(c) Previous convictions
+    _add_row("", "c) Previous convictions if any.",
+             _val(case, "previous_convictions", default="---"))
+    # 11(d) Absconding
+    _add_row("", "d) Particulars of accused\n      Persons absconding.",
+             _val(case, "absconding", default="---"))
 
-    # 12. Particulars of accused not charge-sheeted
-    r12 = body.add_row()
-    _cell_para(r12.cells[0], "12.  Particulars of accused persons not charge sheeted.", size=10)
-    _cell_para(r12.cells[1], _val(case, "accused_not_chargesheeted", default="--"), size=10)
-    for c in r12.cells:
-        _set_borders(c)
+    # 12 — Accused not charge sheeted
+    _add_row("12", "Particulars of the accused persons not charge sheeted",
+             _val(case, "accused_not_chargesheeted", default="Nil"))
 
-    # 13. Witnesses
-    r13 = body.add_row()
-    _cell_para(r13.cells[0], "13.  Particulars of the witnesses to be examined:", bold=True, size=10)
-    _cell_para(r13.cells[1], "", size=10)
-    for c in r13.cells:
-        _set_borders(c)
+    # ── Section 13 — heading paragraph BEFORE the witness sub-table ──
+    doc.add_paragraph("")
+    _para(doc, "13. Particulars of witnesses to be examined: - Noted Below",
+          size=11, space_before=4, space_after=4)
 
-    # Witness rows — LW-1, LW-2, ...
-    witnesses = case.get("witnesses") or []
-    if not witnesses:
+    # Witness sub-table (4 cols: LW-N | Name+Addr | : | Role)
+    witnesses = case.get("witnesses") or [{}, {}, {}]
+    if not isinstance(witnesses, list) or not witnesses:
         witnesses = [{}, {}, {}]
-    # The witness section uses a 3-column sub-table within the body for clarity
-    doc.add_paragraph("")
-    wt = _make_table(doc, 1, 3, widths_cm=[1.7, 11.0, 3.3])
-    h = wt.rows[0].cells
-    _cell_para(h[0], "S.No.", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _cell_para(h[1], "Name and Address", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
-    _cell_para(h[2], "Role", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
-    for c in h:
-        _shade_cell(c, "EEEEEE")
-        _set_borders(c)
+    wt = _make_table(doc, 0, 4, widths_cm=[1.7, 10.0, 0.4, 3.9])
     for i, w in enumerate(witnesses, 1):
-        row = wt.add_row()
-        _cell_para(row.cells[0], f"LW-{i}", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
-        _cell_para(row.cells[1], _format_person_block(w), size=10)
-        _cell_para(row.cells[2], _val(w, "type", default=_val(w, "role")), size=10,
+        wrow = wt.add_row()
+        _cell_para(wrow.cells[0], f"LW-{i}", bold=True, size=10,
                    align=WD_ALIGN_PARAGRAPH.CENTER)
-        for c in row.cells:
-            _set_borders(c)
+        _cell_para(wrow.cells[1], _format_person_block(w), size=10)
+        _cell_para(wrow.cells[2], ":", size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+        _cell_para(wrow.cells[3],
+                   _val(w, "type", default=_val(w, "role", default=BLANK)),
+                   size=10)
+        for cell in wrow.cells:
+            _set_borders(cell)
 
-    # ── Brief facts (paragraphs 14–16 of the original) ────────────
+    # ── Sections 14, 15, 16 — second 3-row table (3 cols: Sno | Label | Value) ──
     doc.add_paragraph("")
-    _para(doc, "14.  Brief facts of the case:", bold=True, size=11)
-    _para(doc, _val(case, "brief_facts",
-                    default="(To be filled. Use the Narration Generator or write here.)"),
-          size=11, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=4)
+    tbl_b = _make_table(doc, 0, 3, widths_cm=[1.0, 10.5, 4.5])
+    for sno, label, val in [
+        ("14", "If F.R. is false, indicate action taken or proposed to be taken  U/S 217/238 BNS",
+         _val(case, "fr_false_action", default="--")),
+        ("15", "Result of Laboratory Analysis",
+         _val(case, "lab_result", default="--")),
+        ("16", "Brief facts of the case", ""),  # value sits below in narrative
+    ]:
+        row = tbl_b.add_row()
+        _cell_para(row.cells[0], sno, bold=True, size=10,
+                   align=WD_ALIGN_PARAGRAPH.CENTER)
+        _cell_para(row.cells[1], label, size=10)
+        _cell_para(row.cells[2], val, size=10)
+        for cell in row.cells:
+            _set_borders(cell)
 
-    _para(doc, "15.  Investigation done so far:", bold=True, size=11)
-    _para(doc, _val(case, "investigation_done", default="(To be filled.)"),
-          size=11, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=4)
+    # ── Section 16 narrative — the "Honoured Sir," letter ──
+    doc.add_paragraph("")
+    _para(doc, "Honoured Sir,", size=11, space_after=6)
 
-    _para(doc, "16.  Result of investigation:", bold=True, size=11)
-    _para(doc, _val(case, "result_of_investigation",
-                    default="The case is found to be true. The accused is/are charge-sheeted."),
-          size=11, align=WD_ALIGN_PARAGRAPH.JUSTIFY, space_after=4)
+    # Use brief_facts if provided as a single block, OR an array of paragraphs
+    brief_paragraphs: List[str] = []
+    if case.get("brief_facts_paragraphs") and isinstance(
+            case["brief_facts_paragraphs"], list):
+        brief_paragraphs = [str(p).strip() for p in case["brief_facts_paragraphs"] if p]
+    elif case.get("brief_facts"):
+        brief_paragraphs = [str(case["brief_facts"]).strip()]
+    else:
+        brief_paragraphs = [
+            f"This is a case of {BLANK}. The incident occurred on {BLANK} at {BLANK} hours at {BLANK}. "
+            f"The said location falls within the local limits of {_val(case, 'police_station')} Police Station.",
+            f"The brief facts of the case are that on {BLANK} at {BLANK} hours complainant "
+            f"{_format_person_block(case.get('complainant') or {})} came to "
+            f"{_val(case, 'police_station')} PS and lodged a written petition.",
+            f"Based on the above complaint, LW-{len(witnesses) or 'N'} registered a case in "
+            f"Cr.No.{_val(case, 'fir_number')} {sections_val} and dispatched copies of the FIR to "
+            f"the Hon'ble Court and all concerned offices as per procedure and took up the investigation.",
+            f"During the course of investigation, LW-{len(witnesses) or 'N'} examined and recorded the "
+            f"statement of LW-1 U/s 180(3) BNSS at the Police Station. The statement was duly documented "
+            f"in Part-II CDs. Subsequently, LW-{len(witnesses) or 'N'} visited the scene of offence.",
+        ]
+        # Per-accused notice paragraphs
+        for i, a in enumerate(accused, 1):
+            brief_paragraphs.append(
+                f"On {BLANK}, LW-{len(witnesses) or 'N'} served notice under Section 35(3) of the BNS, 2023, "
+                f"to the accused A{i} (as listed in Column No. 11), informing of the allegations and directed "
+                f"appearance for enquiry on {BLANK} along with ID proofs and documents."
+            )
+            brief_paragraphs.append(
+                f"In compliance with the notice, on {BLANK}, the accused A{i} appeared before "
+                f"LW-{len(witnesses) or 'N'} at PS {_val(case, 'police_station')} and voluntarily admitted guilt. "
+                f"As such LW-{len(witnesses) or 'N'} obtained acknowledgement and instructed appearance before "
+                f"the Hon'ble Court as required and released after collecting address proof."
+            )
+        brief_paragraphs.append(
+            f"Based on the evidence collected during the course of investigation, it is clearly established "
+            f"that the offence is committed by the accused person{'s' if len(accused) > 1 else ''} as cited."
+        )
+        n_acc = len(accused)
+        last_label = f"A1 to A{n_acc}" if n_acc > 1 else "A1"
+        brief_paragraphs.append(
+            f"Therefore, the Hon'ble court is prayed that the accused person{'s' if n_acc > 1 else ''} "
+            f"{last_label} mentioned in column No. 11 of this charge sheet may be tried and dealt suitably "
+            f"as per law."
+        )
 
-    _para(doc, "Hence charge sheet.", bold=True, size=11, space_before=6, space_after=6)
+    for p_text in brief_paragraphs:
+        _para(doc, p_text, size=11, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+              space_after=6)
 
-    # ── 17, 18 ─────────────────────────────────────────────────────
-    _para(doc, f"17.  Is ack. Copy of notice to complainant enclosed: "
-               f"{_val(case, 'ack_notice_enclosed', default='--')}", size=11)
-    _para(doc, f"18.  Dispatched on: {_val(case, 'dispatch_date', default=BLANK)}",
+    _para(doc, "Hence the charge sheet.", bold=True, size=11,
+          space_before=4, space_after=8)
+
+    # ── Sections 17, 18 ─────────────────────────────────────────────
+    _para(doc,
+          f"17. Is ack. copy of notice to complainant is enclosed: "
+          f"{_val(case, 'ack_notice_enclosed', default='No.')}",
+          size=11, space_after=2)
+    _para(doc,
+          f"18. Dispatched on: {_val(case, 'dispatch_date', default=BLANK)}.",
           size=11, space_after=20)
 
-    # ── Signature block ────────────────────────────────────────────
-    _para(doc, "Signature of the Investigation officer", bold=True, size=11,
+    # ── Signature block (matches sample exactly) ────────────────────
+    _para(doc, "Signature of the Investigation officer", size=11,
           align=WD_ALIGN_PARAGRAPH.RIGHT)
-    _para(doc, "Submitting charge-sheet.", italic=True, size=10,
-          align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=8)
-    _para(doc, f"Name:  {_val(case, 'io', 'name')}", size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
-    _para(doc, f"Rank:  {_val(case, 'io', 'designation')}, of PS {_val(case, 'police_station')}",
-          size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
+    _para(doc, "Submitting chargesheet", size=11,
+          align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=4)
+    _para(doc, f"({_val(io_dict, 'name')})", size=11,
+          align=WD_ALIGN_PARAGRAPH.RIGHT)
+    _para(doc, f"{io_rank},", size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
+    _para(doc, f"PS {_val(case, 'police_station')}.", size=11,
+          align=WD_ALIGN_PARAGRAPH.RIGHT)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -554,7 +677,7 @@ def render_case_diary_part1(case: Dict[str, Any]) -> bytes:
           size=11, align=WD_ALIGN_PARAGRAPH.LEFT, space_after=18)
 
     # Signature block
-    _para(doc, f"Signature of the Investigation Officer", bold=True, size=11,
+    _para(doc, "Signature of the Investigation Officer", bold=True, size=11,
           align=WD_ALIGN_PARAGRAPH.RIGHT)
     _para(doc, f"({_val(case, 'io', 'name')})", size=11, align=WD_ALIGN_PARAGRAPH.RIGHT)
     _para(doc, f"{_val(case, 'io', 'designation')}, PS {_val(case, 'police_station')}",

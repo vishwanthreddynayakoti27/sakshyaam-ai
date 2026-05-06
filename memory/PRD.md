@@ -301,6 +301,32 @@ Build a production-ready, highly modular backend document generation pipeline fo
 - ✅ Sidebar nav item with `PenTool` icon + NEW badge, route `/narration-generator` (Layout component AND homepage Dashboard Command Center)
 - ✅ Backend tests: 9/9 in `/app/backend/tests/test_narration.py` (auth, categories, keyword search, compose, accused-names join, no-LLM determinism)
 
+### 2026-04-27 (REWRITE-2 — section-by-section verbatim match)
+- ❌ User: "The charge sheet layout must follow exactly 18 fixed points/sections as per the sample file I uploaded (156.2025...CS.docx and 13.2025...CS.docx). Open that samples, identify all 18 sections, and hard-code them as fixed template placeholders."
+- ✅ Downloaded both reference DOCX files to `/app/backend/reference_samples/`, parsed every paragraph and table cell with python-docx
+- ✅ Identified the EXACT 18 sections + sub-rows + verbatim phrasing:
+  - 01 Dist/PS/FIR/Date (compound row), 02 Charge Sheet No., 03 Date of Charge, 04 Act and Section of Law, 05 Type of the final report, 06 If final report is un-occurred, 07 If charge sheet is original or supplementary., 08 Name and rank of the I.O (s), 09 Name and Address of the complainant or informant, 10 Details of property seized during the course of investigation., 11 Particulars of accused persons charge sheeted (+a/b/c/d sub-rows), 12 Particulars of the accused persons not charge sheeted, 13 Particulars of witnesses to be examined: - Noted Below (heading + sub-table), 14 If F.R. is false, indicate action taken or proposed to be taken U/S 217/238 BNS, 15 Result of Laboratory Analysis, 16 Brief facts of the case (heading + "Honoured Sir," narrative), 17 Is ack. copy of notice to complainant is enclosed, 18 Dispatched on
+- ✅ Fully rewrote `render_charge_sheet()` in `fixed_layout_renderer.py`:
+  - Title now reads `C H A R G E – S H E E T` (spaced, matches sample byte-for-byte)
+  - 5-column body table (Sno | Field name | : | Value | Value-merge)
+  - Witness sub-table 4 columns (LW-N | Name & Address | : | Role)
+  - Second table for 14/15/16 (3 cols)
+  - Narrative paragraphs prefixed with "Honoured Sir,"
+  - Closer: "Hence the charge sheet." (note: "the" added per sample)
+  - Signature: "Submitting chargesheet" (one word, per sample) → IO name → rank → "PS <X>."
+- ✅ Aadhaar from real PDF (`57-26 A1 Adhaar.pdf`) verified to extract:
+  - Name "Poojari Nandakishor Subhash" (correctly skips "Government of India" / "Unique Identification Authority of India" headers)
+  - Number "6958 8624 3728" (formatted with spaces)
+  - DOB stored separately, MALE gender detected
+- ✅ Three alias endpoints added in `staged_upload.py` (1-to-1 mapping for clearer URLs):
+  - `GET /api/staging/generate-fixed-charge-sheet/{case_id}`
+  - `GET /api/staging/generate-fixed-case-diary/{case_id}`
+  - `GET /api/staging/generate-fixed-remand/{case_id}`
+  - Plus the original unified endpoint `GET /api/staging/render-fixed/{doc_type}/{case_id}`
+- ✅ Unit tests `test_fixed_layout.py` (6/6) updated to assert verbatim sample strings: "C H A R G E – S H E E T", all 18 section labels, "Hence the charge sheet.", "Submitting chargesheet"
+- ✅ Section-by-section verification: rendered DOCX (39,560 bytes) contains all **29 mandatory section/structural strings**, Aadhaar data populated, no OCR header garbage leaked
+- ✅ Integration tests 8/8 + narration tests 9/9 still pass
+
 ## In Progress / Pending
 
 ### ~~P0 - Triple Fusion Endpoint~~ ✅ FIXED (2026-04-19)

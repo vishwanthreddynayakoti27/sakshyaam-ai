@@ -1262,3 +1262,30 @@ async def render_fixed_layout_doc(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ────────────────────────────────────────────────────────────────
+# Convenience alias endpoints (1-to-1 mapping for clearer URLs)
+# ────────────────────────────────────────────────────────────────
+@router.get("/generate-fixed-charge-sheet/{case_id}")
+async def generate_fixed_charge_sheet(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    return await render_fixed_layout_doc("charge_sheet", case_id, officer)
+
+
+@router.get("/generate-fixed-case-diary/{case_id}")
+async def generate_fixed_case_diary(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    return await render_fixed_layout_doc("case_diary_part1", case_id, officer)
+
+
+@router.get("/generate-fixed-remand/{case_id}")
+async def generate_fixed_remand(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    return await render_fixed_layout_doc("remand_report", case_id, officer)

@@ -1,0 +1,11 @@
+{
+  "case_id": "CASE-20260506113211-5B4B",
+  "officer_id": "TEST001",
+  "police_station": "Makthal PS",
+  "district": "Narayanpet",
+  "fir_number": "TEST/57/2026",
+  "sections": "BNS 115(2)",
+  "created_at": "2026-05-06T11:32:11.443206+00:00",
+  "status": "staging",
+  "files": []
+}
