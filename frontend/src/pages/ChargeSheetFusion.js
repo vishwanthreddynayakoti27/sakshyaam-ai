@@ -129,6 +129,11 @@ const ChargeSheetFusion = () => {
 
   // === GENERATE TRIPLE FUSION ===
   const applyFusionResult = (data) => {
+    // Atomic state transition: clear loading + dismiss stale toasts in one frame
+    toast.dismiss();                            // wipe stale "Processing X files…" toast
+    setIsGenerating(false);
+    setJobProgress(100);
+    setJobStage('done');
     setFusionReady(true);
     setExtractedData(data.extracted_data || null);
     setCreditsUsed(data.credits_used || 0);
@@ -278,6 +283,12 @@ const ChargeSheetFusion = () => {
             <div>
               <h1 className="text-2xl font-bold text-white">Triple Fusion Generator</h1>
               <p className="text-white/60 text-sm">Charge Sheet + Case Diary + Remand CD</p>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#00FFB3] animate-pulse" />
+                <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider">
+                  OpenAI Direct · gpt-4o · your API key active
+                </span>
+              </div>
             </div>
           </div>
           
