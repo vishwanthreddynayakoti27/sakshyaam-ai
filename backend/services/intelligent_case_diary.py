@@ -86,7 +86,7 @@ async def generate_intelligent_case_diary(
     Take the already-corrected charge sheet JSON and generate Case Diary Part-I
     structured data via Claude Sonnet 4.5 (GPT-5.2 fallback).
     """
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from services.llm_compat import LlmChat, UserMessage
 
     api_key = os.environ.get("EMERGENT_LLM_KEY", "")
     if not api_key:

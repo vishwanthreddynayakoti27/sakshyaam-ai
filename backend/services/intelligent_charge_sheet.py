@@ -164,7 +164,7 @@ async def generate_intelligent_charge_sheet(
 
     On LLM failure, falls back to GPT-5.2.
     """
-    from emergentintegrations.llm.chat import LlmChat, UserMessage  # lazy import
+    from services.llm_compat import LlmChat, UserMessage  # lazy import
 
     api_key = os.environ.get("EMERGENT_LLM_KEY", "")
     if not api_key:

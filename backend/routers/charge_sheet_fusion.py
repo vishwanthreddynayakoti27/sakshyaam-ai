@@ -371,7 +371,7 @@ PS: {police_station}
 
 async def process_with_llm(text: str, doc_type: str) -> dict:
     """Process document text with Legal LLM"""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from services.llm_compat import LlmChat, UserMessage
     
     if not EMERGENT_LLM_KEY:
         return {"success": False, "error": "LLM key not configured"}

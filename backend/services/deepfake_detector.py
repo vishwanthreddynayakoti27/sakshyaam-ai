@@ -171,7 +171,7 @@ def _normalize_verdict(d: Dict[str, Any]) -> Dict[str, Any]:
 
 async def analyze_image_for_deepfake(image_bytes: bytes, filename: str = "") -> Dict[str, Any]:
     """Run Gemini 2.5 Pro multimodal analysis on a single image."""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    from services.llm_compat import LlmChat, UserMessage, ImageContent
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
@@ -211,7 +211,7 @@ async def analyze_image_for_deepfake(image_bytes: bytes, filename: str = "") -> 
 
 async def analyze_video_for_deepfake(video_bytes: bytes, filename: str = "") -> Dict[str, Any]:
     """Extract frames and run Gemini 2.5 Pro multi-image analysis on a video."""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    from services.llm_compat import LlmChat, UserMessage, ImageContent
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:

@@ -148,7 +148,7 @@ def _parse_json(text: str) -> Dict[str, Any]:
 
 async def _analyze_one_frame(api_key: str, frame_jpeg: bytes, frame_idx: int) -> Dict[str, Any]:
     """Send a single frame to Gemini 2.5 Flash and parse detections."""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    from services.llm_compat import LlmChat, UserMessage, ImageContent
 
     b64 = base64.b64encode(frame_jpeg).decode("ascii")
     chat = LlmChat(

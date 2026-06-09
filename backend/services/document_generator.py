@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from services.llm_compat import LlmChat, UserMessage
 
 load_dotenv()
 logger = logging.getLogger(__name__)

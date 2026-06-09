@@ -314,7 +314,7 @@ class DocumentPipeline:
             return
         
         try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            from services.llm_compat import LlmChat, UserMessage
             
             # Prepare context for AI
             raw_facts = schema.facts.raw[:10000]  # Limit context size
