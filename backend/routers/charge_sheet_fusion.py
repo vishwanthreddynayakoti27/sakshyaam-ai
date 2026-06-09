@@ -191,19 +191,54 @@ async def extract_text_from_file(file: UploadFile, contents: bytes) -> str:
 
 
 async def extract_text_from_audio(contents: bytes, filename: str) -> dict:
-    """Extract text from audio using Google Speech-to-Text and translate"""
+    """Extract text from audio using OpenAI Whisper (handles long audio cleanly),
+    falling back to Google Speech-to-Text for very short clips if Whisper is unavailable."""
     result = {"text": "", "language": "unknown", "translated": "", "legal_text": ""}
-    
+
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            import io as _io
+            from openai import OpenAI
+            _client = OpenAI(api_key=openai_key)
+            buf = _io.BytesIO(contents)
+            buf.name = filename or "audio.mp3"
+            resp = _client.audio.transcriptions.create(
+                model="whisper-1",
+                file=buf,
+                response_format="verbose_json",
+            )
+            result["text"] = (getattr(resp, "text", "") or "").strip()
+            result["language"] = getattr(resp, "language", "unknown") or "unknown"
+
+            # Translate if not English
+            if translate_client and result["text"] and result["language"] not in ["en", "english"]:
+                try:
+                    translation = translate_client.translate(result["text"], target_language="en")
+                    result["translated"] = translation["translatedText"]
+                except Exception as te:
+                    logger.warning(f"Translation failed: {te}")
+                    result["translated"] = result["text"]
+            else:
+                result["translated"] = result["text"]
+
+            if result["translated"]:
+                result["legal_text"] = convert_to_legal_format(result["translated"])
+            return result
+        except Exception as e:
+            logger.error(f"OpenAI Whisper error: {e}")
+            result["text"] = f"[Whisper error: {str(e)}]"
+
     GOOGLE_SPEECH_CREDENTIALS = os.environ.get('GOOGLE_SPEECH_CREDENTIALS', '')
-    
+
     try:
         if GOOGLE_SPEECH_CREDENTIALS and os.path.exists(GOOGLE_SPEECH_CREDENTIALS):
             from google.cloud import speech
             from google.oauth2 import service_account
-            
+
             credentials = service_account.Credentials.from_service_account_file(GOOGLE_SPEECH_CREDENTIALS)
             speech_client = speech.SpeechClient(credentials=credentials)
-            
+
             # Determine encoding based on file type
             file_ext = filename.lower().split('.')[-1]
             if file_ext == 'mp3':
@@ -216,7 +251,7 @@ async def extract_text_from_audio(contents: bytes, filename: str) -> dict:
                 encoding = speech.RecognitionConfig.AudioEncoding.WEBM_OPUS
             else:
                 encoding = speech.RecognitionConfig.AudioEncoding.ENCODING_UNSPECIFIED
-            
+
             audio = speech.RecognitionAudio(content=contents)
             config = speech.RecognitionConfig(
                 encoding=encoding,
@@ -224,16 +259,16 @@ async def extract_text_from_audio(contents: bytes, filename: str) -> dict:
                 alternative_language_codes=["hi-IN", "en-IN"],  # Hindi and English
                 enable_automatic_punctuation=True,
             )
-            
+
             response = speech_client.recognize(config=config, audio=audio)
-            
+
             for resp_result in response.results:
                 result["text"] += resp_result.alternatives[0].transcript + " "
                 if hasattr(resp_result, 'language_code'):
                     result["language"] = resp_result.language_code
-            
+
             result["text"] = result["text"].strip()
-            
+
             # Translate if not English
             if translate_client and result["text"] and result["language"] not in ['en', 'en-IN']:
                 try:
@@ -244,18 +279,20 @@ async def extract_text_from_audio(contents: bytes, filename: str) -> dict:
                     result["translated"] = result["text"]
             else:
                 result["translated"] = result["text"]
-            
+
             # Convert to legal text format
             if result["translated"]:
                 result["legal_text"] = convert_to_legal_format(result["translated"])
-                
+
         else:
-            result["text"] = "[Speech-to-Text not available - Google Speech API not configured]"
-            
+            if not result["text"]:
+                result["text"] = "[Speech-to-Text not available - configure OPENAI_API_KEY or Google Speech]"
+
     except Exception as e:
-        logger.error(f"Speech-to-Text error: {e}")
-        result["text"] = f"[Speech-to-Text error: {str(e)}]"
-    
+        logger.error(f"Speech-to-Text fallback error: {e}")
+        if not result["text"]:
+            result["text"] = f"[Speech-to-Text error: {str(e)}]"
+
     return result
 
 

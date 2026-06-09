@@ -1465,45 +1465,76 @@ async def process_speech(
     file: UploadFile = File(...),
     officer_id: str = Depends(get_current_officer)
 ):
-    """Process audio using Google Speech-to-Text API"""
+    """Process audio using OpenAI Whisper (no 60s sync-input limit).
+
+    Falls back to Google Speech-to-Text for very short clips ONLY if
+    OPENAI_API_KEY is unavailable. Supports any duration up to 25 MB,
+    multi-language (Telugu / Hindi / English etc.) via Whisper's
+    auto-detection.
+    """
     try:
         contents = await file.read()
         file_ext = file.filename.split('.')[-1].lower() if file.filename else 'wav'
-        
+
         transcribed_text = ""
         detected_language = "Unknown"
-        
-        if speech_client:
+
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        if openai_key:
+            # Whisper path — handles long audio cleanly, no 60s sync limit
+            try:
+                import io as _io
+                from openai import OpenAI
+                _client = OpenAI(api_key=openai_key)
+                buf = _io.BytesIO(contents)
+                buf.name = file.filename or f"audio.{file_ext}"
+                # `verbose_json` gives us .language detection alongside text
+                resp = _client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=buf,
+                    response_format="verbose_json",
+                )
+                transcribed_text = (getattr(resp, "text", "") or "").strip()
+                detected_language = getattr(resp, "language", "Unknown") or "Unknown"
+                logger.info(
+                    f"[Whisper] transcribed {len(contents)} bytes → "
+                    f"{len(transcribed_text)} chars, lang={detected_language}"
+                )
+            except Exception as e:
+                logger.error(f"OpenAI Whisper error: {e}")
+                transcribed_text = f"Speech-to-Text processing failed: {str(e)}"
+
+        elif speech_client:
+            # Legacy fallback — Google sync recognize (capped at 60s)
             try:
                 from google.cloud import speech
-                
-                # Determine encoding based on file type
+
                 if file_ext == 'mp3':
                     encoding = speech.RecognitionConfig.AudioEncoding.MP3
                 elif file_ext == 'm4a':
                     encoding = speech.RecognitionConfig.AudioEncoding.MP3
                 else:
                     encoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
-                
+
                 audio = speech.RecognitionAudio(content=contents)
                 config = speech.RecognitionConfig(
                     encoding=encoding,
-                    language_code="te-IN",  # Telugu
-                    alternative_language_codes=["hi-IN", "en-IN"],  # Hindi and English
+                    language_code="te-IN",
+                    alternative_language_codes=["hi-IN", "en-IN"],
                     enable_automatic_punctuation=True,
                 )
-                
+
                 response = speech_client.recognize(config=config, audio=audio)
-                
+
                 for result in response.results:
                     transcribed_text += result.alternatives[0].transcript + " "
                     detected_language = result.language_code if hasattr(result, 'language_code') else "te"
-                
+
             except Exception as e:
                 logger.error(f"Speech-to-Text error: {e}")
                 transcribed_text = f"Speech-to-Text processing failed: {str(e)}"
         else:
-            transcribed_text = "Speech-to-Text API not configured. Please check service account credentials."
+            transcribed_text = "Speech-to-Text API not configured. Set OPENAI_API_KEY or Google credentials."
         
         # Translate if not English
         translated_text = transcribed_text
@@ -1544,7 +1575,7 @@ async def process_speech(
             "overall_accuracy_estimate": "85%",
             "message": "Speech processing complete",
             "processing_stages": [
-                "Stage 1: Speech-to-Text (Google Speech API)",
+                "Stage 1: Speech-to-Text (OpenAI Whisper · your key)",
                 "Stage 2: Language Detection",
                 "Stage 3: Translation to English",
                 "Stage 4: Grammar Normalization",
