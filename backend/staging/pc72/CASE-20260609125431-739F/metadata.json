@@ -1,0 +1,174 @@
+{
+  "case_id": "CASE-20260609125431-739F",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "57",
+  "sections": "",
+  "created_at": "2026-06-09T12:54:31.332873+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "24-4-25.pdf",
+      "saved_name": "feaae295_24-4-25.pdf",
+      "size": 1098366,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T12:58:09.555122+00:00"
+    },
+    {
+      "original_name": "28--4-25.pdf",
+      "saved_name": "5d739b8e_28--4-25.pdf",
+      "size": 888749,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T12:58:09.555586+00:00"
+    },
+    {
+      "original_name": "29&4-25_1(1).jpg",
+      "saved_name": "56c2c610_29&4-25_1(1).jpg",
+      "size": 475250,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.555820+00:00"
+    },
+    {
+      "original_name": "29&4-25_1.jpg",
+      "saved_name": "07e99060_29&4-25_1.jpg",
+      "size": 609075,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.556144+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(1).jpg",
+      "saved_name": "9248afc5_41 crpc_1(1).jpg",
+      "size": 325994,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.556325+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(2).jpg",
+      "saved_name": "53bc6fc2_41 crpc_1(2).jpg",
+      "size": 565003,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.556571+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(3).jpg",
+      "saved_name": "8f373bbb_41 crpc_1(3).jpg",
+      "size": 381388,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.556750+00:00"
+    },
+    {
+      "original_name": "41 crpc_1.jpg",
+      "saved_name": "ca08958a_41 crpc_1.jpg",
+      "size": 558942,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557097+00:00"
+    },
+    {
+      "original_name": "Aadhars_1 (1).jpg",
+      "saved_name": "de9f9f8e_Aadhars_1 (1).jpg",
+      "size": 283657,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557238+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(1) (1).jpg",
+      "saved_name": "63f71abf_Aadhars_1(1) (1).jpg",
+      "size": 680444,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557540+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(1).jpg",
+      "saved_name": "4fbdf7b4_Aadhars_1(1).jpg",
+      "size": 0,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557581+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(2).jpg",
+      "saved_name": "ab40980e_Aadhars_1(2).jpg",
+      "size": 297300,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557724+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(3).jpg",
+      "saved_name": "52bcfe26_Aadhars_1(3).jpg",
+      "size": 253597,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557857+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(4).jpg",
+      "saved_name": "3b2e2587_Aadhars_1(4).jpg",
+      "size": 254811,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.557986+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(5).jpg",
+      "saved_name": "8119b1fc_Aadhars_1(5).jpg",
+      "size": 213735,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.558099+00:00"
+    },
+    {
+      "original_name": "Aadhars_1.jpg",
+      "saved_name": "02ae2522_Aadhars_1.jpg",
+      "size": 283657,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.558232+00:00"
+    },
+    {
+      "original_name": "All.pdf",
+      "saved_name": "03163eb0_All.pdf",
+      "size": 5990345,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T12:58:09.563211+00:00"
+    },
+    {
+      "original_name": "cdf.pdf",
+      "saved_name": "e161a130_cdf.pdf",
+      "size": 865918,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T12:58:09.563632+00:00"
+    },
+    {
+      "original_name": "mcs.pdf",
+      "saved_name": "f730fc4c_mcs.pdf",
+      "size": 3005236,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T12:58:09.565811+00:00"
+    },
+    {
+      "original_name": "Part-II_1(1).jpg",
+      "saved_name": "321115e1_Part-II_1(1).jpg",
+      "size": 663835,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.566130+00:00"
+    },
+    {
+      "original_name": "Part-II_1(2).jpg",
+      "saved_name": "b9931fea_Part-II_1(2).jpg",
+      "size": 582029,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.566409+00:00"
+    },
+    {
+      "original_name": "Part-II_1(3).jpg",
+      "saved_name": "4f084aae_Part-II_1(3).jpg",
+      "size": 591058,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.566668+00:00"
+    },
+    {
+      "original_name": "Part-II_1.jpg",
+      "saved_name": "11bc1cf0_Part-II_1.jpg",
+      "size": 617591,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T12:58:09.566924+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260609125820-9c5f"
+}

@@ -888,6 +888,102 @@ async def get_job_status(
 # =====================================================================
 # Intelligent Charge Sheet Generator (station-writer grade)
 # =====================================================================
+# Schema adapter: LLM JSON → fixed_layout_renderer schema
+# =====================================================================
+def _adapt_person(p: dict) -> dict:
+    """Translate LLM person schema (father_name, occupation, ...) →
+    fixed_layout_renderer schema (father, occ, ...)."""
+    if not isinstance(p, dict):
+        return {}
+    return {
+        "salutation": p.get("salutation") or "",
+        "name": p.get("name") or "",
+        "father": p.get("father_name") or p.get("father") or "",
+        "age": p.get("age") or "",
+        "caste": p.get("caste") or "",
+        "occupation": p.get("occupation") or p.get("occ") or "",
+        "address": p.get("address") or p.get("permanent_address") or "",
+        "phone": p.get("phone") or "",
+        "gender": p.get("gender") or "",
+        "aadhaar_number": p.get("aadhaar_number") or "",
+        "type": p.get("role") or p.get("type") or "",
+        "role": p.get("role") or p.get("type") or "",
+    }
+
+
+def _adapt_llm_schema_to_fixed_layout(cs: dict) -> dict:
+    """
+    Translate the intelligent_charge_sheet LLM JSON output into the
+    schema expected by services.fixed_layout_renderer.render_charge_sheet
+    so the AUTHENTIC 18-section Telangana layout is produced.
+
+    Mapping highlights:
+      court               → court_name + court_place (split from "AT <PLACE>")
+      chargesheet_date    → today_date
+      chargesheet_type    → charge_sheet_kind
+      io.rank/station     → io.designation / police_station fallback
+      property_recovered  → properties_seized
+      notice_ack_enclosed → ack_notice_enclosed
+      brief_facts (str)   → brief_facts_paragraphs (list of cleaned paragraphs)
+    """
+    if not isinstance(cs, dict):
+        return {}
+    court = (cs.get("court") or "").strip()
+    court_name, court_place = "", ""
+    if " AT " in court.upper():
+        idx = court.upper().rfind(" AT ")
+        court_name = court[:idx].replace("IN THE COURT OF", "").strip().lstrip()
+        court_place = court[idx + 4:].strip().rstrip(",.").strip()
+    brief = cs.get("brief_facts") or ""
+    if isinstance(brief, list):
+        brief_paragraphs = [str(x).strip() for x in brief if x]
+    elif isinstance(brief, str):
+        brief_paragraphs = [p.strip() for p in brief.split("\n\n") if p.strip()]
+    else:
+        brief_paragraphs = []
+    # Append the LLM-composed prayer as a final paragraph if present
+    prayer = (cs.get("prayer") or "").strip()
+    if prayer and (not brief_paragraphs or prayer not in brief_paragraphs[-1]):
+        brief_paragraphs.append(prayer)
+
+    io_d = cs.get("io") or {}
+    return {
+        "court_name": court_name or "ADDL. JUDICIAL FIRST CLASS MAGISTRATE",
+        "court_place": court_place or (cs.get("district") or ""),
+        "police_station": cs.get("police_station") or "",
+        "district": cs.get("district") or "",
+        "fir_number": cs.get("fir_number") or "",
+        "fir_date": cs.get("fir_date") or "",
+        "today_date": cs.get("chargesheet_date") or "",
+        "sections": cs.get("sections") or "",
+        "final_report_type": "Charge Sheet.",
+        "charge_sheet_kind": cs.get("chargesheet_type") or "Original.",
+        "io": {
+            "salutation": io_d.get("salutation") or "Sri.",
+            "name": io_d.get("name") or "",
+            "designation": io_d.get("rank") or io_d.get("designation") or "Sub inspector of Police",
+            "rank": io_d.get("rank") or io_d.get("designation") or "Sub inspector of Police",
+        },
+        "complainant": _adapt_person(cs.get("complainant") or {}),
+        "accused": [_adapt_person(a) for a in (cs.get("accused") or [])],
+        "witnesses": [_adapt_person(w) for w in (cs.get("witnesses") or [])],
+        "properties_seized": cs.get("property_recovered") or "---",
+        "ack_notice_enclosed": cs.get("notice_ack_enclosed") or "No.",
+        "dispatch_date": cs.get("chargesheet_date") or "",
+        "brief_facts_paragraphs": brief_paragraphs,
+        # Sub-rows 11(a)-(d) — LLM-cleaned or sane defaults
+        "arrest_release": cs.get("arrest_release") or "--",
+        "sureties": cs.get("sureties") or "--",
+        "previous_convictions": cs.get("previous_convictions") or "---",
+        "absconding": cs.get("absconding") or "---",
+        "accused_not_chargesheeted": cs.get("accused_not_chargesheeted") or "Nil",
+        "fr_unoccurred": "----",
+        "fr_false_action": "--",
+        "lab_result": cs.get("lab_result") or "--",
+    }
+
+
+# =====================================================================
 @router.post("/generate-intelligent-charge-sheet/{case_id}")
 async def generate_intelligent_charge_sheet_endpoint(
     case_id: str,
@@ -902,7 +998,8 @@ async def generate_intelligent_charge_sheet_endpoint(
     """
     from fastapi.responses import Response
     from services.intelligent_charge_sheet import generate_intelligent_charge_sheet
-    from services.station_charge_sheet_renderer import render_charge_sheet_docx
+    from services.station_charge_sheet_renderer import render_charge_sheet_docx  # legacy renderer (unused, kept for compat)  # noqa: F401
+    from services.fixed_layout_renderer import render_charge_sheet as render_authentic_charge_sheet
 
     officer_id = officer.get("officer_id", "unknown")
     credits_to_deduct = 3
@@ -967,7 +1064,11 @@ async def generate_intelligent_charge_sheet_endpoint(
     try:
         logger.info(f"[ICGS] Generating intelligent charge sheet for case {case_id}")
         cs_data = await generate_intelligent_charge_sheet(raw_data, session_id=f"ics-{case_id}")
-        docx_bytes = render_charge_sheet_docx(cs_data)
+        # Adapt the LLM JSON schema → fixed_layout_renderer schema and render the
+        # AUTHENTIC 18-section Telangana layout (matches 156.2025 CS.docx sample
+        # 1-to-1). The AI's role is purely to fill cell VALUES; structure cannot drift.
+        adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
+        docx_bytes = render_authentic_charge_sheet(adapted)
 
         await db.intelligent_chargesheets.update_one(
             {"case_id": case_id, "officer_id": officer_id},
