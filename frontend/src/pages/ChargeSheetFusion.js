@@ -14,6 +14,7 @@ import {
   Trash2,
   BookOpen,
   Lock,
+  RefreshCw,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
@@ -171,7 +172,7 @@ const ChargeSheetFusion = () => {
     return false;
   };
 
-  const generateTripleFusion = async () => {
+  const generateTripleFusion = async (force = false) => {
     if (!caseId) {
       toast.error('No case folder created');
       return;
@@ -186,12 +187,15 @@ const ChargeSheetFusion = () => {
     setCreditsUsed(0);
     setFusionReady(false);
     setJobProgress(0);
-    setJobStage('queued');
+    setJobStage(force ? 'force-purging cache' : 'queued');
 
     try {
-      toast.info('Queuing Triple Fusion job...');
+      toast.info(force ? 'Force-regenerating (cache cleared, live OpenAI run)...' : 'Queuing Triple Fusion job...');
 
-      const response = await api.post(`/staging/generate-triple-fusion/${caseId}`);
+      const url = force
+        ? `/staging/generate-triple-fusion/${caseId}?force=true`
+        : `/staging/generate-triple-fusion/${caseId}`;
+      const response = await api.post(url);
       const d = response.data || {};
 
       // Fast path: server returned cached completed result synchronously
@@ -404,7 +408,7 @@ const ChargeSheetFusion = () => {
 
             {/* Generate Button */}
             <Button
-              onClick={generateTripleFusion}
+              onClick={() => generateTripleFusion(false)}
               disabled={isGenerating || stagedFiles.length === 0}
               data-testid="generate-fusion-btn"
               className="w-full h-14 bg-gradient-to-r from-[#00C2FF] to-[#4F7EFF] hover:opacity-90 text-white font-bold text-lg"
@@ -420,6 +424,19 @@ const ChargeSheetFusion = () => {
                   Generate Triple Fusion
                 </>
               )}
+            </Button>
+
+            {/* Force-Regenerate (cache bypass) — only enabled when files are staged */}
+            <Button
+              onClick={() => generateTripleFusion(true)}
+              disabled={isGenerating || stagedFiles.length === 0}
+              data-testid="force-regenerate-fusion-btn"
+              variant="outline"
+              className="w-full h-10 border-[#FF6B3D]/50 bg-[#FF6B3D]/10 text-[#FF6B3D] hover:bg-[#FF6B3D]/20 text-sm font-medium"
+              title="Bypass cache & rerun live OpenAI pipeline (5 credits)"
+            >
+              <RefreshCw size={14} className="mr-2" />
+              Force Regenerate (clear cache, live OpenAI)
             </Button>
 
             {/* Async Progress Indicator (mirrored in status card) — hide on mobile to avoid stacking */}
@@ -627,12 +644,12 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
 
   // Live elapsed-time counters so the user sees real progress, not a stuck "~20s" hint
   React.useEffect(() => {
-    if (!smartLoading) { setSmartElapsed(0); return; }
+    if (!smartLoading) return undefined;
     const t = setInterval(() => setSmartElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [smartLoading]);
   React.useEffect(() => {
-    if (!diaryLoading) { setDiaryElapsed(0); return; }
+    if (!diaryLoading) return undefined;
     const t = setInterval(() => setDiaryElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [diaryLoading]);
@@ -674,6 +691,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       toast.error('No case selected');
       return;
     }
+    setSmartElapsed(0);
     setSmartLoading(true);
     setCorrections(null);
     try {
@@ -730,6 +748,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       toast.error('Generate the Station-Format Charge Sheet first (it provides the structured data)');
       return;
     }
+    setDiaryElapsed(0);
     setDiaryLoading(true);
     try {
       toast.info('Generating Case Diary Part-I with Claude 4.5...');

@@ -376,6 +376,7 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
 @router.post("/generate-triple-fusion/{case_id}")
 async def generate_triple_fusion(
     case_id: str,
+    force: bool = False,
     officer: dict = Depends(get_current_officer)
 ):
     """
@@ -388,6 +389,9 @@ async def generate_triple_fusion(
 
     COST: Credits are deducted inside the background task only on success.
           Failed jobs deduct 0 credits (rollback-safe).
+
+    Pass `?force=true` to bypass the result cache and re-run a fresh
+    OpenAI pipeline (full 5-credit charge applies).
     """
     officer_id = officer.get("officer_id", "unknown")
     folder = get_case_folder(officer_id, case_id)
@@ -405,6 +409,28 @@ async def generate_triple_fusion(
     if not metadata.get("files"):
         raise HTTPException(status_code=400, detail="No files staged for fusion")
 
+    # If forcing a fresh run, purge ALL cached fusion rows + any stale extraction
+    # cache entries for the files in this case BEFORE the credit check.
+    if force and db is not None:
+        await db.triple_fusions.delete_many({"case_id": case_id, "officer_id": officer_id})
+        await db.triple_fusion_jobs.delete_many({"case_id": case_id, "officer_id": officer_id})
+        # Best-effort: also evict document_cache entries whose key matches any
+        # ocr_text we have on disk (used by legal_llm for entity extraction).
+        try:
+            from services.document_cache import generate_cache_key
+            keys = []
+            for f_meta in metadata.get("files", []):
+                txt = (f_meta.get("ocr_text") or f_meta.get("text") or "").strip()
+                if txt:
+                    keys.append(generate_cache_key(txt, "entity_extraction"))
+                    keys.append(generate_cache_key(txt, "translation"))
+            if keys:
+                deleted = await db.document_cache.delete_many({"cache_key": {"$in": keys}})
+                logger.info(f"[force=true] evicted {deleted.deleted_count} document_cache entries")
+        except Exception as e:
+            logger.warning(f"force-purge: document_cache evict skipped: {e}")
+        logger.info(f"[force=true] Purged cache for case {case_id}")
+
     # Credit balance pre-check (idempotent: cached fusions cost 0 and skip this)
     if db is not None:
         cached = await db.triple_fusions.find_one(
@@ -420,7 +446,7 @@ async def generate_triple_fusion(
                     detail=f"Insufficient credits — Triple Fusion costs 5 credits, you have {current}. Buy more at /credits.",
                 )
 
-    # Fast path: return cached fusion if already completed
+    # Fast path: return cached fusion if already completed (skipped if force=true above)
     if db is not None:
         existing_fusion = await db.triple_fusions.find_one(
             {"case_id": case_id, "officer_id": officer_id},
