@@ -1,0 +1,8 @@
+# System packages required by the backend at runtime.
+# Install with: xargs -a apt-deps.txt apt-get install -y
+# (the deployment_agent picks this up automatically during deploy).
+poppler-utils
+libgl1
+libglib2.0-0
+antiword
+tesseract-ocr

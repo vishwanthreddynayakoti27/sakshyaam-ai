@@ -324,20 +324,64 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
     
     # PDF
     elif ext == '.pdf':
+        text_parts = []
+        # Phase 1 — try the embedded text layer (fast, works for digital PDFs)
         try:
             from PyPDF2 import PdfReader
             reader = PdfReader(io.BytesIO(contents))
-            text_parts = []
             for page in reader.pages:
                 page_text = page.extract_text()
-                if page_text:
+                if page_text and page_text.strip():
                     text_parts.append(page_text)
-            return "\n".join(text_parts) if text_parts else "[No text in PDF]"
+            extracted_text = "\n".join(text_parts).strip()
+            if len(extracted_text) >= 80:
+                return extracted_text
         except Exception as e:
-            return f"[PDF error: {e}]"
+            logger.warning(f"PyPDF2 phase failed for {file_path.name}: {e}")
+            extracted_text = ""
+
+        # Phase 2 — text layer was empty/sparse → render to images and OCR via Google Vision
+        try:
+            from pdf2image import convert_from_bytes
+            pages = convert_from_bytes(contents, dpi=200, fmt="png")
+            logger.info(
+                f"[PDF-OCR] {file_path.name}: PyPDF2 returned "
+                f"{len(extracted_text)} chars, falling back to {len(pages)}-page Vision OCR"
+            )
+            GOOGLE_VISION_CREDENTIALS = os.environ.get("GOOGLE_VISION_CREDENTIALS", "")
+            if GOOGLE_VISION_CREDENTIALS and os.path.exists(GOOGLE_VISION_CREDENTIALS):
+                from google.cloud import vision
+                from google.oauth2 import service_account
+                credentials = service_account.Credentials.from_service_account_file(
+                    GOOGLE_VISION_CREDENTIALS
+                )
+                vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+                ocr_pages = []
+                for idx, img in enumerate(pages, 1):
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    image = vision.Image(content=buf.getvalue())
+                    response = vision_client.document_text_detection(image=image)
+                    if response.error.message:
+                        logger.warning(
+                            f"[PDF-OCR] {file_path.name} page {idx}: "
+                            f"Vision error {response.error.message}"
+                        )
+                        continue
+                    ocr_pages.append(
+                        response.full_text_annotation.text if response.full_text_annotation else ""
+                    )
+                combined = "\n--- PAGE BREAK ---\n".join(p for p in ocr_pages if p).strip()
+                if combined:
+                    return combined
+            # No vision creds → fall back to whatever PyPDF2 gave us, even if short
+            return extracted_text or "[Scanned PDF — OCR unavailable: configure GOOGLE_VISION_CREDENTIALS]"
+        except Exception as e:
+            logger.warning(f"PDF OCR fallback failed for {file_path.name}: {e}")
+            return extracted_text or f"[PDF OCR error: {e}]"
     
     # Images (JPG, PNG) - Use OCR
-    elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+    elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif']:
         GOOGLE_VISION_CREDENTIALS = os.environ.get('GOOGLE_VISION_CREDENTIALS', '')
         GOOGLE_TRANSLATE_CREDENTIALS = os.environ.get('GOOGLE_TRANSLATE_CREDENTIALS', '')
         
@@ -369,7 +413,74 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
                 return f"[OCR error: {e}]"
         else:
             return f"[OCR not configured - file: {file_path.name}]"
-    
+
+    # Plain text / structured text formats
+    elif ext in ['.txt', '.md', '.csv', '.json', '.html', '.htm', '.xml', '.log', '.rtf']:
+        try:
+            return contents.decode('utf-8', errors='replace').strip()
+        except Exception as e:
+            return f"[Text decode error: {e}]"
+
+    # Legacy MS Word (.doc) — try antiword if installed
+    elif ext == '.doc':
+        try:
+            result = subprocess.run(
+                ['antiword', str(file_path)],
+                capture_output=True, text=True, timeout=20
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning(f"antiword failed on {file_path.name}: {e}")
+        # Final fallback: read as latin-1 to capture any embedded ASCII strings
+        try:
+            return contents.decode('latin-1', errors='replace')
+        except Exception as e:
+            return f"[.doc parse error: {e}]"
+
+    # Excel
+    elif ext in ['.xlsx', '.xls']:
+        try:
+            from openpyxl import load_workbook
+            wb = load_workbook(io.BytesIO(contents), data_only=True, read_only=True)
+            chunks = []
+            for ws in wb.worksheets:
+                chunks.append(f"--- Sheet: {ws.title} ---")
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c) if c is not None else "" for c in row]
+                    if any(c.strip() for c in cells):
+                        chunks.append(" | ".join(cells))
+            return "\n".join(chunks)
+        except Exception as e:
+            return f"[xlsx parse error: {e}]"
+
+    # Audio formats — transcribe via OpenAI Whisper through the user's key
+    elif ext in ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm', '.mp4']:
+        try:
+            openai_key = os.environ.get('OPENAI_API_KEY')
+            if not openai_key:
+                return "[Audio file: OPENAI_API_KEY not configured for Whisper]"
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_key)
+            buf = io.BytesIO(contents)
+            buf.name = file_path.name
+            resp = client.audio.transcriptions.create(
+                model="whisper-1", file=buf, response_format="verbose_json",
+            )
+            return (getattr(resp, "text", "") or "").strip() or "[Whisper returned empty transcript]"
+        except Exception as e:
+            logger.warning(f"Whisper failed on {file_path.name}: {e}")
+            return f"[Whisper error: {e}]"
+
+    # Last-resort fallback: try to decode the raw bytes as UTF-8 text
+    try:
+        decoded = contents.decode('utf-8', errors='strict')
+        if decoded.strip():
+            return decoded.strip()
+    except Exception:
+        pass
     return f"[Unsupported format: {ext}]"
 
 
@@ -1052,6 +1163,50 @@ async def generate_intelligent_charge_sheet_endpoint(
     sections_raw = extracted.get("sections") or []
     sections_text = ", ".join(sections_raw) if isinstance(sections_raw, list) else str(sections_raw)
 
+    # CRITICAL: build the full per-file documents corpus so the LLM has access to
+    # the raw FIR / petition / panchanama / MLC text. Without this, the LLM only
+    # sees the pre-distilled summary and almost every field comes back as
+    # "NOT FOUND IN DOCUMENTS".
+    files_meta = metadata.get("files") or []
+    uploaded_documents: List[str] = []
+    documents_corpus_parts: List[str] = []
+    for fmeta in files_meta:
+        fname = fmeta.get("filename") or fmeta.get("saved_name") or "unknown"
+        uploaded_documents.append(fname)
+        text = (fmeta.get("ocr_text") or fmeta.get("text") or "").strip()
+        # Re-OCR on the fly if the staged metadata didn't capture text earlier
+        if not text or len(text) < 40 or text.startswith("[No text in PDF]") or text.startswith("[PDF error"):
+            saved = fmeta.get("saved_name")
+            if saved:
+                fp = folder / saved
+                if fp.exists():
+                    try:
+                        text = (await extract_text_from_staged_file(fp)).strip()
+                        # Persist back into metadata so next call doesn't re-do the OCR
+                        fmeta["ocr_text"] = text
+                    except Exception as e:
+                        logger.warning(f"[ICGS] re-OCR failed for {saved}: {e}")
+        if text:
+            documents_corpus_parts.append(
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"FILE: {fname}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{text[:25000]}"
+            )
+    # Save the freshened OCR back to disk so we don't pay for re-OCR next time
+    try:
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"[ICGS] could not persist refreshed metadata: {e}")
+
+    documents_corpus = "\n\n".join(documents_corpus_parts)
+    logger.info(
+        f"[ICGS] case {case_id}: assembled documents_corpus = "
+        f"{len(documents_corpus)} chars from {len(documents_corpus_parts)}/"
+        f"{len(files_meta)} files"
+    )
+
     raw_data = {
         "fir_number": extracted.get("fir_number") or metadata.get("fir_number", ""),
         "fir_date": extracted.get("fir_date", ""),
@@ -1074,6 +1229,9 @@ async def generate_intelligent_charge_sheet_endpoint(
         "medical_findings": extracted.get("medical_findings", ""),
         "section_35_3_dates": extracted.get("section_35_3_dates", ""),
         "brief_facts": extracted.get("brief_facts", ""),
+        # Full per-file text corpus — THIS is what the LLM actually reads
+        "uploaded_documents": uploaded_documents,
+        "documents_corpus": documents_corpus,
     }
 
     try:
