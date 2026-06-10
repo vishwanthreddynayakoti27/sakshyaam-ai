@@ -202,11 +202,15 @@ FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
       "Hence the charge sheet."
 
   ──────── ABSOLUTE RULES FOR BRIEF FACTS (highest priority) ────────
-  R1. Never write "NOT FOUND IN DOCUMENTS" inside any Brief Facts
-      paragraph. If a specific detail is genuinely missing from the
-      documents, SKIP that sentence or clause gracefully. The
-      paragraph must still read like a senior officer wrote it —
-      never like a half-filled form.
+  R1. V4.0 STRICT PLACEHOLDER BAN. Never write "NOT FOUND IN DOCUMENTS",
+      "NOT FOUND", "N/A", or any placeholder inside any Brief Facts
+      paragraph. Before declaring a detail missing, scan the FULL
+      unified corpus (FIR + statements + panchanama + medical reports
+      + bail papers + Aadhaar/ID files) for that detail. If it is
+      genuinely missing from EVERY document, SKIP the sentence or
+      clause gracefully — the paragraph must still read like a senior
+      officer wrote it, never like a half-filled form, never with a
+      placeholder leaking through.
   R2. Name EVERY accused by their A-number in ¶10. If there are 6
       accused, the conclusion must reference A1 to A6 (or A1, A2,
       A3, A4, A5, A6 individually) — never stop at A1 or A2.
@@ -227,12 +231,57 @@ FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
       documents.
 
 ═══════════════════════════════════════════════════════════
-SECTION C — ABSOLUTE RULES (NEVER VIOLATE)
+SECTION C — ABSOLUTE RULES (V4.0 AGNOSTIC CROSS-REFERENCE)
 ═══════════════════════════════════════════════════════════
-1. ZERO BLANKS: Never use "_____", "____", or any placeholder in the JSON.
-   If a value cannot be extracted from the documents, emit exactly the
-   string "NOT FOUND IN DOCUMENTS" for that specific value (not the whole
-   field).
+1. STRICT PLACEHOLDER BAN (V4.0 — non-negotiable):
+   You are FORBIDDEN from emitting the literal strings
+   "NOT FOUND IN DOCUMENTS", "NOT FOUND", "N/A", "[blank]", "—", "?",
+   "TBD", or any equivalent placeholder for a field value, anywhere in
+   the output JSON (not in a person record, not in a brief-facts
+   sentence, not in a sections string — NOWHERE).
+
+   Before declaring any field empty you MUST execute the V4.0
+   cross-document scan:
+     • The "FULL DOCUMENT TEXT CORPUS" you receive is ONE unified
+       semantic pool. Files are NOT case-tagged by name. Scan the
+       ENTIRE pool for each entity you need to fill.
+     • Accused Profiling — once you identify someone as an Accused
+       (from FIR, complaint, panchanama, charge memo, or any other
+       source), SCAN EVERY OTHER FILE in the queue to back-fill:
+         parentage (father/mother/spouse name)
+         age + DOB
+         caste / religion
+         occupation
+         door no. / village / street / city / district / pincode
+         phone number(s) + Aadhaar / ID proof number
+         dates of S.35(3) BNSS notice issued, served, and appearance.
+       Bail papers, statement files (S.180 BNSS), Aadhaar copies,
+       address-proof attachments often contain caste/occupation/address
+       when the FIR omits them. USE THEM.
+     • Dynamic Witness Compilation — do NOT assume fixed positions.
+       Iterate sequentially through every block in the corpus that
+       starts with "Statement of...", "Sec. 180 BNSS statement of...",
+       "S/o", "W/o", "D/o" attached to a witness role, "LW-N",
+       "complainant", "eye witness", "panch witness", "Mediator",
+       "Doctor", "Investigating Officer", etc. Number them sequentially
+       as LW-1, LW-2, ... LW-N — never skip, never truncate, never cap
+       at LW-2. A typical case has 7–12 witnesses; emit them all.
+     • Procedural + Medical Extraction — link medical findings (injury
+       nature, fracture details, OPD/IP number, name of medical officer)
+       by scanning ANY medical requisition, MLC, wound certificate,
+       discharge summary, or hospital report present in the pool. Auto
+       populate notice issuance/appearance tracking by matching dates
+       chronologically across panchanama, statement files, and arrest
+       memos.
+     • Even if a field is missing in the primary document type you'd
+       normally check, CROSS-EXAMINE other documents before giving up.
+
+   ONLY after this full cross-document scan, if a value is genuinely
+   absent from EVERY document in the pool, emit an empty string ""
+   for that key (the downstream renderer will print a short blank
+   line for the police writer to fill in by hand). DO NOT emit any
+   placeholder string.
+
 2. NEVER ALTER MANUAL INPUT: Fields 01–08, 17, 18, signing block, court
    name — copy them verbatim from the "CONFIRMED MANUAL INPUT" block.
 3. GENDER ACCURACY — SALUTATION + RELATION PREFIX:
@@ -266,21 +315,27 @@ SECTION C — ABSOLUTE RULES (NEVER VIOLATE)
    `sections` field. Never strip the bracketed sub-section. Final
    sections string must be a comma-separated list with "R/w 3(5) BNS"
    appended when ≥ 2 accused acted together.
-6. ALL ACCUSED: Map every accused found in the documents. Never stop at A1.
-7. ALL WITNESSES: A complete chargesheet typically has 7–10 LWs. Extract
-   every witness found.
+6. ALL ACCUSED: Map every accused found ANYWHERE in the corpus. Never
+   stop at A1. If the FIR lists 6 accused but only 4 appear in bail
+   papers, you still emit 6 accused — back-fill the missing 2 from
+   the FIR/panchanama/statements.
+7. ALL WITNESSES: A complete chargesheet typically has 7–12 LWs.
+   Iterate every "Statement of..." block in the corpus and emit ALL of
+   them. Truncating at LW-2 is a critical extraction failure.
 8. LW CONSISTENCY: The same person has the same LW number in Field 13
    AND in every Brief Facts paragraph.
 9. SECTIONS EXACT: Copy `sections` verbatim from the manual input — use
    the same string in ¶3 FIR registration and ¶10 evidence conclusion.
-10. DATES FROM DOCUMENTS ONLY: Never use today's date. Never invent dates.
-11. MEDICAL FINDING VERBATIM: Use the doctor's exact words for the injury
-    nature in ¶8.
-12. COURT NAME EXACT: Use the court name exactly as provided — never add
-    "ADDL." or any prefix not in the manual input.
-13. NOT FOUND RULE: If a value is genuinely absent from every uploaded
-    document, write "NOT FOUND IN DOCUMENTS" for that exact value. Never
-    guess, invent, or approximate.
+10. DATES FROM DOCUMENTS ONLY: Never use today's date. Never invent
+    dates.
+11. MEDICAL FINDING VERBATIM: Use the doctor's exact words for the
+    injury nature in ¶8.
+12. COURT NAME EXACT: Use the court name exactly as provided — never
+    add "ADDL." or any prefix not in the manual input.
+13. EMPTY STRING ON TRUE ABSENCE: If a value is genuinely absent from
+    EVERY document in the corpus AFTER the V4.0 cross-document scan,
+    emit "" (empty string) for that key. Never use a placeholder
+    string. Never invent. Never approximate.
 14. TEMPLATE FIDELITY: The downstream renderer matches the empty
     chargesheet template — your job is to fill it, not redesign it.
 
@@ -350,28 +405,30 @@ def _build_user_prompt(raw_data: Dict[str, Any]) -> str:
         "ISOLATION BANNER — THIS PAYLOAD IS THE ENTIRE UNIVERSE OF FACTS",
         "═══════════════════════════════════════════════════════════════",
         "You may NOT reference any case other than the one below.",
-        "If a value is absent from BOTH sections, emit exactly the string",
-        "'NOT FOUND IN DOCUMENTS' for that value (never blanks).",
+        "V4.0 STRICT PLACEHOLDER BAN: never emit 'NOT FOUND IN DOCUMENTS',",
+        "'NOT FOUND', 'N/A', '—' or any placeholder. Cross-reference across",
+        "the full unified corpus first; if a value is genuinely absent from",
+        "every file, emit empty string \"\" — never a placeholder.",
         "═══════════════════════════════════════════════════════════════",
         "",
         "─────────────── CONFIRMED MANUAL INPUT (Phase 1) ───────────────",
         "These values were entered by the police writer. Copy them verbatim.",
         "",
-        f"District                          : {raw_data.get('district', 'NOT FOUND IN DOCUMENTS')}",
-        f"Police Station                    : {raw_data.get('police_station', 'NOT FOUND IN DOCUMENTS')}",
-        f"FIR Number (Field 01)             : {raw_data.get('fir_number', 'NOT FOUND IN DOCUMENTS')}",
-        f"FIR Date (Field 01)               : {raw_data.get('fir_date', 'NOT FOUND IN DOCUMENTS')}",
-        f"Charge Sheet Number (Field 02)    : {raw_data.get('chargesheet_no', 'NOT FOUND IN DOCUMENTS')}",
-        f"Date of Charge Sheet (Field 03)   : {raw_data.get('chargesheet_date', 'NOT FOUND IN DOCUMENTS')}",
-        f"Act and Sections (Field 04)       : {raw_data.get('sections', 'NOT FOUND IN DOCUMENTS')}",
+        f"District                          : {raw_data.get('district', '')}",
+        f"Police Station                    : {raw_data.get('police_station', '')}",
+        f"FIR Number (Field 01)             : {raw_data.get('fir_number', '')}",
+        f"FIR Date (Field 01)               : {raw_data.get('fir_date', '')}",
+        f"Charge Sheet Number (Field 02)    : {raw_data.get('chargesheet_no', '')}",
+        f"Date of Charge Sheet (Field 03)   : {raw_data.get('chargesheet_date', '')}",
+        f"Act and Sections (Field 04)       : {raw_data.get('sections', '')}",
         f"Type of Final Report (Field 05)   : {raw_data.get('report_type', 'Charge Sheet.')}",
         f"If Un-occurred (Field 06)         : {raw_data.get('un_occurred_reason', '----')}",
         f"Original/Supplementary (Field 07) : {raw_data.get('chargesheet_type', 'Original.')}",
-        f"IO Name (Field 08)                : {(raw_data.get('io') or {}).get('name', 'NOT FOUND IN DOCUMENTS')}",
-        f"IO Rank and Belt/PC No. (Field 08): {(raw_data.get('io') or {}).get('rank', 'NOT FOUND IN DOCUMENTS')}",
-        f"Court Name                        : {raw_data.get('court', raw_data.get('court_name', 'NOT FOUND IN DOCUMENTS'))}",
+        f"IO Name (Field 08)                : {(raw_data.get('io') or {}).get('name', '')}",
+        f"IO Rank and Belt/PC No. (Field 08): {(raw_data.get('io') or {}).get('rank', '')}",
+        f"Court Name                        : {raw_data.get('court', raw_data.get('court_name', ''))}",
         f"Ack. copy enclosed (Field 17)     : {raw_data.get('notice_ack_enclosed', 'No.')}",
-        f"Dispatched on (Field 18)          : {raw_data.get('dispatch_date', 'NOT FOUND IN DOCUMENTS')}",
+        f"Dispatched on (Field 18)          : {raw_data.get('dispatch_date', '')}",
         "",
         "──────────── EXTRACTED FROM UPLOADED DOCUMENTS (Phase 2) ────────────",
         f"Scene of offence                  : {raw_data.get('incident_place', '')}",

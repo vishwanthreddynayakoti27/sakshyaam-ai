@@ -1,0 +1,28 @@
+{
+  "case_id": "CASE-20260610173818-D2D5",
+  "officer_id": "TEST001",
+  "police_station": "Makthal PS",
+  "district": "Narayanpet",
+  "fir_number": "TEST/57/2026",
+  "sections": "BNS 115(2)",
+  "manual_input": {
+    "district": "Narayanpet",
+    "police_station": "Makthal PS",
+    "fir_number": "TEST/57/2026",
+    "fir_date": "",
+    "chargesheet_no": "",
+    "chargesheet_date": "",
+    "sections": "BNS 115(2)",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "",
+    "chargesheet_type": "Original",
+    "io_name": "",
+    "io_rank": "",
+    "court_name": "",
+    "dispatch_date": "",
+    "ack_enclosed": "No"
+  },
+  "created_at": "2026-06-10T17:38:18.684787+00:00",
+  "status": "staging",
+  "files": []
+}

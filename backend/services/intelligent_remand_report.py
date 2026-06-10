@@ -113,17 +113,27 @@ ESCORT:
   accompanying constable's identifier.
 
 ═══════════════════════════════════════════════════════════
-SECTION C — ABSOLUTE RULES
+SECTION C — ABSOLUTE RULES (V4.0 AGNOSTIC CROSS-REFERENCE)
 ═══════════════════════════════════════════════════════════
-R1. NEVER write "NOT FOUND IN DOCUMENTS" inside any narrative
-    paragraph. Skip the sentence/clause gracefully if a detail is
-    missing.
+R1. V4.0 STRICT PLACEHOLDER BAN. NEVER emit "NOT FOUND IN DOCUMENTS",
+    "NOT FOUND", "N/A", "—" or any placeholder inside any narrative
+    paragraph (brief_facts / investigation_done / grounds_of_arrest).
+    Before declaring any detail missing, scan the FULL unified corpus
+    (FIR + S.180 BNSS statements + panchanama + medical reports + bail
+    papers + Aadhaar/ID files) for that detail. Skip the sentence
+    gracefully only if it is genuinely missing from EVERY document.
 R2. NAME EVERY ACCUSED by A-number consistently with the charge sheet.
-R3. WITNESS LW numbers must MATCH the charge sheet exactly.
+R3. WITNESS LW numbers must MATCH the charge sheet exactly. Dynamic Witness Compilation —
+    iterate every "Statement of..." block in the
+    corpus; emit ALL of them, never cap at LW-2.
 R4. DATES come from the documents/charge sheet ONLY.
-R5. MEDICAL injury wording must be the doctor's EXACT words.
+R5. MEDICAL injury wording must be the doctor's EXACT words — scan
+    ANY medical requisition / MLC / hospital report present.
 R6. IO block uses MANUAL name + rank — verbatim, no edits.
-R7. Output VALID JSON only — no markdown fences, no prose.
+R7. EMPTY STRING ON TRUE ABSENCE: emit "" (empty string) when a
+    field is missing after the full cross-document scan — never a
+    placeholder string.
+R8. Output VALID JSON only — no markdown fences, no prose.
 
 ═══════════════════════════════════════════════════════════
 SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object)

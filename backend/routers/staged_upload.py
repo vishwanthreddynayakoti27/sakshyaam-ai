@@ -1346,6 +1346,7 @@ async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_de
             }},
         )
 
+        cs_data = _scrub_v4_placeholders(cs_data)
         adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
         docx_bytes = render_authentic_charge_sheet(adapted)
 
@@ -1839,6 +1840,7 @@ async def regenerate_charge_sheet(
             if "ack" not in user_corrected_fields:
                 cs_data["notice_ack_enclosed"] = (manual.get("ack_enclosed") or "No") + "."
 
+        cs_data = _scrub_v4_placeholders(cs_data)
         adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
         docx_bytes = render_authentic_charge_sheet(adapted)
 
@@ -1899,6 +1901,46 @@ async def regenerate_charge_sheet(
         )
 
 
+# =====================================================================
+# V4.0 helpers — defensive placeholder scrubber + cache wipe
+# =====================================================================
+_V4_PLACEHOLDER_TOKENS = (
+    "NOT FOUND IN DOCUMENTS",
+    "NOT FOUND IN THE DOCUMENTS",
+    "NOT FOUND",
+    "[NOT FOUND]",
+    "Not found in documents",
+    "Not Found in Documents",
+)
+
+
+def _scrub_v4_placeholders(payload):
+    """
+    Recursively walk LLM output and wipe any "NOT FOUND IN DOCUMENTS" /
+    "NOT FOUND" / "N/A" tokens that may leak through despite the V4.0
+    prompt rules. Empty strings flow through the renderer's BLANK
+    fallback so the police writer sees a clean underline.
+
+    This is a defensive guard — the prompt should already prevent these
+    tokens, but mid-paragraph mentions ("the FIR mentions NOT FOUND
+    IN DOCUMENTS for caste") are easy slip-ups that this scrubber
+    eliminates before the DOCX is rendered.
+    """
+    if isinstance(payload, dict):
+        return {k: _scrub_v4_placeholders(v) for k, v in payload.items()}
+    if isinstance(payload, list):
+        return [_scrub_v4_placeholders(v) for v in payload]
+    if isinstance(payload, str):
+        cleaned = payload
+        for token in _V4_PLACEHOLDER_TOKENS:
+            # Replace the literal token with empty string, then collapse
+            # double-spaces it leaves behind ("foo  bar" → "foo bar").
+            cleaned = cleaned.replace(token, "")
+        # Collapse any "  " runs to single space; trim once.
+        while "  " in cleaned:
+            cleaned = cleaned.replace("  ", " ")
+        return cleaned.strip() if cleaned != payload else payload
+    return payload
 # =====================================================================
 # V3.0 helpers — shared raw-data builder for Case Diary & Remand Report
 # =====================================================================
@@ -2120,6 +2162,7 @@ async def generate_intelligent_case_diary_endpoint(
         cd_data = await generate_intelligent_case_diary(
             raw_data, session_id=f"icd-{case_id}",
         )
+        cd_data = _scrub_v4_placeholders(cd_data)
         adapted = _adapt_case_diary_for_fixed_layout(cd_data)
         docx_bytes = render_case_diary_part1(adapted)
 
@@ -2268,6 +2311,7 @@ async def regenerate_case_diary(
         cd_data = await generate_intelligent_case_diary(
             raw_data, session_id=f"icd-regen-{case_id}-{uuid.uuid4().hex[:6]}",
         )
+        cd_data = _scrub_v4_placeholders(cd_data)
         adapted = _adapt_case_diary_for_fixed_layout(cd_data)
         docx_bytes = render_case_diary_part1(adapted)
 
@@ -2376,6 +2420,7 @@ async def generate_intelligent_remand_report_endpoint(
         rr_data = await generate_intelligent_remand_report(
             raw_data, session_id=f"irr-{case_id}",
         )
+        rr_data = _scrub_v4_placeholders(rr_data)
         adapted = _adapt_remand_for_fixed_layout(rr_data)
         docx_bytes = render_remand_report(adapted)
 
@@ -2519,6 +2564,7 @@ async def regenerate_remand_report(
         rr_data = await generate_intelligent_remand_report(
             raw_data, session_id=f"irr-regen-{case_id}-{uuid.uuid4().hex[:6]}",
         )
+        rr_data = _scrub_v4_placeholders(rr_data)
         adapted = _adapt_remand_for_fixed_layout(rr_data)
         docx_bytes = render_remand_report(adapted)
 
@@ -2582,6 +2628,90 @@ async def regenerate_remand_report(
 # Layout never changes. Missing fields render as blank "_____".
 # Aadhaar is auto-extracted from already-staged files when present.
 # ============================================================
+
+
+# ============================================================
+# V4.0 — Wipe extraction cache for a case (or all cases the
+# calling officer owns). Forces a fresh LLM run on next generate.
+# ============================================================
+@router.post("/wipe-extraction-cache")
+async def wipe_extraction_cache_all(
+    officer: dict = Depends(get_current_officer),
+):
+    """Wipe every cached extraction artefact for the calling officer.
+
+    Deletes the saved ICGS structured_data, Case Diary, Remand Report,
+    and the on-disk DOCX files for ALL cases owned by the officer. The
+    Triple Fusion result is preserved (it's the input, not the output).
+    Re-running Generate Station-Format Charge Sheet after a wipe forces
+    the V4.0 pipeline to re-extract from scratch.
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    officer_id = officer.get("officer_id", "unknown")
+    summary = {
+        "intelligent_chargesheets": (await db.intelligent_chargesheets.delete_many({"officer_id": officer_id})).deleted_count,
+        "intelligent_case_diaries": (await db.intelligent_case_diaries.delete_many({"officer_id": officer_id})).deleted_count,
+        "intelligent_remand_reports": (await db.intelligent_remand_reports.delete_many({"officer_id": officer_id})).deleted_count,
+    }
+    # Wipe per-file LLM document_cache entries (best-effort — collection is shared)
+    try:
+        cache_res = await db.document_cache.delete_many({"officer_id": officer_id})
+        summary["document_cache"] = cache_res.deleted_count
+    except Exception:
+        summary["document_cache"] = 0
+    # Wipe saved DOCX files from disk
+    base = STAGING_BASE / officer_id
+    docx_removed = 0
+    if base.exists():
+        for case_dir in base.iterdir():
+            if not case_dir.is_dir():
+                continue
+            for name in ("intelligent_charge_sheet.docx",
+                         "intelligent_case_diary.docx",
+                         "intelligent_remand_report.docx"):
+                fp = case_dir / name
+                if fp.exists():
+                    try:
+                        fp.unlink()
+                        docx_removed += 1
+                    except Exception:
+                        pass
+    summary["docx_files_on_disk"] = docx_removed
+    logger.info(f"[V4-WIPE] officer={officer_id} → {summary}")
+    return {"success": True, "officer_id": officer_id, "wiped": summary}
+
+
+@router.post("/wipe-extraction-cache/{case_id}")
+async def wipe_extraction_cache_one(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """Wipe cached extraction artefacts for a SINGLE case (most common path)."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    officer_id = officer.get("officer_id", "unknown")
+    summary = {
+        "intelligent_chargesheets": (await db.intelligent_chargesheets.delete_one({"case_id": case_id, "officer_id": officer_id})).deleted_count,
+        "intelligent_case_diaries": (await db.intelligent_case_diaries.delete_one({"case_id": case_id, "officer_id": officer_id})).deleted_count,
+        "intelligent_remand_reports": (await db.intelligent_remand_reports.delete_one({"case_id": case_id, "officer_id": officer_id})).deleted_count,
+    }
+    case_dir = get_case_folder(officer_id, case_id)
+    docx_removed = 0
+    for name in ("intelligent_charge_sheet.docx",
+                 "intelligent_case_diary.docx",
+                 "intelligent_remand_report.docx"):
+        fp = case_dir / name
+        if fp.exists():
+            try:
+                fp.unlink()
+                docx_removed += 1
+            except Exception:
+                pass
+    summary["docx_files_on_disk"] = docx_removed
+    logger.info(f"[V4-WIPE-CASE] officer={officer_id} case={case_id} → {summary}")
+    return {"success": True, "officer_id": officer_id, "case_id": case_id, "wiped": summary}
+
 
 from services.fixed_layout_renderer import render_fixed_doc, extract_aadhaar_from_files
 from fastapi.responses import StreamingResponse

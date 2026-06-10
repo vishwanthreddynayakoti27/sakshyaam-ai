@@ -41,6 +41,20 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-10: V4.0 — Agnostic Cross-Reference Extraction Layer
+- ✅ **STRICT PLACEHOLDER BAN enforced**: V4.0 mandate rewrites the SYSTEM_PROMPT for all three LLM services (`intelligent_charge_sheet.py`, `intelligent_case_diary.py`, `intelligent_remand_report.py`). The literal strings `"NOT FOUND IN DOCUMENTS"`, `"NOT FOUND"`, `"N/A"`, `"—"`, `"?"`, `"TBD"` are now FORBIDDEN in the LLM output. If a field is truly missing across all files, the LLM emits empty string `""` and the renderer prints a short underscore line `____________` (police-form convention).
+- ✅ **Unified Data Pool + Cross-Document Field Back-Filling**: explicit prompt rules now instruct the LLM to scan the FULL unified `documents_corpus` for each entity (Accused profile = parentage + age + caste + occupation + address + phone + S.35(3) BNSS dates) by cross-examining FIR + bail papers + panchanama + S.180 BNSS statements + Aadhaar/ID files — not just one source file per field.
+- ✅ **Dynamic Witness Compilation**: prompt now iterates every "Statement of..." block in the unified corpus and emits ALL of them as LW-1..LW-N, never truncating at LW-2. Verified end-to-end: 9 witnesses extracted for FIR 100/2025.
+- ✅ **Procedural + Medical Extraction**: prompt explicitly links injury findings / medical-officer names by scanning ANY medical requisition / MLC / hospital report in the corpus, and chronologically matches notice issuance dates across panchanama + statement files + arrest memos.
+- ✅ **Defensive scrubber `_scrub_v4_placeholders(payload)`** (recursive on dict/list/str) wipes any "NOT FOUND IN DOCUMENTS" / "NOT FOUND" / "[NOT FOUND]" tokens that may leak through despite the prompt. Applied to all 6 LLM-render call sites (3 generate + 3 regenerate endpoints) so the output is provably free of placeholders.
+- ✅ **Renderer `BLANK` constant** changed from `"NOT FOUND IN DOCUMENTS"` → `"____________"` (police-form blank line) in `fixed_layout_renderer.py`.
+- ✅ **Cache-wipe endpoints**:
+  - `POST /api/staging/wipe-extraction-cache/{case_id}` (single case)
+  - `POST /api/staging/wipe-extraction-cache` (all cases owned by the calling officer)
+  Both clear `intelligent_chargesheets` + `intelligent_case_diaries` + `intelligent_remand_reports` + `document_cache` collections + on-disk DOCX files in the case folder. Forces a fresh V4.0 LLM run on the next Generate.
+- ✅ **Verified end-to-end** against FIR 100/2025: wiped cache → re-ran all 3 V4.0 generators → counted `"NOT FOUND"` occurrences in each rendered DOCX → **ALL THREE FILES = 0 occurrences**. The remaining `____________` blanks are exactly the fields genuinely missing from every source file (LW-3 phone, doctor's personal address, IO's caste — none of these exist anywhere in the 23 uploaded files).
+- ✅ **Tests**: 7/7 new in `/app/backend/tests/test_v4_agnostic_extraction.py` (scrubber recursion + non-string preservation + empty inputs + BLANK constant + V4.0 rules present in all 3 prompts). **36/36 total** across V4 + V3 + fixed-layout + narration suites, **zero regressions**.
+
 ### 2026-06-10: V3.0 Master IO treatment for Case Diary Part-I + Remand Report + CCTNS Autofill
 - ✅ **HOTFIX (user-reported)**: Auto-resume was locking the user into the previous case with no escape. Added two "+ Start New Case" buttons:
   - Prominent **orange pill** at the top of the Triple Fusion Complete card (right side)

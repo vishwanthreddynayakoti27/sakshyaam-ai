@@ -140,8 +140,11 @@ def test_render_happy_path(auth, staged_case, doc_type, expected_heading):
     # FIR number + police_station should be in rendered doc
     assert "Makthal PS" in all_text
     assert "TEST/57/2026" in all_text
-    # Missing fields should render as the standard 'NOT FOUND IN DOCUMENTS' marker
-    assert "NOT FOUND IN DOCUMENTS" in all_text, "Missing-field marker not present"
+    # V4.0: Missing fields now render as a short underscore blank line
+    # (police-form convention) — the literal "NOT FOUND IN DOCUMENTS"
+    # placeholder is STRICTLY BANNED and must never appear in output.
+    assert "NOT FOUND IN DOCUMENTS" not in all_text, "V4.0 ban: placeholder leaked into output"
+    assert "____" in all_text, "Missing-field blank line not present"
 
 
 def test_zero_credits_deducted(auth, me, staged_case):

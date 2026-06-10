@@ -118,23 +118,34 @@ CLOSING:
   through CI of Police <circle/place> f.f.i." (renderer italicises).
 
 ═══════════════════════════════════════════════════════════
-SECTION C — ABSOLUTE RULES
+SECTION C — ABSOLUTE RULES (V4.0 AGNOSTIC CROSS-REFERENCE)
 ═══════════════════════════════════════════════════════════
-R1. NEVER write "NOT FOUND IN DOCUMENTS" inside any narrative paragraph
-    or investigation_steps entry. If a specific detail is missing,
-    SKIP that sentence/clause gracefully — the entry must still read
-    like an experienced IO wrote it.
+R1. V4.0 STRICT PLACEHOLDER BAN. NEVER emit "NOT FOUND IN DOCUMENTS",
+    "NOT FOUND", "N/A", "—" or any placeholder inside any narrative
+    paragraph or investigation_steps entry. Before declaring any
+    detail missing, scan the FULL unified corpus (FIR + S.180 BNSS
+    statements + panchanama + medical reports + bail papers + Aadhaar
+    + ID files) for that detail. If a specific detail is genuinely
+    missing from EVERY document, SKIP that sentence or clause
+    gracefully — the entry must still read like an experienced IO
+    wrote it.
 R2. NAME EVERY ACCUSED by A-number consistently with the charge sheet.
     If ICGS lists A1..A6, the CD must reference A1..A6, not A1 alone.
 R3. WITNESS LW numbers must MATCH the charge sheet exactly (same
-    LW-1 = complainant, same LW-N = filing IO).
+    LW-1 = complainant, same LW-N = filing IO). Dynamic Witness
+    Compilation — iterate every "Statement of..." block in the
+    corpus; emit ALL of them, never cap at LW-2.
 R4. DATES come from the documents/charge sheet ONLY. Never insert
     today's date, never invent a date.
 R5. MEDICAL injury wording must be the doctor's EXACT words from the
-    wound certificate — never paraphrase.
+    wound certificate — never paraphrase. Scan ANY medical
+    requisition / MLC / hospital report in the corpus.
 R6. The IO's name and rank in field "io" must be the manual input,
     verbatim. The CD is signed by the same officer who filed the CS.
-R7. Output VALID JSON only — no markdown fences, no prose.
+R7. EMPTY STRING ON TRUE ABSENCE: if a value is genuinely missing
+    after the full cross-document scan, emit "" (empty string) for
+    that JSON key — never a placeholder string.
+R8. Output VALID JSON only — no markdown fences, no prose.
 
 ═══════════════════════════════════════════════════════════
 SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object)

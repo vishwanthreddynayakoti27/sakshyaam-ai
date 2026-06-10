@@ -35,7 +35,11 @@ from docx.shared import Cm, Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
-BLANK = "NOT FOUND IN DOCUMENTS"
+# V4.0: BLANK is now a short underscore line (police-form convention for
+# fields the writer fills in by hand). NEVER the literal "NOT FOUND IN
+# DOCUMENTS" string. The defensive scrubber in staged_upload.py wipes
+# any "NOT FOUND" placeholders that may leak from the LLM.
+BLANK = "____________"
 
 
 # ============================================================
