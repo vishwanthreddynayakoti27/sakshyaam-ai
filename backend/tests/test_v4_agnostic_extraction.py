@@ -79,6 +79,83 @@ def test_fixed_layout_renderer_blank_constant_is_underscore_line():
     assert len(BLANK) >= 4  # at least a short visible blank line
 
 
+def test_official_witness_detector_flags_police_and_doctors():
+    from services.fixed_layout_renderer import _is_official_witness
+    # Police variants
+    assert _is_official_witness({"role": "IO 1st"})
+    assert _is_official_witness({"role": "IO & filed Charge Sheet"})
+    assert _is_official_witness({"rank": "Sub Inspector of Police"})
+    assert _is_official_witness({"rank": "ASI 1557", "station": "Makthal"})
+    assert _is_official_witness({"occupation": "Head Constable 248"})
+    assert _is_official_witness({"name": "Sri. Vadla Achary", "rank": "SI of Police"})
+    # Doctors / medical officers
+    assert _is_official_witness({"name": "Dr. G. Kaushik Reddy"})
+    assert _is_official_witness({"name": "A. Mahesh Raj", "occupation": "Medical Officer"})
+    assert _is_official_witness({"salutation": "Dr.", "name": "Foo"})
+    assert _is_official_witness({"role": "Issued wound certificates of LWs 1 to 3"})  # hospital implied
+    # Civilians — should NOT trip
+    assert not _is_official_witness({"name": "Smt. Jingiti Aruna", "role": "Complainant"})
+    assert not _is_official_witness({"name": "Sri. Anjaneyulu", "occupation": "Coolie",
+                                      "role": "Eyewitness and Injured"})
+    assert not _is_official_witness({"name": "Smt. Bhagya", "role": "Panch for Scene of Offence"})
+
+
+def test_official_witness_short_format_omits_personal_blanks():
+    from services.fixed_layout_renderer import _format_person_block
+    # Police officer with NO personal fields → short format only
+    police = _format_person_block({
+        "name": "Vadla Achary",
+        "rank": "SI of Police",
+        "station": "Makthal",
+        "role": "IO 1st",
+    })
+    assert "Vadla Achary" in police
+    assert "SI of Police" in police
+    assert "PS Makthal" in police
+    # The forbidden personal-field blanks must NOT appear
+    assert "S/o" not in police
+    assert "Age:" not in police
+    assert "Caste:" not in police
+    assert "Ph." not in police
+    assert "Occ:" not in police
+    assert "R/o" not in police
+
+    # Doctor — Dr. salutation auto-detected, no personal blanks
+    doc = _format_person_block({
+        "name": "G. Kaushik Reddy",
+        "occupation": "Medical Officer",
+        "station": "Govt. Hospital, Makthal",
+        "role": "Issued wound certificates of LWs 1 to 3",
+    })
+    assert "G. Kaushik Reddy" in doc
+    assert "Medical Officer" in doc
+    assert "Govt. Hospital, Makthal" in doc
+    assert "S/o" not in doc
+    assert "Age:" not in doc
+    assert "Caste:" not in doc
+    assert "Ph." not in doc
+
+    # Civilian — must still get the FULL format including blanks for missing fields
+    civilian = _format_person_block({
+        "name": "Jingiti Aruna",
+        "gender": "female",
+        "marital_status": "married",
+        "father": "Jangiti Anjaneyulu",
+        "age": "44",
+        "caste": "Mudiraj",
+        "occupation": "Housewife",
+        "address": "Yellammakunta, Makthal",
+        "phone": "9011645665",
+        "role": "Complainant and Injured",
+    })
+    assert "Smt." in civilian
+    assert "Jingiti Aruna" in civilian
+    assert "W/o Jangiti Anjaneyulu" in civilian
+    assert "Age: 44 years" in civilian
+    assert "Caste: Mudiraj" in civilian
+    assert "Ph.9011645665" in civilian
+
+
 def test_intelligent_chargesheet_prompt_contains_v4_rules():
     """Verify the V4.0 cross-reference rules + Phase 1/2/3 mandate are present."""
     from services.intelligent_charge_sheet import SYSTEM_PROMPT

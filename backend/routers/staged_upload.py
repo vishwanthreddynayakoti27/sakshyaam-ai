@@ -366,28 +366,47 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
     # PDF
     elif ext == '.pdf':
         text_parts = []
+        per_page_lengths: List[int] = []
         # Phase 1 — try the embedded text layer (fast, works for digital PDFs)
         try:
             from PyPDF2 import PdfReader
             reader = PdfReader(io.BytesIO(contents))
             for page in reader.pages:
-                page_text = page.extract_text()
+                page_text = page.extract_text() or ""
+                per_page_lengths.append(len(page_text.strip()))
                 if page_text and page_text.strip():
                     text_parts.append(page_text)
             extracted_text = "\n".join(text_parts).strip()
-            if len(extracted_text) >= 80:
-                return extracted_text
         except Exception as e:
             logger.warning(f"PyPDF2 phase failed for {file_path.name}: {e}")
             extracted_text = ""
+            per_page_lengths = []
 
-        # Phase 2 — text layer was empty/sparse → render to images and OCR via Google Vision
+        # FIX 2: A PDF can be "mixed" — page 1 has digital text (header,
+        # patient details) but page 2 (doctor's hand-written signature +
+        # MO name + injury opinion) is a scanned image. PyPDF2 returns
+        # text only from page 1, missing the most important data.
+        #
+        # Trigger OCR if:
+        #   (a) PyPDF2 total is below the global threshold, OR
+        #   (b) ANY individual page has < 40 chars (signals a scanned
+        #       page even if other pages are digital).
+        has_sparse_page = any(L < 40 for L in per_page_lengths)
+        if extracted_text and len(extracted_text) >= 80 and not has_sparse_page:
+            return extracted_text
+
+        # Phase 2 — render every page to an image and OCR via Google Vision.
+        # Combine the OCR result with the PyPDF2 result so we never lose
+        # text that was already digital. OCR is treated as authoritative
+        # for any page where the embedded text layer is sparse.
         try:
             from pdf2image import convert_from_bytes
             pages = convert_from_bytes(contents, dpi=200, fmt="png")
             logger.info(
                 f"[PDF-OCR] {file_path.name}: PyPDF2 returned "
-                f"{len(extracted_text)} chars, falling back to {len(pages)}-page Vision OCR"
+                f"{len(extracted_text)} chars across {len(per_page_lengths)} pages "
+                f"(per-page chars={per_page_lengths}), running {len(pages)}-page "
+                f"Vision OCR for full coverage"
             )
             GOOGLE_VISION_CREDENTIALS = os.environ.get("GOOGLE_VISION_CREDENTIALS", "")
             if GOOGLE_VISION_CREDENTIALS and os.path.exists(GOOGLE_VISION_CREDENTIALS):
@@ -397,7 +416,7 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
                     GOOGLE_VISION_CREDENTIALS
                 )
                 vision_client = vision.ImageAnnotatorClient(credentials=credentials)
-                ocr_pages = []
+                ocr_pages: List[str] = []
                 for idx, img in enumerate(pages, 1):
                     buf = io.BytesIO()
                     img.save(buf, format="PNG")
@@ -408,11 +427,23 @@ async def extract_text_from_staged_file(file_path: Path) -> str:
                             f"[PDF-OCR] {file_path.name} page {idx}: "
                             f"Vision error {response.error.message}"
                         )
+                        ocr_pages.append("")
                         continue
                     ocr_pages.append(
                         response.full_text_annotation.text if response.full_text_annotation else ""
                     )
-                combined = "\n--- PAGE BREAK ---\n".join(p for p in ocr_pages if p).strip()
+                # Merge PyPDF2 + OCR — prefer the longer of the two per page so
+                # we never lose digital text that was already perfect, and we
+                # always pick up scanned pages that PyPDF2 missed.
+                merged: List[str] = []
+                pypdf_pages = text_parts if len(text_parts) == len(ocr_pages) else []
+                for i in range(len(ocr_pages)):
+                    py = (pypdf_pages[i] if i < len(pypdf_pages) else "").strip()
+                    oc = (ocr_pages[i] or "").strip()
+                    chosen = py if len(py) >= len(oc) else oc
+                    if chosen:
+                        merged.append(chosen)
+                combined = "\n--- PAGE BREAK ---\n".join(merged).strip()
                 if combined:
                     return combined
             # No vision creds → fall back to whatever PyPDF2 gave us, even if short

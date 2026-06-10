@@ -126,6 +126,71 @@ def _cell_para(cell, text: str, *, bold: bool = False, size: int = 11,
     return p
 
 
+def _cell_multi_paragraphs(cell, paragraphs, *, bold: bool = False,
+                           size: int = 10, align: int = WD_ALIGN_PARAGRAPH.LEFT,
+                           clear_first: bool = True):
+    """
+    Render MULTIPLE paragraphs into ONE table cell — used for Field 11
+    (accused list) where A1, A2, A3 ... each need their own paragraph
+    with proper wrapping and spacing. Putting them all into one
+    `\\n`-joined string makes Word treat them as a single overflow-
+    prone paragraph; this helper creates a separate `<w:p>` per item.
+    """
+    if clear_first:
+        cell.text = ""
+    if not paragraphs:
+        paragraphs = [""]
+    for i, text in enumerate(paragraphs):
+        if i == 0 and cell.paragraphs:
+            p = cell.paragraphs[0]
+        else:
+            p = cell.add_paragraph()
+        p.alignment = align
+        pf = p.paragraph_format
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(4)  # small gap between accused entries
+        # Light hanging indent so wrapped lines line up under the name
+        # (not under the "A1." prefix)
+        pf.left_indent = Cm(0.6)
+        pf.first_line_indent = Cm(-0.6)
+        run = p.add_run(text or "")
+        _set_run(run, bold=bold, size=size)
+    return cell
+
+
+def _enable_cell_wrap(cell):
+    """
+    Force a cell to wrap its text (`<w:noWrap w:val="0"/>`) — without
+    this, long accused names + addresses can overflow off the page.
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    tc_pr = cell._tc.get_or_add_tcPr()
+    # Remove any existing noWrap so wrap is enabled
+    for elt in tc_pr.findall(qn("w:noWrap")):
+        tc_pr.remove(elt)
+    # Explicit "fit text to cell" off (we want wrap, not shrink)
+    for elt in tc_pr.findall(qn("w:tcFitText")):
+        tc_pr.remove(elt)
+
+
+def _set_table_fixed_layout(table):
+    """
+    Set the table's layout to FIXED so columns don't auto-resize when
+    a cell has long content. Without this, Word's auto-fit kicks in
+    and the layout drifts every time a long accused address is added.
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    tbl_pr = table._tbl.tblPr
+    # Remove any existing tblLayout child
+    for elt in tbl_pr.findall(qn("w:tblLayout")):
+        tbl_pr.remove(elt)
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    tbl_pr.append(layout)
+
+
 def _make_table(doc, rows: int, cols: int, widths_cm: Optional[List[float]] = None):
     t = doc.add_table(rows=rows, cols=cols)
     t.style = "Table Grid"
@@ -180,15 +245,121 @@ def _pick_relation(p: Dict[str, Any]) -> str:
     return "S/o"
 
 
+def _is_official_witness(p: Dict[str, Any]) -> bool:
+    """
+    A witness is OFFICIAL (police / doctor / IO) when their role or
+    occupation matches one of the official designations. Official
+    witnesses get a SHORTENED format: just name + designation + station.
+    No S/o, age, caste, address, phone fields — those are personal
+    details that don't belong on a chargesheet for official roles.
+    """
+    if not isinstance(p, dict):
+        return False
+    haystacks = [
+        str(p.get("role", "")).lower(),
+        str(p.get("type", "")).lower(),
+        str(p.get("occupation", "")).lower(),
+        str(p.get("occ", "")).lower(),
+        str(p.get("designation", "")).lower(),
+        str(p.get("rank", "")).lower(),
+        str(p.get("salutation", "")).lower(),
+        str(p.get("name", "")).lower(),
+    ]
+    blob = " ".join(haystacks)
+    police_tokens = (
+        "sub inspector", "sub-inspector", " si ", "si of police",
+        "asi", "assistant sub inspector", "head constable", " hc ",
+        " pc ", "police constable", "inspector of police", "ci of police",
+        "circle inspector", "sho", "io & filed", "io ", "filed charge sheet",
+        "investigating officer", "investigation officer", "police officer",
+        "officer of police",
+    )
+    medical_tokens = (
+        "dr.", "dr ", "doctor", "medical officer", "civil surgeon",
+        "rmo", "duty doctor", "duty mo", "hospital", "chc", "phc",
+        "casualty medical officer", "cas medical officer", "cas chc",
+        "wound certificate", "issued wound", "issuing wound", "mlc",
+    )
+    return (
+        any(tok in blob for tok in police_tokens)
+        or any(tok in blob for tok in medical_tokens)
+    )
+
+
+def _format_official_witness_block(p: Dict[str, Any]) -> str:
+    """
+    Short station-style block for IO / police officer / doctor witnesses:
+        "Sri. <Name>, <Rank/Designation> <belt no.>, PS <Station>"
+        "Dr. <Name>, Medical Officer, <Hospital>"
+    No S/o, age, caste, address, phone — these don't belong in a
+    chargesheet for OFFICIAL witnesses.
+    """
+    name = (p.get("name") or "").strip()
+    rank = (p.get("rank") or p.get("designation") or "").strip()
+    occ = (p.get("occupation") or p.get("occ") or "").strip()
+    station = (p.get("station") or "").strip()
+    addr = (p.get("address") or p.get("permanent_address") or "").strip()
+
+    # Doctors usually have salutation "Dr."
+    salutation = (p.get("salutation") or "").strip()
+    is_doctor = any(
+        tok in (rank + " " + occ + " " + addr + " " + salutation + " " + name).lower()
+        for tok in ("dr.", "dr ", "doctor", "medical officer", "civil surgeon",
+                    "hospital", "chc", "phc")
+    )
+    if is_doctor:
+        if not salutation:
+            salutation = "Dr."
+        designation = occ or rank or "Medical Officer"
+        venue = station or addr or ""
+        bits = [f"{salutation} {name}" if name else salutation]
+        if designation:
+            bits.append(designation)
+        if venue:
+            bits.append(venue)
+        return ", ".join(b for b in bits if b)
+
+    # Police officer / IO
+    if not salutation:
+        salutation = "Sri."
+    designation = rank or occ or "Sub Inspector of Police"
+    # Compose "PS X" only if not already present in station string
+    venue = ""
+    if station:
+        if station.lower().startswith("ps "):
+            venue = station
+        else:
+            venue = f"PS {station}"
+    elif addr:
+        venue = addr  # fallback (rare)
+    bits = [f"{salutation} {name}" if name else salutation]
+    if designation:
+        bits.append(designation)
+    if venue:
+        bits.append(venue)
+    return ", ".join(b for b in bits if b)
+
+
 def _format_person_block(p: Dict[str, Any]) -> str:
     """
-    Compose a station-style person block:
+    Compose a station-style person block.
+
+    Civilian witnesses get the full format:
       "Smt./Sri./Kum. <Name> <W/o|S/o|D/o> <Parent/Spouse>,
        Age: <N> years, Caste: <X>, Occ: <Y>, R/o <Address>, Ph.<phone>"
-    Missing parts collapse to '_____' (or 'NOT FOUND IN DOCUMENTS' upstream).
+    OFFICIAL witnesses (police officer / IO / doctor) get a shortened
+    block — see `_format_official_witness_block`. Personal fields like
+    S/o, age, caste, phone are NEVER required in a chargesheet for
+    official roles.
+    Missing civilian fields collapse to a short blank line "____".
     """
     if not isinstance(p, dict):
         return BLANK
+    # Route official witnesses through the short formatter — never show
+    # blank caste/age/phone fields for police or doctor witnesses.
+    if _is_official_witness(p):
+        return _format_official_witness_block(p)
+
     name = (p.get("name") or "").strip()
     # Gender → salutation default
     gender = (p.get("gender") or "").strip().lower()
@@ -379,6 +550,10 @@ def render_charge_sheet(case: Dict[str, Any]) -> bytes:
 
     # ── 5-column body table (Sno | Field | : | Value | Value-merge) ──
     body = _make_table(doc, 0, 5, widths_cm=[1.0, 6.5, 0.4, 4.0, 4.1])
+    # Fixed layout = columns stay at the widths we set above even when
+    # cells contain long content (Field 11 accused blocks etc.). Without
+    # this, Word's auto-fit can shrink other columns or cause overflow.
+    _set_table_fixed_layout(body)
 
     def _add_row(sno: str, label: str, value: str, sep: str = ":"):
         row = body.add_row()
@@ -465,14 +640,19 @@ def render_charge_sheet(case: Dict[str, Any]) -> bytes:
     accused = case.get("accused") or [{}]
     if not isinstance(accused, list) or not accused:
         accused = [{}]
-    accused_block = "Particulars of accused persons charge sheeted ::-\n" + "\n\n".join(
-        f"A{i}. {_format_person_block(a)}" for i, a in enumerate(accused, 1)
+    accused_lines = (
+        ["Particulars of accused persons charge sheeted ::-"]
+        + [f"A{i}. {_format_person_block(a)}" for i, a in enumerate(accused, 1)]
     )
-    # 11 row uses a different visual: label cell holds the entire accused block
+    # FIX 3 — Field 11 row uses multi-paragraph rendering with FIXED
+    # cell wrap so A1/A2/A3 each appear on a fresh line, text wraps
+    # cleanly inside the cell, and nothing overflows past the border.
     row11 = body.add_row()
-    _cell_para(row11.cells[0], "11", bold=True, size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+    _cell_para(row11.cells[0], "11", bold=True, size=10,
+               align=WD_ALIGN_PARAGRAPH.CENTER)
     merged = row11.cells[1].merge(row11.cells[2]).merge(row11.cells[3]).merge(row11.cells[4])
-    _cell_para(merged, accused_block, size=10)
+    _enable_cell_wrap(merged)
+    _cell_multi_paragraphs(merged, accused_lines, size=10)
     for cell in row11.cells:
         _set_borders(cell)
 
@@ -503,10 +683,13 @@ def render_charge_sheet(case: Dict[str, Any]) -> bytes:
     if not isinstance(witnesses, list) or not witnesses:
         witnesses = [{}, {}, {}]
     wt = _make_table(doc, 0, 4, widths_cm=[1.7, 10.0, 0.4, 3.9])
+    _set_table_fixed_layout(wt)
     for i, w in enumerate(witnesses, 1):
         wrow = wt.add_row()
         _cell_para(wrow.cells[0], f"LW-{i}", bold=True, size=10,
                    align=WD_ALIGN_PARAGRAPH.CENTER)
+        # Enable wrap on the long name+address cell so it never overflows
+        _enable_cell_wrap(wrow.cells[1])
         _cell_para(wrow.cells[1], _format_person_block(w), size=10)
         _cell_para(wrow.cells[2], ":", size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
         _cell_para(wrow.cells[3],

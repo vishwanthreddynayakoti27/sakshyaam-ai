@@ -59,8 +59,12 @@ PHASE 0 — INPUT SOURCES (what you receive)
 PHASE 1 — COMPLETE DOCUMENT EXTRACTION (MANDATORY)
 ───────────────────────────────────────────────────────────
 Before writing ANY part of the chargesheet, read EVERY uploaded
-document from first page to last page. Build an INTERNAL extraction
-table — do not skip any document, do not skim.
+document from PAGE 1 to the LAST PAGE. Multi-page PDFs are common —
+the doctor's name + injury opinion are typically on PAGE 2 of a
+medical certificate, the panch list is on PAGE 2 of a panchanama,
+the accused address proofs may be on PAGE 3 of a bail file. Build
+an INTERNAL extraction table — do not skip any document, do not
+skim, do not stop after page 1.
 
 (1) PEOPLE TABLE — every person mentioned in any document:
     For each person, record:
@@ -184,8 +188,31 @@ FIELD 13 — WITNESSES — assign LW numbers in canonical order:
   LW-m+3              : Medical Officer who issued wound certificate
   LW-N-1              : First IO (if different from filing IO)
   LW-N                : IO who filed charge sheet
-  Each row needs: salutation, name, parentage, age, caste, occ, address,
-  phone, and `role` chosen exactly from this enum:
+
+  ── PERSONAL-DETAIL RULE FOR OFFICIAL WITNESSES (CRITICAL) ──
+  For CIVILIAN witnesses (complainant, injured, eyewitness, panch):
+    emit the full block — salutation, name, father/spouse, age, caste,
+    occupation, address, phone.
+
+  For OFFICIAL witnesses — i.e. role ∈ {"IO 1st", "IO & filed Charge
+  Sheet", any Police Officer, any Medical Officer/Doctor}:
+    OMIT all personal fields entirely. NEVER emit empty / blank "____"
+    for them. Set ONLY these keys:
+      • salutation  : "Sri." for police, "Dr." for medical officers
+      • name        : full name (verbatim from documents)
+      • rank        : the rank/designation + belt no. (e.g.
+                       "Sub Inspector of Police", "ASI 1557",
+                       "HC 248", "Medical Officer")
+      • station     : "PS <station>" for police; "Govt. Hospital,
+                       <town>" / "CHC Makthal" etc. for doctors
+      • role        : the role enum below
+    DO NOT emit `father`, `age`, `caste`, `occupation`, `address`,
+    `phone` for official witnesses. The renderer treats them as
+    OFFICIAL and prints only: "<salutation> <name>, <rank>,
+    <station>" — leaving out personal blanks entirely.
+
+  Each civilian row needs: salutation, name, parentage, age, caste,
+  occ, address, phone, and `role` chosen exactly from this enum:
     "Complainant and Injured", "Eyewitness", "Eyewitness and Injured",
     "Panch for Scene of Offence",
     "Issued wound certificates of LWs <X> to <Y>",

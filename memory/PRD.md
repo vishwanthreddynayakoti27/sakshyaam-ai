@@ -41,6 +41,19 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-10: 3 User-Reported Fixes — Official-Witness Formatting + Multi-Page OCR + Field 11 Table
+- ✅ **FIX 1 — Official-witness short format**. Police officers (IO 1st / IO & filed Charge Sheet / SI / ASI / HC / PC / Inspector / Circle Inspector) and Medical Officers (Dr. / Medical Officer / Civil Surgeon / hospital staff) now render with ONLY `salutation + name + rank/designation + station`. Personal fields (S/o, age, caste, occupation, address, phone) are completely omitted — no more `Sri. X, S/o ___, Age: ___, Caste: ___` blanks for officials. New helpers `_is_official_witness()` + `_format_official_witness_block()` in `fixed_layout_renderer.py`; LLM prompt also explicitly instructs to OMIT these keys for official roles.
+- ✅ **FIX 2 — Multi-page PDF extraction**. Two issues fixed:
+  1. **poppler-utils was missing on this container** (already in `apt-deps.txt` for the deploy pipeline but the dev container didn't have it). Installed `apt-get install poppler-utils tesseract-ocr antiword`. pdf2image now renders all pages.
+  2. **PyPDF2-vs-OCR gating rewritten** in `extract_text_from_staged_file()`. The old code returned PyPDF2's text whenever total length was ≥ 80 chars, which missed scanned-page-2 medical certificates (page 1 had typed patient details ≥ 80 chars → OCR skipped → doctor's signature on page 2 lost). New logic: track per-page length, and if ANY page < 40 chars trigger the full Vision OCR fallback, then merge PyPDF2 + OCR page-by-page (keep the longer of the two per page). Verified on `mcs.pdf` — now returns text from all 8 pages including the doctor's name + injury opinion.
+- ✅ **FIX 3 — Field 11 table alignment**. Multi-paragraph cell rendering for the accused list:
+  - New `_cell_multi_paragraphs()` helper emits a separate `<w:p>` per accused (A1, A2, A3...) with hanging indent so wrapped lines line up under the name, not the "A1." prefix.
+  - New `_enable_cell_wrap()` removes any `<w:noWrap>` on the cell + disables `tcFitText` so long addresses wrap cleanly.
+  - New `_set_table_fixed_layout()` sets `<w:tblLayout w:type="fixed"/>` on the body table so columns don't auto-resize when one cell has long content.
+  - Applied to both Field 11 (accused) cell AND the witness sub-table's name+address cell. Verified visually: 6 accused (A1–A6) each on a clean separate line with proper wrap.
+- ✅ **Tests**: 38/38 pass · 2 new tests covering `_is_official_witness` (police + doctor variants) and `_format_official_witness_block` (omits S/o/Age/Caste/Phone blanks for officials, keeps full block for civilians).
+- ✅ Fresh sample DOCX: https://legal-fusion-queue.preview.emergentagent.com/test-docs/FIR_100-2025_ChargeSheet_V4_Phase123_Fixes123.docx
+
 ### 2026-06-10: V4.0 + Master IO Phase 1 / Phase 2 / Phase 3 prompt
 - ✅ **User-mandated Phase 1 / 2 / 3 prompt structure** integrated into the ICGS SYSTEM_PROMPT:
   - **Phase 1 — Complete Document Extraction (mandatory)**: LLM is required to build three internal extraction tables before composing — PEOPLE (with role + cross-document back-fill), EVENTS (every dated event), FACTS (offence + location + injuries + property + vehicles). Then COUNT total persons/witnesses/accused.
