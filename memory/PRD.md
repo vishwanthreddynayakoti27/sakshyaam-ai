@@ -42,6 +42,10 @@ Build a production-ready, highly modular backend document generation pipeline fo
 ## Completed Features (latest first)
 
 ### 2026-06-10: V3.0 Master IO treatment for Case Diary Part-I + Remand Report + CCTNS Autofill
+- ✅ **HOTFIX (user-reported)**: Auto-resume was locking the user into the previous case with no escape. Added two "+ Start New Case" buttons:
+  - Prominent **orange pill** at the top of the Triple Fusion Complete card (right side)
+  - Compact **+ NEW CASE** badge next to the "🟢 LOCKED" indicator on the manual-input form header
+  Both clear `localStorage.np_active_case_id`, reset all 15 manual fields + fusion state, and unlock the form so a fresh FIR can be typed. Verified end-to-end via screenshot: clicking the button transitions the page from "FIR 100/2025 + Locked" → "Ready to Generate + editable form" with a success toast.
 - ✅ **HOTFIX (user-reported via 2nd video — "first it generated only once, now again shows this error")**: Intelligent Charge Sheet endpoint converted to ASYNC background-job pattern (same proven pattern as Triple Fusion). Root cause was the K8s ingress 60s timeout — 23-file cases were taking 40-70s. Backend completed but Cloudflare killed the connection, frontend saw HTTP 502 + showed "Intelligent generation failed". Now:
   - `POST /staging/generate-intelligent-charge-sheet/{case_id}` returns in <1s with `{status:'processing', stage, progress}`. Heavy work runs in `asyncio.create_task(_process_icgs_background(...))`.
   - Background task saves the rendered DOCX to `staging/{officer}/{case}/intelligent_charge_sheet.docx` and updates `intelligent_chargesheets.{status, stage, progress, error}` as it advances (queued → llm_composing 35% → rendering_docx 85% → completed 100%).

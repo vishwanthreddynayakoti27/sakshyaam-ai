@@ -69,6 +69,44 @@ const ChargeSheetFusion = () => {
   
   const fileInputRef = useRef(null);
 
+  // ─── Start a brand-new case (escape hatch from auto-resume) ──────────
+  // The auto-resume + locked manual-input is helpful when continuing the
+  // SAME case across page reloads, but it actively blocks the user from
+  // starting work on a different FIR. This button clears everything:
+  // localStorage active-case-id, all 15 manual-form fields, fusion state,
+  // and unlocks the form so the next FIR can be typed.
+  const startNewCase = useCallback(() => {
+    try { localStorage.removeItem('np_active_case_id'); } catch (e) { /* noop */ }
+    setCaseId(null);
+    setFusionReady(false);
+    setExtractedData(null);
+    setCreditsUsed(0);
+    setDocumentsCount(0);
+    setJobProgress(0);
+    setJobStage('');
+    setStagedFiles([]);
+    setIsUploading(false);
+    setIsGenerating(false);
+    setManualFormSubmitted(false);
+    // Reset 15 manual fields to sensible defaults
+    setDistrict('Narayanpet');
+    setPoliceStation('Makthal');
+    setFirNumber('');
+    setFirDate('');
+    setChargeSheetNo('');
+    setChargesheetDate('');
+    setSections('');
+    setReportType('Charge Sheet.');
+    setUnOccurredReason('----');
+    setChargesheetType('Original.');
+    setIoName('');
+    setIoRank('');
+    setCourtName('JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL');
+    setDispatchDate('');
+    setAckEnclosed('Yes');
+    toast.success('Started a new case — manual input form is editable.');
+  }, []);
+
   // ─── Auto-resume the active case on mount ────────────────────────────
   // Persist the active caseId to localStorage so a page refresh / mobile
   // browser-tab kill doesn't lose the user's work. On mount, if there's a
@@ -417,11 +455,24 @@ const ChargeSheetFusion = () => {
                   <Scale size={18} className="text-[#FFB800]" />
                   Step 1 — Manual Input (15 fields)
                 </h3>
-                {manualFormSubmitted && (
-                  <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider flex items-center gap-1">
-                    <CheckCircle2 size={12} /> Locked
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {manualFormSubmitted && (
+                    <>
+                      <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Locked
+                      </span>
+                      <button
+                        type="button"
+                        onClick={startNewCase}
+                        className="text-[10px] font-semibold uppercase tracking-wider text-[#FF6B3D] hover:text-[#FF8800] border border-[#FF6B3D]/40 hover:border-[#FF6B3D] rounded px-2 py-0.5 transition-colors"
+                        data-testid="start-new-case-btn-inline"
+                        title="Clear this case and start typing a new FIR"
+                      >
+                        + New Case
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               <p className="text-white/40 text-[11px] mb-3 leading-relaxed">
                 Fill all 15 fields manually. The AI will copy them verbatim and
@@ -733,6 +784,7 @@ const ChargeSheetFusion = () => {
                   extractedData={extractedData}
                   onDownload={downloadDocument}
                   caseId={caseId}
+                  onStartNewCase={startNewCase}
                 />
               ) : (
                 <FusionIdleView
@@ -889,7 +941,7 @@ const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
   );
 };
 
-const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId }) => {
+const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId, onStartNewCase }) => {
   const [smartLoading, setSmartLoading] = React.useState(false);
   const [diaryLoading, setDiaryLoading] = React.useState(false);
   const [remandLoading, setRemandLoading] = React.useState(false);
@@ -1143,7 +1195,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
 
   return (
     <div className="w-full max-w-lg" data-testid="fusion-completed-view">
-      <div className="text-center mb-6">
+      <div className="text-center mb-6 relative">
         <div className="mx-auto w-20 h-20 rounded-full bg-[#00FFB3]/20 border-2 border-[#00FFB3]/40 flex items-center justify-center mb-4">
           <CheckCircle2 className="text-[#00FFB3]" size={44} />
         </div>
@@ -1151,6 +1203,17 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         <p className="text-white/60 text-sm">
           FIR {firNumber} · {documentsCount} file{documentsCount === 1 ? '' : 's'} processed · {creditsUsed} credits used
         </p>
+        {onStartNewCase && (
+          <button
+            type="button"
+            onClick={onStartNewCase}
+            className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#FF6B3D] hover:text-white border border-[#FF6B3D]/40 hover:bg-[#FF6B3D] rounded-full px-4 py-1.5 transition-colors"
+            data-testid="start-new-case-btn-header"
+            title="Clear this case and start typing a new FIR"
+          >
+            + Start New Case
+          </button>
+        )}
       </div>
 
       {/* Extraction summary */}
