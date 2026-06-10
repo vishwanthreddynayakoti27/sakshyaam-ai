@@ -1168,182 +1168,152 @@ def _adapt_llm_schema_to_fixed_layout(cs: dict) -> dict:
 
 
 # =====================================================================
-@router.post("/generate-intelligent-charge-sheet/{case_id}")
-async def generate_intelligent_charge_sheet_endpoint(
-    case_id: str,
-    officer: dict = Depends(get_current_officer),
-):
-    """
-    Generate a production-grade charge sheet for a staged case.
-    Takes the last Triple Fusion extracted data, runs it through
-    Claude Sonnet 4.5 for validation/correction/narrative composition,
-    then renders a station-format DOCX.
-    COST: 3 credits (deducted only on success).
-    """
-    from fastapi.responses import Response
+# INTELLIGENT CHARGE SHEET — ASYNC background-job pattern
+#
+# WHY: the synchronous version was hitting the K8s ingress 60s timeout for
+# 23-file cases (LLM + OCR + render runs 40-70s). The user saw "Intelligent
+# generation failed" with HTTP 502 even though the backend completed
+# successfully — the proxy killed the connection before the DOCX could be
+# streamed back.
+#
+# HOW: POST returns immediately with {status: 'processing'}. The work runs
+# in a detached asyncio task that saves the DOCX to disk + updates
+# intelligent_chargesheets.{status} on completion. The frontend polls
+# GET /intelligent-chargesheet/{case_id} until status='completed' and then
+# downloads from GET /intelligent-chargesheet/{case_id}/download.
+# =====================================================================
+async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_deduct: int):
+    """Run the heavy ICGS generation in a detached task — survives K8s 60s ingress."""
     from services.intelligent_charge_sheet import generate_intelligent_charge_sheet
-    from services.station_charge_sheet_renderer import render_charge_sheet_docx  # legacy renderer (unused, kept for compat)  # noqa: F401
     from services.fixed_layout_renderer import render_charge_sheet as render_authentic_charge_sheet
 
     officer_id = officer.get("officer_id", "unknown")
-    credits_to_deduct = 3
-
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database not initialized")
-
-    # Credit balance pre-check
-    officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
-    current = int((officer_doc or {}).get("credits", 0) or 0)
-    if current < credits_to_deduct:
-        raise HTTPException(
-            status_code=402,
-            detail=f"Insufficient credits — Intelligent Charge Sheet costs {credits_to_deduct} credits, you have {current}. Buy more at /credits.",
-        )
-
-    existing = await db.triple_fusions.find_one(
-        {"case_id": case_id, "officer_id": officer_id},
-        {"_id": 0}
-    )
-    if not existing:
-        raise HTTPException(
-            status_code=400,
-            detail="No Triple Fusion result found. Run Generate Triple Fusion first."
-        )
-
-    extracted = existing.get("extracted_data") or {}
-    folder = get_case_folder(officer_id, case_id)
-    metadata_path = folder / "metadata.json"
-    metadata = {}
-    if metadata_path.exists():
-        with open(metadata_path) as f:
-            metadata = json.load(f)
-
-    sections_raw = extracted.get("sections") or []
-    sections_text = ", ".join(sections_raw) if isinstance(sections_raw, list) else str(sections_raw)
-
-    # CRITICAL: build the full per-file documents corpus so the LLM has access to
-    # the raw FIR / petition / panchanama / MLC text. Without this, the LLM only
-    # sees the pre-distilled summary and almost every field comes back as
-    # "NOT FOUND IN DOCUMENTS".
-    files_meta = metadata.get("files") or []
-    uploaded_documents: List[str] = []
-    documents_corpus_parts: List[str] = []
-    for fmeta in files_meta:
-        fname = fmeta.get("filename") or fmeta.get("saved_name") or "unknown"
-        uploaded_documents.append(fname)
-        text = (fmeta.get("ocr_text") or fmeta.get("text") or "").strip()
-        # Re-OCR on the fly if the staged metadata didn't capture text earlier
-        if not text or len(text) < 40 or text.startswith("[No text in PDF]") or text.startswith("[PDF error"):
-            saved = fmeta.get("saved_name")
-            if saved:
-                fp = folder / saved
-                if fp.exists():
-                    try:
-                        text = (await extract_text_from_staged_file(fp)).strip()
-                        # Persist back into metadata so next call doesn't re-do the OCR
-                        fmeta["ocr_text"] = text
-                    except Exception as e:
-                        logger.warning(f"[ICGS] re-OCR failed for {saved}: {e}")
-        if text:
-            documents_corpus_parts.append(
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"FILE: {fname}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{text[:25000]}"
-            )
-    # Save the freshened OCR back to disk so we don't pay for re-OCR next time
     try:
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"[ICGS] could not persist refreshed metadata: {e}")
+        existing = await db.triple_fusions.find_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"_id": 0}
+        )
+        if not existing:
+            raise RuntimeError("No Triple Fusion result found. Run Generate Triple Fusion first.")
 
-    documents_corpus = "\n\n".join(documents_corpus_parts)
-    logger.info(
-        f"[ICGS] case {case_id}: assembled documents_corpus = "
-        f"{len(documents_corpus)} chars from {len(documents_corpus_parts)}/"
-        f"{len(files_meta)} files"
-    )
+        extracted = existing.get("extracted_data") or {}
+        folder = get_case_folder(officer_id, case_id)
+        metadata_path = folder / "metadata.json"
+        metadata: dict = {}
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
 
-    raw_data = {
-        "fir_number": extracted.get("fir_number") or metadata.get("fir_number", ""),
-        "fir_date": extracted.get("fir_date", ""),
-        "chargesheet_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
-        "police_station": extracted.get("police_station") or metadata.get("police_station", ""),
-        "district": extracted.get("district") or metadata.get("district", ""),
-        "sections": sections_text or metadata.get("sections", ""),
-        "io": {
-            "name": extracted.get("io_name") or officer.get("name", ""),
-            "rank": extracted.get("io_rank") or officer.get("rank", "SI of Police"),
-            "station": f"PS {metadata.get('police_station','Makthal')}",
-            "salutation": "Sri.",
-        },
-        "complainant": extracted.get("complainant") or {},
-        "accused_persons": extracted.get("accused_persons") or [],
-        "witnesses": extracted.get("witnesses") or [],
-        "incident_date": extracted.get("incident_date", ""),
-        "incident_time": extracted.get("incident_time", ""),
-        "incident_place": extracted.get("incident_place", ""),
-        "medical_findings": extracted.get("medical_findings", ""),
-        "section_35_3_dates": extracted.get("section_35_3_dates", ""),
-        "brief_facts": extracted.get("brief_facts", ""),
-        # Full per-file text corpus — THIS is what the LLM actually reads
-        "uploaded_documents": uploaded_documents,
-        "documents_corpus": documents_corpus,
-    }
+        sections_raw = extracted.get("sections") or []
+        sections_text = ", ".join(sections_raw) if isinstance(sections_raw, list) else str(sections_raw)
 
-    # ── V3.0 PHASE-1 OVERRIDE ─────────────────────────────────────────
-    # If the 15-field manual-input form was filled at create-case time,
-    # those values are AUTHORITATIVE — they override anything that the
-    # Triple-Fusion entity extractor guessed, and they will be presented
-    # to the LLM as "CONFIRMED MANUAL INPUT — USE EXACTLY AS PROVIDED".
-    manual = metadata.get("manual_input") or {}
-    if manual:
-        def _fmt_date(d):
-            # Accept "YYYY-MM-DD" from <input type=date> → "DD.MM.YYYY"
-            if not d:
-                return ""
-            s = str(d).strip()
-            if "-" in s and len(s.split("-")[0]) == 4:
-                y, m, dd = s.split("-")
-                return f"{dd}.{m}.{y}"
-            return s.replace("/", ".")
+        files_meta = metadata.get("files") or []
+        uploaded_documents: List[str] = []
+        documents_corpus_parts: List[str] = []
+        for fmeta in files_meta:
+            fname = fmeta.get("filename") or fmeta.get("saved_name") or "unknown"
+            uploaded_documents.append(fname)
+            text = (fmeta.get("ocr_text") or fmeta.get("text") or "").strip()
+            if not text or len(text) < 40 or text.startswith("[No text in PDF]") or text.startswith("[PDF error"):
+                saved = fmeta.get("saved_name")
+                if saved:
+                    fp = folder / saved
+                    if fp.exists():
+                        try:
+                            text = (await extract_text_from_staged_file(fp)).strip()
+                            fmeta["ocr_text"] = text
+                        except Exception as e:
+                            logger.warning(f"[ICGS-BG] re-OCR failed for {saved}: {e}")
+            if text:
+                documents_corpus_parts.append(
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"FILE: {fname}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{text[:25000]}"
+                )
+        try:
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"[ICGS-BG] could not persist refreshed metadata: {e}")
 
-        raw_data.update({
-            "district":           manual.get("district") or raw_data["district"],
-            "police_station":     manual.get("police_station") or raw_data["police_station"],
-            "fir_number":         manual.get("fir_number") or raw_data["fir_number"],
-            "fir_date":           _fmt_date(manual.get("fir_date")) or raw_data["fir_date"],
-            "chargesheet_no":     manual.get("chargesheet_no", ""),
-            "chargesheet_date":   _fmt_date(manual.get("chargesheet_date")) or raw_data["chargesheet_date"],
-            "sections":           manual.get("sections") or raw_data["sections"],
-            "report_type":        manual.get("report_type") or "Charge Sheet.",
-            "un_occurred_reason": manual.get("un_occurred_reason") or "----",
-            "chargesheet_type":   manual.get("chargesheet_type") or "Original.",
+        documents_corpus = "\n\n".join(documents_corpus_parts)
+
+        raw_data = {
+            "fir_number": extracted.get("fir_number") or metadata.get("fir_number", ""),
+            "fir_date": extracted.get("fir_date", ""),
+            "chargesheet_date": datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+            "police_station": extracted.get("police_station") or metadata.get("police_station", ""),
+            "district": extracted.get("district") or metadata.get("district", ""),
+            "sections": sections_text or metadata.get("sections", ""),
             "io": {
-                **(raw_data.get("io") or {}),
-                "name":    manual.get("io_name") or (raw_data.get("io") or {}).get("name", ""),
-                "rank":    manual.get("io_rank") or (raw_data.get("io") or {}).get("rank", ""),
-                "station": manual.get("police_station") or (raw_data.get("io") or {}).get("station", ""),
+                "name": extracted.get("io_name") or officer.get("name", ""),
+                "rank": extracted.get("io_rank") or officer.get("rank", "SI of Police"),
+                "station": f"PS {metadata.get('police_station','Makthal')}",
+                "salutation": "Sri.",
             },
-            "court":              manual.get("court_name") and f"IN THE COURT OF {manual['court_name']}" or "",
-            "court_name":         manual.get("court_name", ""),
-            "dispatch_date":      _fmt_date(manual.get("dispatch_date")),
-            "notice_ack_enclosed": (manual.get("ack_enclosed") or "No") + ".",
-            "manual_input_locked": True,
-        })
+            "complainant": extracted.get("complainant") or {},
+            "accused_persons": extracted.get("accused_persons") or [],
+            "witnesses": extracted.get("witnesses") or [],
+            "incident_date": extracted.get("incident_date", ""),
+            "incident_time": extracted.get("incident_time", ""),
+            "incident_place": extracted.get("incident_place", ""),
+            "medical_findings": extracted.get("medical_findings", ""),
+            "section_35_3_dates": extracted.get("section_35_3_dates", ""),
+            "brief_facts": extracted.get("brief_facts", ""),
+            "uploaded_documents": uploaded_documents,
+            "documents_corpus": documents_corpus,
+        }
 
+        # V3.0 PHASE-1 OVERRIDE (manual_input is authoritative)
+        manual = metadata.get("manual_input") or {}
+        if manual:
+            def _fmt_date(d):
+                if not d:
+                    return ""
+                s = str(d).strip()
+                if "-" in s and len(s.split("-")[0]) == 4:
+                    y, m, dd = s.split("-")
+                    return f"{dd}.{m}.{y}"
+                return s.replace("/", ".")
 
+            raw_data.update({
+                "district":           manual.get("district") or raw_data["district"],
+                "police_station":     manual.get("police_station") or raw_data["police_station"],
+                "fir_number":         manual.get("fir_number") or raw_data["fir_number"],
+                "fir_date":           _fmt_date(manual.get("fir_date")) or raw_data["fir_date"],
+                "chargesheet_no":     manual.get("chargesheet_no", ""),
+                "chargesheet_date":   _fmt_date(manual.get("chargesheet_date")) or raw_data["chargesheet_date"],
+                "sections":           manual.get("sections") or raw_data["sections"],
+                "report_type":        manual.get("report_type") or "Charge Sheet.",
+                "un_occurred_reason": manual.get("un_occurred_reason") or "----",
+                "chargesheet_type":   manual.get("chargesheet_type") or "Original.",
+                "io": {
+                    **(raw_data.get("io") or {}),
+                    "name":    manual.get("io_name") or (raw_data.get("io") or {}).get("name", ""),
+                    "rank":    manual.get("io_rank") or (raw_data.get("io") or {}).get("rank", ""),
+                    "station": manual.get("police_station") or (raw_data.get("io") or {}).get("station", ""),
+                },
+                "court":              manual.get("court_name") and f"IN THE COURT OF {manual['court_name']}" or "",
+                "court_name":         manual.get("court_name", ""),
+                "dispatch_date":      _fmt_date(manual.get("dispatch_date")),
+                "notice_ack_enclosed": (manual.get("ack_enclosed") or "No") + ".",
+                "manual_input_locked": True,
+            })
 
-    try:
-        logger.info(f"[ICGS] Generating intelligent charge sheet for case {case_id}")
+        await db.intelligent_chargesheets.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "stage": "llm_composing",
+                "progress": 35,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+
+        logger.info(f"[ICGS-BG] LLM call starting for case {case_id}")
         cs_data = await generate_intelligent_charge_sheet(raw_data, session_id=f"ics-{case_id}")
 
-        # ── V3.0 PHASE-1 RE-LOCK ──────────────────────────────────────
-        # The LLM may have rephrased or auto-prefixed the manual fields
-        # (e.g., adding "ADDL." to a court name). Re-apply the verbatim
-        # values from metadata.manual_input so Phase-1 is byte-for-byte
-        # whatever the police writer typed.
+        # PHASE-1 RE-LOCK
         if manual:
             cs_data["court"] = (
                 f"IN THE COURT OF {manual['court_name']}"
@@ -1359,7 +1329,6 @@ async def generate_intelligent_charge_sheet_endpoint(
             cs_data["report_type"]         = manual.get("report_type") or cs_data.get("report_type", "")
             cs_data["chargesheet_type"]    = manual.get("chargesheet_type") or cs_data.get("chargesheet_type", "")
             cs_data["un_occurred_reason"]  = manual.get("un_occurred_reason") or cs_data.get("un_occurred_reason", "")
-            # IO block — name+rank from manual, station from manual.police_station
             io_now = cs_data.get("io") or {}
             io_now["name"]    = manual.get("io_name") or io_now.get("name", "")
             io_now["rank"]    = manual.get("io_rank") or io_now.get("rank", "")
@@ -1368,11 +1337,24 @@ async def generate_intelligent_charge_sheet_endpoint(
             cs_data["dispatch_date"]       = raw_data.get("dispatch_date") or cs_data.get("dispatch_date", "")
             cs_data["notice_ack_enclosed"] = (manual.get("ack_enclosed") or "No") + "."
 
-        # Adapt the LLM JSON schema → fixed_layout_renderer schema and render the
-        # AUTHENTIC 18-section Telangana layout (matches 156.2025 CS.docx sample
-        # 1-to-1). The AI's role is purely to fill cell VALUES; structure cannot drift.
+        await db.intelligent_chargesheets.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "stage": "rendering_docx",
+                "progress": 85,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+
         adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
         docx_bytes = render_authentic_charge_sheet(adapted)
+
+        # Persist DOCX to the case folder so /download can stream it
+        docx_path = folder / "intelligent_charge_sheet.docx"
+        docx_path.write_bytes(docx_bytes)
+
+        fir_safe = (cs_data.get("fir_number") or "case").replace("/", "-")
+        download_filename = f"{fir_safe}_IntelligentChargeSheet.docx"
 
         await db.intelligent_chargesheets.update_one(
             {"case_id": case_id, "officer_id": officer_id},
@@ -1383,8 +1365,14 @@ async def generate_intelligent_charge_sheet_endpoint(
                 "structured_data": cs_data,
                 "corrections_applied": cs_data.get("corrections_applied", []),
                 "model_used": cs_data.get("_model_used", ""),
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "credits_used": credits_to_deduct,
+                "docx_filename": download_filename,
+                "docx_relative_path": "intelligent_charge_sheet.docx",
+                "status": "completed",
+                "stage": "completed",
+                "progress": 100,
+                "error": None,
             }},
             upsert=True,
         )
@@ -1401,42 +1389,20 @@ async def generate_intelligent_charge_sheet_endpoint(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "model_used": cs_data.get("_model_used", ""),
         })
-
-        fir_safe = (cs_data.get("fir_number") or "case").replace("/", "-")
-        filename = f"{fir_safe}_IntelligentChargeSheet.docx"
-        # Surface the extraction report on response headers so the frontend can
-        # show it in a toast / inline panel without re-fetching.
-        report = cs_data.get("extraction_report") or {}
-        import json as _json
-        report_header = _json.dumps({
-            "manual_input_fields_used": report.get("manual_input_fields_used", 10),
-            "extracted_fields_count": report.get("extracted_fields_count", 0),
-            "total_accused": len(cs_data.get("accused") or []),
-            "total_witnesses": len(cs_data.get("witnesses") or []),
-            "brief_facts_paragraphs": report.get("brief_facts_paragraphs",
-                                                  len((cs_data.get("brief_facts") or "").split("\n\n"))),
-            "not_found_fields": report.get("not_found_fields", []),
-            "confidence": report.get("confidence", "High"),
-            "confidence_reason": report.get("confidence_reason", ""),
-        })[:6000]
-        return Response(
-            content=docx_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "X-Corrections-Count": str(len(cs_data.get("corrections_applied", []))),
-                "X-Model-Used": cs_data.get("_model_used", ""),
-                "X-Extraction-Report": report_header,
-                "Access-Control-Expose-Headers": (
-                    "X-Corrections-Count, X-Model-Used, X-Extraction-Report"
-                ),
-            }
-        )
-    except HTTPException:
-        raise
+        logger.info(f"[ICGS-BG] case {case_id}: completed → {download_filename}")
     except Exception as e:
-        logger.exception(f"[ICGS] Intelligent charge sheet FAILED for case {case_id}: {e}")
-        if db is not None:
+        logger.exception(f"[ICGS-BG] case {case_id} FAILED: {e}")
+        try:
+            await db.intelligent_chargesheets.update_one(
+                {"case_id": case_id, "officer_id": officer_id},
+                {"$set": {
+                    "status": "failed",
+                    "stage": "failed",
+                    "error": str(e),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                }},
+                upsert=True,
+            )
             await db.action_logs.insert_one({
                 "officer_id": officer_id,
                 "action": "INTELLIGENT_CHARGESHEET_GENERATE",
@@ -1446,10 +1412,132 @@ async def generate_intelligent_charge_sheet_endpoint(
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "error": str(e),
             })
+        except Exception:
+            pass
+
+
+@router.post("/generate-intelligent-charge-sheet/{case_id}")
+async def generate_intelligent_charge_sheet_endpoint(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Kick off Intelligent Charge Sheet generation as a BACKGROUND job.
+    Returns immediately (under 1s) with {status: 'processing'}. The frontend
+    polls GET /staging/intelligent-chargesheet/{case_id} until
+    status='completed' and then GETs /download to fetch the DOCX.
+    COST: 3 credits (deducted only on success in the background task).
+    """
+    officer_id = officer.get("officer_id", "unknown")
+    credits_to_deduct = 3
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Credit balance pre-check
+    officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
+    current = int((officer_doc or {}).get("credits", 0) or 0)
+    if current < credits_to_deduct:
         raise HTTPException(
-            status_code=500,
-            detail=f"Intelligent charge sheet failed. NO CREDITS DEDUCTED. Error: {str(e)}"
+            status_code=402,
+            detail=f"Insufficient credits — Intelligent Charge Sheet costs {credits_to_deduct} credits, you have {current}. Buy more at /credits.",
         )
+
+    # Idempotency: if a previous job is still running, return its status
+    existing = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0}
+    )
+    if existing and existing.get("status") == "processing":
+        return {
+            "success": True,
+            "status": "processing",
+            "case_id": case_id,
+            "stage": existing.get("stage", "queued"),
+            "progress": existing.get("progress", 0),
+            "message": "Job already in progress. Poll GET /staging/intelligent-chargesheet/{case_id}.",
+        }
+
+    # Pre-check that a triple_fusion exists so we fail fast instead of in background
+    tf = await db.triple_fusions.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0, "extracted_data": 1}
+    )
+    if not tf:
+        raise HTTPException(
+            status_code=400,
+            detail="No Triple Fusion result found. Run Generate Triple Fusion first."
+        )
+
+    # Mark processing + spawn background task
+    started_at = datetime.now(timezone.utc).isoformat()
+    await db.intelligent_chargesheets.update_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"$set": {
+            "case_id": case_id, "officer_id": officer_id,
+            "status": "processing",
+            "stage": "queued",
+            "progress": 5,
+            "started_at": started_at,
+            "updated_at": started_at,
+            "error": None,
+        }},
+        upsert=True,
+    )
+    asyncio.create_task(
+        _process_icgs_background(
+            case_id=case_id, officer=officer,
+            credits_to_deduct=credits_to_deduct,
+        )
+    )
+    logger.info(f"[ICGS] Started background job for case {case_id} (officer {officer_id})")
+    return {
+        "success": True,
+        "status": "processing",
+        "case_id": case_id,
+        "stage": "queued",
+        "progress": 5,
+        "started_at": started_at,
+        "message": "Intelligent Charge Sheet started. Poll GET /staging/intelligent-chargesheet/{case_id} every 4-5s; when status='completed' GET /download to fetch the DOCX.",
+    }
+
+
+@router.get("/intelligent-chargesheet/{case_id}/download")
+async def download_intelligent_chargesheet(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """Stream the DOCX produced by the background Intelligent Charge Sheet job."""
+    from fastapi.responses import FileResponse
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    officer_id = officer.get("officer_id", "unknown")
+    doc = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0, "status": 1, "docx_relative_path": 1, "docx_filename": 1, "fir_number": 1}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="No Intelligent Charge Sheet generated for this case yet")
+    status = doc.get("status") or "completed"  # legacy rows have no status field — assume completed
+    if status == "processing":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Still generating (stage={doc.get('stage','?')}). Poll /staging/intelligent-chargesheet/{{case_id}}."
+        )
+    if status == "failed":
+        raise HTTPException(status_code=500, detail=f"Generation failed: {doc.get('error','unknown')}")
+    folder = get_case_folder(officer_id, case_id)
+    rel = doc.get("docx_relative_path") or "intelligent_charge_sheet.docx"
+    fp = folder / rel
+    if not fp.exists():
+        raise HTTPException(status_code=410, detail="DOCX no longer available — re-run Generate")
+    fir_safe = (doc.get("fir_number") or "case").replace("/", "-")
+    filename = doc.get("docx_filename") or f"{fir_safe}_IntelligentChargeSheet.docx"
+    return FileResponse(
+        path=str(fp),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/intelligent-chargesheet/{case_id}")

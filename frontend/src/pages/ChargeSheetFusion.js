@@ -987,16 +987,41 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
     setSmartLoading(true);
     setCorrections(null);
     try {
-      toast.info('Running station-writer AI (Claude 4.5)... ~20 seconds');
-      const resp = await api.post(
+      // STEP 1 — kick off the background job (returns in <1s)
+      toast.info('Starting Intelligent Charge Sheet... (background job — safe past 60s K8s timeout)');
+      const startResp = await api.post(
         `/staging/generate-intelligent-charge-sheet/${caseId}`,
         null,
-        { responseType: 'blob', timeout: 180000 }
+        { timeout: 30000 }
       );
-      // Pull corrections count from response headers
-      const correctionsCount = resp.headers['x-corrections-count'] || resp.headers['X-Corrections-Count'];
-      // Trigger DOCX download
-      const blob = new Blob([resp.data], {
+      if (startResp.data?.status !== 'processing' && startResp.data?.status !== 'completed') {
+        throw new Error('Unexpected start response');
+      }
+
+      // STEP 2 — poll status every 5s until completed/failed (max ~6 min)
+      let polls = 0;
+      const MAX_POLLS = 80; // 80 * 5s = 400s
+      while (true) {
+        await new Promise((r) => setTimeout(r, 5000));
+        polls += 1;
+        const stat = await api.get(`/staging/intelligent-chargesheet/${caseId}`).catch(() => null);
+        const data = stat?.data || {};
+        const status = data.status || (data.success && data.completed_at ? 'completed' : 'processing');
+        if (status === 'completed') break;
+        if (status === 'failed') {
+          throw new Error(data.error || 'Generation failed');
+        }
+        if (polls >= MAX_POLLS) {
+          throw new Error('Timed out after 6 minutes. Backend may still be running — check /staging/intelligent-chargesheet again later.');
+        }
+      }
+
+      // STEP 3 — download the saved DOCX
+      const dl = await api.get(
+        `/staging/intelligent-chargesheet/${caseId}/download`,
+        { responseType: 'blob', timeout: 60000 }
+      );
+      const blob = new Blob([dl.data], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
       const url = window.URL.createObjectURL(blob);
@@ -1008,7 +1033,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       a.remove();
       window.URL.revokeObjectURL(url);
 
-      // Fetch the corrections list separately
+      // STEP 4 — fetch the corrections list for the panel
       try {
         const meta = await api.get(`/staging/intelligent-chargesheet/${caseId}`);
         if (meta.data?.corrections_applied?.length) {
@@ -1017,9 +1042,9 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       } catch (e) { /* non-critical */ }
 
       setHasChargeSheet(true);
-      toast.success(`Station-format charge sheet downloaded (${correctionsCount || 0} corrections applied)`);
+      toast.success('Station-format charge sheet generated & downloaded');
     } catch (error) {
-      let msg = error.response?.data?.detail || 'Intelligent generation failed';
+      let msg = error.response?.data?.detail || error.message || 'Intelligent generation failed';
       if (error.response?.data instanceof Blob) {
         try {
           msg = JSON.parse(await error.response.data.text()).detail || msg;
