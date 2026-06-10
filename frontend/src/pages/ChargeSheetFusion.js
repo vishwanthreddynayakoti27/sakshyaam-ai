@@ -29,12 +29,29 @@ const ChargeSheetFusion = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // === CASE INFO ===
-  const [policeStation, setPoliceStation] = useState('Makthal');
-  const [district, setDistrict] = useState('Narayanpet');
-  const [firNumber, setFirNumber] = useState('');
-  const [sections, setSections] = useState('');
-  
+  // === CASE INFO (15-field manual input form — V3.0) ===
+  // All 15 fields are filled by the police writer manually. They are NEVER
+  // extracted from documents — the LLM is instructed to use them verbatim
+  // as "CONFIRMED MANUAL INPUT" with zero alteration.
+  const [district, setDistrict] = useState('Narayanpet');                 // Field 01
+  const [policeStation, setPoliceStation] = useState('Makthal');          // Field 02
+  const [firNumber, setFirNumber] = useState('');                          // Field 03
+  const [firDate, setFirDate] = useState('');                              // Field 04 (DD/MM/YYYY)
+  const [chargeSheetNo, setChargeSheetNo] = useState('');                  // Field 05
+  const [chargesheetDate, setChargesheetDate] = useState('');              // Field 06 (DD/MM/YYYY)
+  const [sections, setSections] = useState('');                            // Field 07
+  const [reportType, setReportType] = useState('Charge Sheet');            // Field 08
+  const [unOccurredReason, setUnOccurredReason] = useState('');            // Field 09 (cond.)
+  const [chargesheetType, setChargesheetType] = useState('Original');      // Field 10
+  const [ioName, setIoName] = useState('');                                 // Field 11
+  const [ioRank, setIoRank] = useState('');                                 // Field 12
+  const [courtName, setCourtName] = useState(
+    'JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL'
+  );                                                                        // Field 13
+  const [dispatchDate, setDispatchDate] = useState('');                    // Field 14
+  const [ackEnclosed, setAckEnclosed] = useState('No');                    // Field 15 (Yes/No)
+  const [manualFormSubmitted, setManualFormSubmitted] = useState(false);
+
   // === FUSION STATUS ===
   // We no longer render the giant HTML preview (caused mobile "Script error" via
   // dangerouslySetInnerHTML). Just keep completion flags + summary.
@@ -51,28 +68,49 @@ const ChargeSheetFusion = () => {
 
   // === CREATE STAGING CASE ===
   const createStagingCase = async () => {
-    if (!firNumber.trim()) {
-      toast.error('Please enter FIR number first');
+    // Required-field check (per the 15-field manual input contract)
+    const missing = [];
+    if (!firNumber.trim())        missing.push('FIR Number');
+    if (!firDate.trim())          missing.push('FIR Date');
+    if (!chargesheetDate.trim())  missing.push('Date of Chargesheet');
+    if (!sections.trim())         missing.push('Act & Sections');
+    if (!ioName.trim())           missing.push('IO Name');
+    if (missing.length) {
+      toast.error(`Please fill: ${missing.join(', ')}`);
       return null;
     }
-    
+
     try {
       const formData = new FormData();
+      // 4 legacy fields (kept for backwards compat)
       formData.append('police_station', policeStation);
       formData.append('district', district);
       formData.append('fir_number', firNumber);
       formData.append('sections', sections);
-      
+      // 11 new manual-input fields
+      formData.append('fir_date', firDate);
+      formData.append('chargesheet_no', chargeSheetNo);
+      formData.append('chargesheet_date', chargesheetDate);
+      formData.append('report_type', reportType);
+      formData.append('un_occurred_reason', unOccurredReason);
+      formData.append('chargesheet_type', chargesheetType);
+      formData.append('io_name', ioName);
+      formData.append('io_rank', ioRank);
+      formData.append('court_name', courtName);
+      formData.append('dispatch_date', dispatchDate);
+      formData.append('ack_enclosed', ackEnclosed);
+
       const response = await api.post('/staging/create-case', formData);
-      
+
       if (response.data.success) {
         setCaseId(response.data.case_id);
+        setManualFormSubmitted(true);
         toast.success(`Case folder created: ${response.data.case_id}`);
-        toast.info('Credits used: 0 (Staging is FREE)');
+        toast.info('All 15 manual fields locked — now upload documents.');
         return response.data.case_id;
       }
     } catch (error) {
-      toast.error('Failed to create case folder');
+      toast.error(error.response?.data?.detail || 'Failed to create case folder');
       console.error(error);
     }
     return null;
@@ -310,80 +348,225 @@ const ChargeSheetFusion = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* === LEFT: STAGING AREA === */}
           <div className="col-span-1 space-y-4">
-            {/* Case Info */}
-            <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10">
-              <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-                <Scale size={18} className="text-[#FFB800]" />
-                Case Information
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-white/50 text-xs">FIR Number *</label>
-                  <Input
-                    value={firNumber}
-                    onChange={(e) => setFirNumber(e.target.value)}
-                    placeholder="e.g., 57/2026"
-                    className="bg-[#030614] border-white/20 text-white"
-                    data-testid="fir-number-input"
-                  />
-                </div>
+            {/* ─── STEP 1: 15-FIELD MANUAL INPUT FORM ─── */}
+            <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10" data-testid="manual-input-form">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white font-semibold flex items-center gap-2">
+                  <Scale size={18} className="text-[#FFB800]" />
+                  Step 1 — Manual Input (15 fields)
+                </h3>
+                {manualFormSubmitted && (
+                  <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Locked
+                  </span>
+                )}
+              </div>
+              <p className="text-white/40 text-[11px] mb-3 leading-relaxed">
+                Fill all 15 fields manually. The AI will copy them verbatim and
+                never alter or re-extract them from your documents.
+              </p>
+              <div className="space-y-2.5">
+                {/* 01 District + 02 Police Station */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-white/50 text-xs">Police Station</label>
-                    <Input
-                      value={policeStation}
-                      onChange={(e) => setPoliceStation(e.target.value)}
-                      placeholder="Makthal"
-                      className="bg-[#030614] border-white/20 text-white text-sm"
-                    />
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">01 District *</label>
+                    <Input value={district} onChange={(e) => setDistrict(e.target.value)}
+                      placeholder="Narayanpet"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-district" />
                   </div>
                   <div>
-                    <label className="text-white/50 text-xs">District</label>
-                    <Input
-                      value={district}
-                      onChange={(e) => setDistrict(e.target.value)}
-                      placeholder="Narayanpet"
-                      className="bg-[#030614] border-white/20 text-white text-sm"
-                    />
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">02 Police Station *</label>
+                    <Input value={policeStation} onChange={(e) => setPoliceStation(e.target.value)}
+                      placeholder="Makthal"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-police-station" />
                   </div>
                 </div>
-                <div>
-                  <label className="text-white/50 text-xs">Sections</label>
-                  <Input
-                    value={sections}
-                    onChange={(e) => setSections(e.target.value)}
-                    placeholder="e.g., 118(2), 115(2), 352 BNS"
-                    className="bg-[#030614] border-white/20 text-white text-sm"
-                  />
+
+                {/* 03 FIR Number + 04 FIR Date */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">03 FIR No. *</label>
+                    <Input value={firNumber} onChange={(e) => setFirNumber(e.target.value)}
+                      placeholder="100/2025"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-fir-number" />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">04 FIR Date *</label>
+                    <Input type="date" value={firDate} onChange={(e) => setFirDate(e.target.value)}
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-fir-date" />
+                  </div>
                 </div>
+
+                {/* 05 Charge Sheet No + 06 Charge Sheet Date */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">05 CS No.</label>
+                    <Input value={chargeSheetNo} onChange={(e) => setChargeSheetNo(e.target.value)}
+                      placeholder="45"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-cs-number" />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">06 CS Date *</label>
+                    <Input type="date" value={chargesheetDate} onChange={(e) => setChargesheetDate(e.target.value)}
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-cs-date" />
+                  </div>
+                </div>
+
+                {/* 07 Act & Sections (wide) */}
+                <div>
+                  <label className="text-white/50 text-[10px] uppercase tracking-wide">07 Act &amp; Sections *</label>
+                  <Input value={sections} onChange={(e) => setSections(e.target.value)}
+                    placeholder="126(2), 118(1), 352, 351(2) R/w 3(5) BNS"
+                    className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                    data-testid="manual-sections" />
+                </div>
+
+                {/* 08 Report Type dropdown + 10 Original/Supp dropdown */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">08 Report Type</label>
+                    <select value={reportType} onChange={(e) => setReportType(e.target.value)}
+                      className="w-full bg-[#030614] border border-white/20 text-white text-sm h-9 rounded-md px-2"
+                      data-testid="manual-report-type">
+                      <option value="Charge Sheet">Charge Sheet</option>
+                      <option value="Untraced">Untraced</option>
+                      <option value="Un-occurred / False">Un-occurred / False</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">10 Original / Supp.</label>
+                    <select value={chargesheetType} onChange={(e) => setChargesheetType(e.target.value)}
+                      className="w-full bg-[#030614] border border-white/20 text-white text-sm h-9 rounded-md px-2"
+                      data-testid="manual-cs-type">
+                      <option value="Original">Original</option>
+                      <option value="Supplementary">Supplementary</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 09 Un-occurred reason — conditional */}
+                {reportType === 'Un-occurred / False' && (
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">09 Un-occurred reason *</label>
+                    <Input value={unOccurredReason} onChange={(e) => setUnOccurredReason(e.target.value)}
+                      placeholder="False / Mistake of fact / Mistake of law / Non-cognizable / Civil nature"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-un-occurred-reason" />
+                  </div>
+                )}
+
+                {/* 11 IO Name + 12 IO Rank/Belt */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">11 IO Name *</label>
+                    <Input value={ioName} onChange={(e) => setIoName(e.target.value)}
+                      placeholder="K. Lal Singh"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-io-name" />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">12 IO Rank / Belt</label>
+                    <Input value={ioRank} onChange={(e) => setIoRank(e.target.value)}
+                      placeholder="HC 248"
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-io-rank" />
+                  </div>
+                </div>
+
+                {/* 13 Court Name */}
+                <div>
+                  <label className="text-white/50 text-[10px] uppercase tracking-wide">13 Court Name</label>
+                  <Input value={courtName} onChange={(e) => setCourtName(e.target.value)}
+                    placeholder="JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL"
+                    className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                    data-testid="manual-court-name" />
+                </div>
+
+                {/* 14 Dispatched On + 15 Ack toggle */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">14 Dispatched on</label>
+                    <Input type="date" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)}
+                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      data-testid="manual-dispatch-date" />
+                  </div>
+                  <div>
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">15 Ack enclosed?</label>
+                    <div className="flex gap-1 mt-0.5">
+                      {['Yes', 'No'].map((v) => (
+                        <button key={v} type="button" onClick={() => setAckEnclosed(v)}
+                          className={`flex-1 h-9 rounded-md border text-sm font-medium transition ${
+                            ackEnclosed === v
+                              ? 'bg-[#FFB800]/20 border-[#FFB800] text-[#FFB800]'
+                              : 'bg-[#030614] border-white/20 text-white/60 hover:border-white/40'
+                          }`}
+                          data-testid={`manual-ack-${v.toLowerCase()}`}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Next → submit form */}
+                <Button
+                  onClick={createStagingCase}
+                  disabled={manualFormSubmitted && !!caseId}
+                  className={`w-full h-10 font-bold text-sm mt-2 ${
+                    manualFormSubmitted
+                      ? 'bg-[#00FFB3]/15 text-[#00FFB3] border border-[#00FFB3]/40 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-[#FFB800] to-[#FF8800] text-black hover:opacity-90'
+                  }`}
+                  data-testid="manual-form-submit-btn">
+                  {manualFormSubmitted
+                    ? <><CheckCircle2 size={14} className="mr-1.5" /> Manual fields locked — upload below</>
+                    : <>Next → Lock manual fields & open upload</>}
+                </Button>
               </div>
             </div>
 
-            {/* File Upload Zone - UNLIMITED */}
-            <div 
-              className="p-4 rounded-xl bg-[#0B0F1A] border-2 border-dashed border-[#00C2FF]/30 hover:border-[#00C2FF]/50 transition-colors cursor-pointer"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
+            {/* ─── STEP 2: FILE UPLOAD (only after manual form submitted) ─── */}
+            <div
+              className={`p-4 rounded-xl bg-[#0B0F1A] border-2 border-dashed transition-colors ${
+                manualFormSubmitted
+                  ? 'border-[#00C2FF]/30 hover:border-[#00C2FF]/50 cursor-pointer'
+                  : 'border-white/10 opacity-50 cursor-not-allowed'
+              }`}
+              onDrop={manualFormSubmitted ? handleDrop : undefined}
+              onDragOver={manualFormSubmitted ? handleDragOver : undefined}
+              onClick={() => {
+                if (!manualFormSubmitted) {
+                  toast.error('Please fill and lock the 15 manual fields above first');
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
               data-testid="file-drop-zone"
             >
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.txt,.xlsx,.mp3,.wav,.m4a"
                 className="hidden"
                 onChange={(e) => handleBatchUpload(e.target.files)}
+                disabled={!manualFormSubmitted}
               />
               <div className="text-center py-6">
                 {isUploading ? (
                   <Loader2 className="animate-spin text-[#00C2FF] mx-auto mb-2" size={32} />
                 ) : (
-                  <Upload className="text-[#00C2FF] mx-auto mb-2" size={32} />
+                  <Upload className={manualFormSubmitted ? 'text-[#00C2FF] mx-auto mb-2' : 'text-white/30 mx-auto mb-2'} size={32} />
                 )}
-                <p className="text-white font-semibold">Drop Files or Click to Upload</p>
-                <p className="text-white/40 text-xs mt-1">PDF, DOCX, DOC, JPG, PNG</p>
-                <p className="text-[#00FFB3] text-xs mt-2 font-semibold">NO LIMIT - Upload 1-30+ files</p>
+                <p className="text-white font-semibold">Step 2 — Drop Files or Click to Upload</p>
+                <p className="text-white/40 text-xs mt-1">PDF, DOCX, DOC, JPG, PNG, TXT, XLSX, MP3, WAV</p>
+                <p className="text-[#00FFB3] text-xs mt-2 font-semibold">NO LIMIT — Upload 1 to 30+ files</p>
                 <p className="text-[#FFB800] text-xs mt-1">0 Credits for uploading</p>
               </div>
             </div>

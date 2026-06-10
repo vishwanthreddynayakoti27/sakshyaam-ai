@@ -81,15 +81,32 @@ async def create_staging_case(
     district: str = Form(...),
     fir_number: str = Form(default=""),
     sections: str = Form(default=""),
+    # 11 new V3.0 manual-input fields (filled by the police writer, never altered)
+    fir_date: str = Form(default=""),
+    chargesheet_no: str = Form(default=""),
+    chargesheet_date: str = Form(default=""),
+    report_type: str = Form(default="Charge Sheet"),
+    un_occurred_reason: str = Form(default=""),
+    chargesheet_type: str = Form(default="Original"),
+    io_name: str = Form(default=""),
+    io_rank: str = Form(default=""),
+    court_name: str = Form(default=""),
+    dispatch_date: str = Form(default=""),
+    ack_enclosed: str = Form(default="No"),
     officer: dict = Depends(get_current_officer)
 ):
     """
     Create a new case folder for staging files.
+
+    Accepts the 15-field manual-input form (4 legacy + 11 V3.0). All fields
+    are persisted in metadata.json under `manual_input` and passed to the
+    LLM verbatim as "CONFIRMED MANUAL INPUT — USE EXACTLY AS PROVIDED".
+
     COST: 0 CREDITS
     """
     case_id = f"CASE-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     folder = get_case_folder(officer.get("officer_id", "unknown"), case_id)
-    
+
     # Save case metadata
     metadata = {
         "case_id": case_id,
@@ -98,20 +115,42 @@ async def create_staging_case(
         "district": district,
         "fir_number": fir_number,
         "sections": sections,
+        # V3.0 manual input — kept under a dedicated subobject so the
+        # intelligent-charge-sheet endpoint can flag them as "Phase 1" data
+        "manual_input": {
+            "district": district,
+            "police_station": police_station,
+            "fir_number": fir_number,
+            "fir_date": fir_date,
+            "chargesheet_no": chargesheet_no,
+            "chargesheet_date": chargesheet_date,
+            "sections": sections,
+            "report_type": report_type,
+            "un_occurred_reason": un_occurred_reason,
+            "chargesheet_type": chargesheet_type,
+            "io_name": io_name,
+            "io_rank": io_rank,
+            "court_name": court_name,
+            "dispatch_date": dispatch_date,
+            "ack_enclosed": ack_enclosed,
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "staging",
         "files": []
     }
-    
+
     with open(folder / "metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
-    
-    logger.info(f"Created staging case: {case_id} (0 credits)")
-    
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+    logger.info(
+        f"Created staging case: {case_id} with full manual-input form "
+        f"(0 credits, {sum(1 for v in metadata['manual_input'].values() if v)} fields populated)"
+    )
+
     return {
         "success": True,
         "case_id": case_id,
-        "message": "Case folder created for file staging",
+        "message": "Case folder created with manual input locked",
         "credits_used": 0
     }
 
@@ -1234,9 +1273,82 @@ async def generate_intelligent_charge_sheet_endpoint(
         "documents_corpus": documents_corpus,
     }
 
+    # ── V3.0 PHASE-1 OVERRIDE ─────────────────────────────────────────
+    # If the 15-field manual-input form was filled at create-case time,
+    # those values are AUTHORITATIVE — they override anything that the
+    # Triple-Fusion entity extractor guessed, and they will be presented
+    # to the LLM as "CONFIRMED MANUAL INPUT — USE EXACTLY AS PROVIDED".
+    manual = metadata.get("manual_input") or {}
+    if manual:
+        def _fmt_date(d):
+            # Accept "YYYY-MM-DD" from <input type=date> → "DD.MM.YYYY"
+            if not d:
+                return ""
+            s = str(d).strip()
+            if "-" in s and len(s.split("-")[0]) == 4:
+                y, m, dd = s.split("-")
+                return f"{dd}.{m}.{y}"
+            return s.replace("/", ".")
+
+        raw_data.update({
+            "district":           manual.get("district") or raw_data["district"],
+            "police_station":     manual.get("police_station") or raw_data["police_station"],
+            "fir_number":         manual.get("fir_number") or raw_data["fir_number"],
+            "fir_date":           _fmt_date(manual.get("fir_date")) or raw_data["fir_date"],
+            "chargesheet_no":     manual.get("chargesheet_no", ""),
+            "chargesheet_date":   _fmt_date(manual.get("chargesheet_date")) or raw_data["chargesheet_date"],
+            "sections":           manual.get("sections") or raw_data["sections"],
+            "report_type":        manual.get("report_type") or "Charge Sheet.",
+            "un_occurred_reason": manual.get("un_occurred_reason") or "----",
+            "chargesheet_type":   manual.get("chargesheet_type") or "Original.",
+            "io": {
+                **(raw_data.get("io") or {}),
+                "name":    manual.get("io_name") or (raw_data.get("io") or {}).get("name", ""),
+                "rank":    manual.get("io_rank") or (raw_data.get("io") or {}).get("rank", ""),
+                "station": manual.get("police_station") or (raw_data.get("io") or {}).get("station", ""),
+            },
+            "court":              manual.get("court_name") and f"IN THE COURT OF {manual['court_name']}" or "",
+            "court_name":         manual.get("court_name", ""),
+            "dispatch_date":      _fmt_date(manual.get("dispatch_date")),
+            "notice_ack_enclosed": (manual.get("ack_enclosed") or "No") + ".",
+            "manual_input_locked": True,
+        })
+
+
+
     try:
         logger.info(f"[ICGS] Generating intelligent charge sheet for case {case_id}")
         cs_data = await generate_intelligent_charge_sheet(raw_data, session_id=f"ics-{case_id}")
+
+        # ── V3.0 PHASE-1 RE-LOCK ──────────────────────────────────────
+        # The LLM may have rephrased or auto-prefixed the manual fields
+        # (e.g., adding "ADDL." to a court name). Re-apply the verbatim
+        # values from metadata.manual_input so Phase-1 is byte-for-byte
+        # whatever the police writer typed.
+        if manual:
+            cs_data["court"] = (
+                f"IN THE COURT OF {manual['court_name']}"
+                if manual.get("court_name") else cs_data.get("court", "")
+            )
+            cs_data["district"]            = manual.get("district") or cs_data.get("district", "")
+            cs_data["police_station"]      = manual.get("police_station") or cs_data.get("police_station", "")
+            cs_data["fir_number"]          = manual.get("fir_number") or cs_data.get("fir_number", "")
+            cs_data["fir_date"]            = raw_data.get("fir_date") or cs_data.get("fir_date", "")
+            cs_data["chargesheet_no"]      = manual.get("chargesheet_no") or cs_data.get("chargesheet_no", "")
+            cs_data["chargesheet_date"]    = raw_data.get("chargesheet_date") or cs_data.get("chargesheet_date", "")
+            cs_data["sections"]            = manual.get("sections") or cs_data.get("sections", "")
+            cs_data["report_type"]         = manual.get("report_type") or cs_data.get("report_type", "")
+            cs_data["chargesheet_type"]    = manual.get("chargesheet_type") or cs_data.get("chargesheet_type", "")
+            cs_data["un_occurred_reason"]  = manual.get("un_occurred_reason") or cs_data.get("un_occurred_reason", "")
+            # IO block — name+rank from manual, station from manual.police_station
+            io_now = cs_data.get("io") or {}
+            io_now["name"]    = manual.get("io_name") or io_now.get("name", "")
+            io_now["rank"]    = manual.get("io_rank") or io_now.get("rank", "")
+            io_now["station"] = manual.get("police_station") or io_now.get("station", "")
+            cs_data["io"] = io_now
+            cs_data["dispatch_date"]       = raw_data.get("dispatch_date") or cs_data.get("dispatch_date", "")
+            cs_data["notice_ack_enclosed"] = (manual.get("ack_enclosed") or "No") + "."
+
         # Adapt the LLM JSON schema → fixed_layout_renderer schema and render the
         # AUTHENTIC 18-section Telangana layout (matches 156.2025 CS.docx sample
         # 1-to-1). The AI's role is purely to fill cell VALUES; structure cannot drift.
