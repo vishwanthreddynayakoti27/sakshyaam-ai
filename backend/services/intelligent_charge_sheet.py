@@ -98,105 +98,133 @@ FIELD 15 — LAB ANALYSIS: extract verbatim if forensic report uploaded,
 
 FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
   joined by "\\n\\n" inside the JSON string). NO bullet points. Past tense,
-  third person, formal Telangana police English.
+  third person, formal Telangana police English. You are filing a
+  chargesheet as an Investigation Officer — read ALL uploaded documents
+  carefully before drafting.
 
   ¶1  OFFENCE CLASSIFICATION:
       "This is a case of \\"<offence type, e.g., Wrongful Restraint,
       Criminal Intimidation, and Simple Hurt>\\", which occurred on
-      <DD.MM.YYYY> at about <HH:MM> hours at <exact location>. The place
-      of offence is situated at <location>, which falls within the
-      jurisdiction of <PS Name> Police Station and consequently under
-      the jurisdiction of this Hon'ble Court."
+      <DD.MM.YYYY> at about <HH:MM> hours at <exact location>. The
+      place of offence is situated at <location>, which falls within
+      the jurisdiction of <PS Name> Police Station and consequently
+      under the jurisdiction of this Hon'ble Court."
 
   ¶2  COMPLAINT NARRATIVE:
-      "The brief facts of the case are that on <FIR lodged date> at
-      <time> hours, complainant <Smt./Sri.> <Full name>
+      Begin with "The brief facts of the case are that on <FIR lodged
+      date> at <time> hours, complainant <Smt./Sri.> <Full name>
       <W/o or S/o> <name>, Age: <X> years, Caste: <X>, Occ: <X>,
       R/o <address>, Ph.<number> came to <PS Name> PS and lodged a
       <Telugu/English> written petition in which she/he stated that
-      <5–8 sentences: background/context, relationship between parties,
-      what happened on the incident date, exact actions of each accused
-      by A-number, injuries caused, threats made, intervention by any
-      person, and the request for legal action>.
-      Hence, requested to take necessary legal action as per law."
+      <narrate the FULL complaint: background, relationship between
+      parties, incident date, exact actions of EACH accused by NAME
+      and A-number, injuries caused, threats made, who intervened,
+      and the outcome>. Hence, requested to take necessary legal
+      action as per law."
 
   ¶3  FIR REGISTRATION:
       "As per the contents of the above complaint, LW-<IO-number> has
-      registered a Case in Cr.No.<FIR No.>/<year> U/s <all sections exactly>
-      and took up the investigation."
+      registered a Case in Cr.No.<FIR No.>/<year> U/s <all sections
+      exactly> and took up the investigation."
 
   ¶4  STATEMENT RECORDING + HOSPITAL:
-      "During the course of investigation, LW-<IO> examined and recorded
-      the statement of LW-<1> to LW-<X> U/s 180(3) of BNSS and
+      "During the course of investigation, LW-<IO> examined and
+      recorded the statement of LW-1 to LW-<X> U/s 180(3) of BNSS and
       incorporated the same in Part-II CD at the Police Station, and
-      sent them to <Hospital>, <location>, for treatment and for issuance
-      of wound certificate."
+      sent them to <Hospital>, <location>, for treatment and for
+      issuance of wound certificate."
 
   ¶5  SCENE VISIT + PANCHANAMA:
       "Subsequently LW-<IO> visited the scene of offence situated at
-      <exact location>, <PS Name> town which is located towards the
-      <direction> direction, at a distance of about <X> kilometer from
-      the Police Station. LW-<IO> carefully observed the surroundings and
-      secured two mediators LW-<panch1> and LW-<panch2>. In their
-      presence, he/she conducted the Scene of Offence Panchanama and
-      prepared a detailed rough sketch of the crime scene in the Crime
-      Detail Form, depicting all its surroundings accurately. During the
-      panchanama, LW-<IO> searched for material objects at the scene of
-      the offence, however, no discriminant material relevant to the
-      crime was found, and therefore, no items were seized at spot.
-      [If items WERE seized, replace last sentence with seizure details
-       and mahazar number.]
+      <exact location>, <town> which is located towards the
+      <direction> direction, at a distance of about <X> kilometer
+      from the Police Station. LW-<IO> carefully observed the
+      surroundings and secured two mediators LW-<panch1> and
+      LW-<panch2>. In their presence, he/she conducted the Scene of
+      Offence Panchanama and prepared a detailed rough sketch of the
+      crime scene in the Crime Detail Form, depicting all its
+      surroundings accurately. During the panchanama, LW-<IO>
+      searched for material objects at the scene of the offence,
+      however, no discriminant material relevant to the crime was
+      found, and therefore, no items were seized at spot.
+      [If items WERE seized, replace last sentence with seizure
+       details and mahazar number.]
       Furthermore, LW-<IO> examined and recorded the statement of
       LW-<eyewitness> U/s 180(3) of BNSS and incorporated the same in
       detail in Part-II CDs at the spot."
 
   ¶6  ACCUSED SURRENDER/ARREST:
       "While efforts were in progress, on <surrender/arrest date> at
-      <time> hours, accused persons A1 to A<n> (as mentioned in Column
-      No. 11 of this charge sheet) surrendered before LW-<IO> at
-      <PS Name> PS in connection with this offence. LW-<IO> served
-      notices U/s 35(3) BNSS to A1 to A<n>, informing them of the
-      allegations and directing them to appear for inquiry on or before
-      <date> between <time> and <time> hours."
+      <time> hours, accused persons A1 to A<n> (as mentioned in
+      Column No. 11 of this charge sheet) surrendered before LW-<IO>
+      at <PS Name> PS in connection with this offence. LW-<IO>
+      served notices U/s 35(3) BNSS to A1 to A<n>, informing them of
+      the allegations and directing them to appear for inquiry on or
+      before <date> between <time> and <time> hours."
 
   ¶7  ACCUSED APPEARANCE + RELEASE:
       "In compliance, accused A1 to A<n> appeared before LW-<IO> at
       <PS Name> PS on <date> at <time> hours and voluntarily admitted
-      their guilt. LW-<IO> collected their address proofs, directed them
-      to appear before the Hon'ble Court as required, and released them,
-      as the offence is punishable with imprisonment of less than <X>
-      years."
+      their guilt. LW-<IO> collected their address proofs, directed
+      them to appear before the Hon'ble Court as required, and
+      released them, as the offence is punishable with imprisonment
+      of less than <X> years."
 
   ¶8  MEDICAL CERTIFICATE:
       "LW-<IO> received the medical certificate from LW-<doctor>/Dr.
       <Full name>, <Hospital>, <location>, who treated the injured
-      persons LW-<X> to LW-<Y>. In the certificate, he/she opined that
-      the injuries sustained by LW-<X> to LW-<Y> are \\"<simple/grievous>
-      in nature\\"."
+      persons LW-<X> to LW-<Y>. In the certificate, he/she opined
+      that the injuries sustained by LW-<X> to LW-<Y> are
+      \\"<simple/grievous in nature — DOCTOR'S EXACT WORDS>\\"."
 
-  ¶9  SECOND IO HANDOVER (include ONLY if a second IO is named in the
-      payload, else SKIP this paragraph entirely):
+  ¶9  SECOND IO HANDOVER (include ONLY if a second IO is named in
+      the documents, else SKIP this paragraph entirely):
       "Later, LW-<second IO> took over the CD file from LW-<first IO>
       for further investigation, verified the investigation already
-      conducted by him/her, and found it correct and in accordance with
-      proper legal procedure."
+      conducted by him/her, and found it correct and in accordance
+      with proper legal procedure."
 
   ¶10 EVIDENCE CONCLUSION:
       "The evidence collected during the investigation, it is well
-      established that <summarise established facts: who complainant is,
-      where they are from, relationship with accused, what happened on
-      incident date naming all accused by A-number, what injuries were
-      caused, what threats were made, who intervened>. Thus, the
-      accused A1 to A<n> committed offences punishable under Sections
-      <all sections exactly> BNS."
+      established that <full factual summary: complainant's name,
+      origin, relation with accused, what happened on incident date
+      naming EVERY accused by A-number, what injuries were caused,
+      what threats were made, who intervened>. Thus, the accused A1
+      to A<n> committed offences punishable under Sections <all
+      sections exactly> BNS."
 
   ¶11 PRAYER:
-      "Therefore, the Hon'ble court is prayed that the accused persons
-      mentioned in column No. 11 of this charge sheet may be tried and
-      dealt suitably as per law."
+      "Therefore, the Hon'ble court is prayed that the accused
+      persons mentioned in column No. 11 of this charge sheet may be
+      tried and dealt suitably as per law."
 
   CLOSING LINE (separate sentence, bold in the rendered DOCX):
       "Hence the charge sheet."
+
+  ──────── ABSOLUTE RULES FOR BRIEF FACTS (highest priority) ────────
+  R1. Never write "NOT FOUND IN DOCUMENTS" inside any Brief Facts
+      paragraph. If a specific detail is genuinely missing from the
+      documents, SKIP that sentence or clause gracefully. The
+      paragraph must still read like a senior officer wrote it —
+      never like a half-filled form.
+  R2. Name EVERY accused by their A-number in ¶10. If there are 6
+      accused, the conclusion must reference A1 to A6 (or A1, A2,
+      A3, A4, A5, A6 individually) — never stop at A1 or A2.
+  R3. Use the SAME LW numbers consistently across all 11 paragraphs.
+      LW-1 in ¶2 must be the same person as LW-1 in ¶4, ¶7, ¶10.
+  R4. Medical injury finding (¶8) must use the doctor's EXACT words
+      from the wound certificate — never paraphrase "simple" as
+      "minor" or "grievous" as "serious".
+  R5. All dates inside Brief Facts must come from uploaded documents
+      ONLY. Never insert today's date, never invent a date, never
+      use a date from a different case.
+  R6. NEVER skip ¶1, ¶2, ¶3, ¶6, ¶7, ¶10, ¶11 — these are the
+      mandatory paragraphs. ¶4, ¶5, ¶8 are mandatory whenever the
+      relevant documents (witness statements, panchanama, medical
+      certificate) exist; if they are missing, the sentence is
+      simplified but the paragraph still appears.
+  R7. ¶9 is OPTIONAL — include ONLY if a second IO is named in the
+      documents.
 
 ═══════════════════════════════════════════════════════════
 SECTION C — ABSOLUTE RULES (NEVER VIOLATE)
