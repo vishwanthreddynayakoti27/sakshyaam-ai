@@ -1217,6 +1217,7 @@ async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_de
     """Run the heavy ICGS generation in a detached task — survives K8s 60s ingress."""
     from services.intelligent_charge_sheet import generate_intelligent_charge_sheet
     from services.fixed_layout_renderer import render_charge_sheet as render_authentic_charge_sheet
+    from services.charge_sheet_verifier import run_self_verification
 
     officer_id = officer.get("officer_id", "unknown")
     try:
@@ -1377,8 +1378,46 @@ async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_de
             }},
         )
 
+        # ── LAYER 1 — Self-Verification Pass ─────────────────────────
+        # Run a second LLM call as a "Senior Reviewing Officer" that
+        # audits the draft against 9 high-impact failure modes (dual-
+        # listed person, injury gravity, duplicate phone, non-
+        # independent panch, identical start/end time, IO as LW-1, LW
+        # mentioned but missing from Field 13, duplicate paragraphs,
+        # wrong-person injuries) AND produces per-field confidence
+        # tags + a top-of-doc review summary. Fixes are auto-applied
+        # to the JSON before rendering. If the verifier itself fails,
+        # we degrade gracefully and continue with the original draft.
+        try:
+            verifier_out = await run_self_verification(
+                cs_data, documents_corpus,
+                session_id=f"verify-{case_id}",
+            )
+            corrected = verifier_out.get("structured_data") or cs_data
+            cs_data = corrected
+            cs_data["quality_review"]   = verifier_out.get("quality_review") or {}
+            cs_data["field_confidence"] = verifier_out.get("field_confidence") or {}
+            logger.info(
+                f"[ICGS-BG] verifier: completion_pct="
+                f"{(verifier_out.get('quality_review') or {}).get('completion_pct')}"
+                f", fixes={len((verifier_out.get('quality_review') or {}).get('fixes_applied') or [])}"
+                f", overall_status={(verifier_out.get('quality_review') or {}).get('overall_status')}"
+            )
+        except Exception as e:
+            logger.warning(f"[ICGS-BG] verifier raised but did not crash: {e}")
+            cs_data["quality_review"] = {
+                "completion_pct": 0,
+                "fixes_applied": [],
+                "items_to_verify": [f"Self-verification could not run: {e}"],
+                "audit_checks": {},
+                "overall_status": "OFFICER_MUST_COMPLETE",
+            }
+            cs_data["field_confidence"] = {}
+
         cs_data = _scrub_v4_placeholders(cs_data)
         adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
+        adapted["quality_review"]   = cs_data.get("quality_review", {})
+        adapted["field_confidence"] = cs_data.get("field_confidence", {})
         docx_bytes = render_authentic_charge_sheet(adapted)
 
         # Persist DOCX to the case folder so /download can stream it
@@ -1396,6 +1435,8 @@ async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_de
                 "fir_number": cs_data.get("fir_number", ""),
                 "structured_data": cs_data,
                 "corrections_applied": cs_data.get("corrections_applied", []),
+                "quality_review": cs_data.get("quality_review", {}),
+                "field_confidence": cs_data.get("field_confidence", {}),
                 "model_used": cs_data.get("_model_used", ""),
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "credits_used": credits_to_deduct,

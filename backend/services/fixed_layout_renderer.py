@@ -191,6 +191,133 @@ def _set_table_fixed_layout(table):
     tbl_pr.append(layout)
 
 
+# =====================================================================
+# LAYER 3 — Review Summary banner (rendered at the top of the chargesheet)
+# =====================================================================
+_OVERALL_STATUS_LABELS = {
+    "READY_TO_FILE":         ("READY TO FILE", "✓"),
+    "REVIEW_NEEDED":         ("REVIEW NEEDED — verify yellow items", "!"),
+    "OFFICER_MUST_COMPLETE": ("OFFICER MUST COMPLETE — red items missing", "!!"),
+}
+
+
+def _shade_cell(cell, hex_color: str):
+    """Apply a background fill colour to a docx cell (e.g. '#e8f7ee')."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    tc_pr = cell._tc.get_or_add_tcPr()
+    for elt in tc_pr.findall(qn("w:shd")):
+        tc_pr.remove(elt)
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:fill"), hex_color.lstrip("#"))
+    shd.set(qn("w:val"), "clear")
+    tc_pr.append(shd)
+
+
+def _render_review_summary(doc, qr: Dict[str, Any]):
+    """
+    Render the Layer-3 review banner at the top of the chargesheet.
+
+    The banner shows:
+      • Overall status pill (READY_TO_FILE / REVIEW_NEEDED / OFFICER_MUST_COMPLETE)
+      • "This draft is X% complete."
+      • "N item(s) to verify before approval:" + a bulleted list
+      • Compact PASS/FIXED/FLAG table for the 9 audit checks
+
+    If `qr` is empty or malformed the banner is silently skipped so the
+    chargesheet still renders end-to-end.
+    """
+    if not isinstance(qr, dict) or not qr:
+        return
+    completion_pct = int(qr.get("completion_pct") or 0)
+    overall = (qr.get("overall_status") or "").upper()
+    label, badge = _OVERALL_STATUS_LABELS.get(
+        overall, (overall or "REVIEW NEEDED", "?"))
+    items = qr.get("items_to_verify") or []
+    fixes = qr.get("fixes_applied") or []
+    audit = qr.get("audit_checks") or {}
+
+    # Outer 1×1 boxed cell so the banner is visually distinct
+    banner = _make_table(doc, 1, 1, widths_cm=[16.0])
+    cell = banner.rows[0].cells[0]
+    # Tint background by status (green / yellow / red)
+    if overall == "READY_TO_FILE":
+        _shade_cell(cell, "#e8f7ee")  # light green
+    elif overall == "OFFICER_MUST_COMPLETE":
+        _shade_cell(cell, "#fdecea")  # light red
+    else:
+        _shade_cell(cell, "#fef7e0")  # light yellow
+    _set_borders(cell)
+    cell.text = ""  # wipe default paragraph
+
+    # Title line
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(2)
+    r = p.add_run(f"[{badge}] DRAFT QUALITY REPORT — {label}")
+    _set_run(r, bold=True, size=11)
+
+    # Completion %
+    p = cell.add_paragraph()
+    p.paragraph_format.space_after = Pt(2)
+    r = p.add_run(f"This draft is {completion_pct}% complete.")
+    _set_run(r, bold=False, size=10)
+
+    # Items to verify
+    if items:
+        p = cell.add_paragraph()
+        p.paragraph_format.space_after = Pt(2)
+        r = p.add_run(
+            f"Please verify these {len(items)} flagged item(s) before approval:"
+        )
+        _set_run(r, bold=True, size=10)
+        for it in items[:40]:  # cap so a malformed long list can't bloat the doc
+            ip = cell.add_paragraph()
+            ip.paragraph_format.left_indent = Cm(0.6)
+            ip.paragraph_format.space_after = Pt(0)
+            ir = ip.add_run(f"• {it}")
+            _set_run(ir, bold=False, size=10)
+
+    # Fixes auto-applied
+    if fixes:
+        p = cell.add_paragraph()
+        p.paragraph_format.space_before = Pt(4)
+        p.paragraph_format.space_after = Pt(2)
+        r = p.add_run(
+            f"Auto-fixes applied during self-verification: {len(fixes)}"
+        )
+        _set_run(r, bold=True, size=10)
+        for fx in fixes[:20]:
+            if isinstance(fx, dict):
+                check = fx.get("check", "?")
+                reason = fx.get("reason", "")
+                text = f"• [{check}] {reason}"
+            else:
+                text = f"• {fx}"
+            ip = cell.add_paragraph()
+            ip.paragraph_format.left_indent = Cm(0.6)
+            ip.paragraph_format.space_after = Pt(0)
+            ir = ip.add_run(text)
+            _set_run(ir, bold=False, size=9)
+
+    # 9-check audit grid (one line, comma-separated)
+    if audit:
+        p = cell.add_paragraph()
+        p.paragraph_format.space_before = Pt(4)
+        p.paragraph_format.space_after = Pt(0)
+        grid_text = "Audit checks: " + ", ".join(
+            f"{k.split('_',1)[0]}={v}" for k, v in audit.items()
+        )
+        r = p.add_run(grid_text)
+        _set_run(r, bold=False, size=9, italic=True)
+
+    # Spacer paragraph after the banner so the body table doesn't kiss it
+    spacer = doc.add_paragraph()
+    spacer.paragraph_format.space_before = Pt(2)
+    spacer.paragraph_format.space_after = Pt(2)
+
+
 def _make_table(doc, rows: int, cols: int, widths_cm: Optional[List[float]] = None):
     t = doc.add_table(rows=rows, cols=cols)
     t.style = "Table Grid"
@@ -547,6 +674,13 @@ def render_charge_sheet(case: Dict[str, Any]) -> bytes:
           align=WD_ALIGN_PARAGRAPH.CENTER)
     _para(doc, f"AT {court_place.upper()}", size=11,
           align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
+
+    # ── LAYER 3 — Review Summary banner (sits above the body table) ──
+    # If the self-verification pass produced a quality_review block, paint
+    # it at the very top so the police writer sees the completion % and
+    # the items needing manual verification BEFORE flipping through the
+    # 18 sections. Skips silently if no quality_review was attached.
+    _render_review_summary(doc, case.get("quality_review") or {})
 
     # ── 5-column body table (Sno | Field | : | Value | Value-merge) ──
     body = _make_table(doc, 0, 5, widths_cm=[1.0, 6.5, 0.4, 4.0, 4.1])

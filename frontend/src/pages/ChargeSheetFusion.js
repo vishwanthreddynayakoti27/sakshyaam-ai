@@ -941,11 +941,262 @@ const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────
+// LAYER 2 — Per-Field Confidence Flags (Green / Yellow / Red)
+// LAYER 3 — Review Summary banner mirrored from the DOCX
+//
+// Reads `quality_review` + `field_confidence` from the backend
+// /staging/intelligent-chargesheet/{case_id} payload (produced by the
+// Senior-Reviewer LLM pass in services/charge_sheet_verifier.py).
+//
+// Visual rules:
+//   green   → "Verified" (clear from source documents)
+//   yellow  → "Verify"  (inferred / cross-referenced)
+//   red     → "Missing" (officer must fill / verify by hand)
+// ─────────────────────────────────────────────────────────────────────
+const _CONF_STYLES = {
+  green:  { bg: 'bg-[#00FFB3]/15', border: 'border-[#00FFB3]/40', text: 'text-[#00FFB3]',  dot: 'bg-[#00FFB3]',  label: 'Verified' },
+  yellow: { bg: 'bg-[#FFB800]/15', border: 'border-[#FFB800]/40', text: 'text-[#FFB800]',  dot: 'bg-[#FFB800]',  label: 'Verify' },
+  red:    { bg: 'bg-[#FF4D4D]/15', border: 'border-[#FF4D4D]/40', text: 'text-[#FF4D4D]',  dot: 'bg-[#FF4D4D]',  label: 'Missing' },
+};
+
+const _OVERALL_STATUS_VIS = {
+  READY_TO_FILE:         { label: 'READY TO FILE',                 cls: 'bg-[#00FFB3]/15 border-[#00FFB3]/40 text-[#00FFB3]',  icon: '✓'  },
+  REVIEW_NEEDED:         { label: 'REVIEW NEEDED',                 cls: 'bg-[#FFB800]/15 border-[#FFB800]/40 text-[#FFB800]',  icon: '!'  },
+  OFFICER_MUST_COMPLETE: { label: 'OFFICER MUST COMPLETE',         cls: 'bg-[#FF4D4D]/15 border-[#FF4D4D]/40 text-[#FF4D4D]',  icon: '!!' },
+};
+
+const _FIELD_HUMAN_LABELS = {
+  fir_number: 'FIR Number',
+  fir_date: 'FIR Date',
+  sections: 'BNS/IPC Sections',
+  court: 'Court',
+  'io.name': 'IO Name',
+  'io.rank': 'IO Rank / Designation',
+  'complainant.name': 'Complainant Name',
+  'complainant.father': "Complainant's Parent/Spouse",
+  'complainant.age': 'Complainant Age',
+  'complainant.caste': 'Complainant Caste',
+  'complainant.address': 'Complainant Address',
+  'complainant.phone': 'Complainant Phone',
+  brief_facts: 'Brief Facts (narrative)',
+  medical_findings: "Doctor's Findings",
+  property_seized: 'Property Seized',
+};
+
+const _humanLabel = (path) => {
+  if (_FIELD_HUMAN_LABELS[path]) return _FIELD_HUMAN_LABELS[path];
+  // accused[0].name → Accused A1 — Name
+  const accusedMatch = path.match(/^accused\[(\d+)\]\.(.+)$/);
+  if (accusedMatch) {
+    const i = parseInt(accusedMatch[1], 10) + 1;
+    const sub = accusedMatch[2].replace(/_/g, ' ');
+    return `Accused A${i} — ${sub.charAt(0).toUpperCase() + sub.slice(1)}`;
+  }
+  // witnesses[2].address → Witness LW-3 — Address
+  const witMatch = path.match(/^witnesses\[(\d+)\]\.(.+)$/);
+  if (witMatch) {
+    const i = parseInt(witMatch[1], 10) + 1;
+    const sub = witMatch[2].replace(/_/g, ' ');
+    return `Witness LW-${i} — ${sub.charAt(0).toUpperCase() + sub.slice(1)}`;
+  }
+  return path;
+};
+
+const QualityReviewPanel = ({ qualityReview, fieldConfidence }) => {
+  const [showAll, setShowAll] = React.useState(false);
+  if (!qualityReview && !fieldConfidence) return null;
+  const qr = qualityReview || {};
+  const fc = fieldConfidence || {};
+  const overall = (qr.overall_status || 'REVIEW_NEEDED').toUpperCase();
+  const overallVis = _OVERALL_STATUS_VIS[overall] || _OVERALL_STATUS_VIS.REVIEW_NEEDED;
+  const completionPct = Number.isFinite(qr.completion_pct) ? qr.completion_pct : 0;
+  const items = Array.isArray(qr.items_to_verify) ? qr.items_to_verify : [];
+  const fixes = Array.isArray(qr.fixes_applied) ? qr.fixes_applied : [];
+  const audit = qr.audit_checks || {};
+
+  // Group field flags by colour
+  const groups = { red: [], yellow: [], green: [] };
+  Object.entries(fc).forEach(([path, color]) => {
+    const c = (color || '').toLowerCase();
+    if (groups[c]) groups[c].push(path);
+  });
+  const totalFlags = groups.red.length + groups.yellow.length + groups.green.length;
+  const visible = (paths) => (showAll ? paths : paths.slice(0, 6));
+
+  return (
+    <div
+      className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#1a2240]/80 to-[#0d1330]/80 border border-white/10"
+      data-testid="quality-review-panel"
+    >
+      {/* Status header */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <span
+          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border ${overallVis.cls} text-xs font-bold uppercase tracking-wider`}
+          data-testid="quality-overall-status"
+        >
+          <span>{overallVis.icon}</span>
+          {overallVis.label}
+        </span>
+        <div className="flex-1 min-w-[150px]">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-white/60 text-[11px] uppercase tracking-wide">Draft Completeness</span>
+            <span className="text-white font-bold text-sm" data-testid="quality-completion-pct">
+              {completionPct}%
+            </span>
+          </div>
+          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className={`h-full ${overall === 'READY_TO_FILE' ? 'bg-[#00FFB3]' : overall === 'OFFICER_MUST_COMPLETE' ? 'bg-[#FF4D4D]' : 'bg-[#FFB800]'}`}
+              style={{ width: `${Math.min(100, Math.max(0, completionPct))}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <p className="text-white/60 text-xs mb-3 leading-relaxed">
+        Senior-reviewer LLM audited the draft against 9 high-impact failure modes and tagged
+        every field with a confidence colour. Verify the <span className="text-[#FFB800] font-semibold">yellow</span> items
+        and fill the <span className="text-[#FF4D4D] font-semibold">red</span> ones before filing.
+      </p>
+
+      {/* Auto-fixes applied */}
+      {fixes.length > 0 && (
+        <div className="mb-3 p-2.5 rounded-md bg-[#00FFB3]/5 border border-[#00FFB3]/20">
+          <p className="text-[#00FFB3] text-[11px] font-semibold uppercase tracking-wider mb-1.5">
+            {fixes.length} Auto-fix{fixes.length === 1 ? '' : 'es'} applied during self-verification
+          </p>
+          <ul className="space-y-1">
+            {fixes.slice(0, 6).map((fx, i) => (
+              <li
+                key={i}
+                className="text-white/70 text-[11px] leading-snug pl-3 border-l-2 border-[#00FFB3]/30"
+                data-testid={`autofix-${i}`}
+              >
+                <span className="text-[#00FFB3] font-semibold">[{fx.check || '?'}]</span>{' '}
+                {fx.reason || (typeof fx === 'string' ? fx : '—')}
+                {fx.before && fx.after && (
+                  <span className="block text-white/40 text-[10px] mt-0.5">
+                    “{String(fx.before).slice(0, 80)}” → “{String(fx.after).slice(0, 80)}”
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Items to verify (red+yellow) */}
+      {items.length > 0 && (
+        <div className="mb-3 p-2.5 rounded-md bg-[#FFB800]/5 border border-[#FFB800]/20">
+          <p className="text-[#FFB800] text-[11px] font-semibold uppercase tracking-wider mb-1.5">
+            {items.length} Item{items.length === 1 ? '' : 's'} need officer review
+          </p>
+          <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
+            {items.slice(0, 20).map((it, i) => (
+              <li
+                key={i}
+                className="text-white/75 text-[11px] leading-snug pl-3 border-l-2 border-[#FFB800]/30"
+                data-testid={`verify-item-${i}`}
+              >
+                {typeof it === 'string' ? it : JSON.stringify(it)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Field-by-field confidence flags */}
+      {totalFlags > 0 && (
+        <div className="mb-2">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-white/80 text-xs font-semibold uppercase tracking-wider">
+              Field-level Confidence ({totalFlags} fields)
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="text-[10px] uppercase tracking-wider text-white/60 hover:text-white border border-white/20 rounded-full px-2 py-0.5"
+              data-testid="toggle-show-all-confidence"
+            >
+              {showAll ? 'Collapse' : `Show all (${totalFlags})`}
+            </button>
+          </div>
+          {[
+            { key: 'red', title: 'Missing — officer must fill', paths: groups.red },
+            { key: 'yellow', title: 'Verify before filing', paths: groups.yellow },
+            { key: 'green', title: 'Verified from source docs', paths: groups.green },
+          ].map(({ key, title, paths }) =>
+            paths.length > 0 ? (
+              <div key={key} className="mb-2" data-testid={`confidence-group-${key}`}>
+                <p className={`text-[10px] uppercase tracking-wider mb-1 ${_CONF_STYLES[key].text}`}>
+                  {title} · {paths.length}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {visible(paths).map((p) => (
+                    <span
+                      key={p}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border ${_CONF_STYLES[key].bg} ${_CONF_STYLES[key].border} text-white/85 text-[10px]`}
+                      data-testid={`confidence-flag-${key}-${p}`}
+                      title={p}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${_CONF_STYLES[key].dot}`} />
+                      {_humanLabel(p)}
+                    </span>
+                  ))}
+                  {!showAll && paths.length > 6 && (
+                    <span className="text-white/40 text-[10px] self-center">
+                      +{paths.length - 6} more…
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+
+      {/* 9-audit summary */}
+      {Object.keys(audit).length > 0 && (
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <p className="text-white/60 text-[10px] uppercase tracking-wider mb-1.5">
+            9-Check Audit Summary
+          </p>
+          <div className="flex flex-wrap gap-1" data-testid="audit-checks-grid">
+            {Object.entries(audit).map(([k, v]) => {
+              const checkId = k.split('_', 1)[0]; // C1, C2, ...
+              const status = String(v).toUpperCase();
+              const cls =
+                status === 'PASS'
+                  ? 'bg-[#00FFB3]/10 border-[#00FFB3]/30 text-[#00FFB3]'
+                  : status === 'FIXED'
+                  ? 'bg-[#4F7EFF]/10 border-[#4F7EFF]/30 text-[#4F7EFF]'
+                  : 'bg-[#FF4D4D]/10 border-[#FF4D4D]/30 text-[#FF4D4D]';
+              return (
+                <span
+                  key={k}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${cls} text-[10px] font-mono`}
+                  data-testid={`audit-${checkId}`}
+                  title={k}
+                >
+                  {checkId}={status}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId, onStartNewCase }) => {
   const [smartLoading, setSmartLoading] = React.useState(false);
   const [diaryLoading, setDiaryLoading] = React.useState(false);
   const [remandLoading, setRemandLoading] = React.useState(false);
   const [corrections, setCorrections] = React.useState(null);
+  const [qualityReview, setQualityReview] = React.useState(null);     // Layer 3 summary
+  const [fieldConfidence, setFieldConfidence] = React.useState(null); // Layer 2 colour map
   const [hasChargeSheet, setHasChargeSheet] = React.useState(false);
   const [hasCaseDiary, setHasCaseDiary] = React.useState(false);
   const [hasRemandReport, setHasRemandReport] = React.useState(false);
@@ -988,6 +1239,12 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         if (cs?.data?.success) {
           setHasChargeSheet(true);
           if (cs.data.corrections_applied?.length) setCorrections(cs.data.corrections_applied);
+          if (cs.data.quality_review && Object.keys(cs.data.quality_review).length) {
+            setQualityReview(cs.data.quality_review);
+          }
+          if (cs.data.field_confidence && Object.keys(cs.data.field_confidence).length) {
+            setFieldConfidence(cs.data.field_confidence);
+          }
         }
         if (cd?.data?.success) setHasCaseDiary(true);
         if (rr?.data?.success) setHasRemandReport(true);
@@ -1085,11 +1342,17 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       a.remove();
       window.URL.revokeObjectURL(url);
 
-      // STEP 4 — fetch the corrections list for the panel
+      // STEP 4 — fetch the corrections list + Layer 2/3 review for the panel
       try {
         const meta = await api.get(`/staging/intelligent-chargesheet/${caseId}`);
         if (meta.data?.corrections_applied?.length) {
           setCorrections(meta.data.corrections_applied);
+        }
+        if (meta.data?.quality_review && Object.keys(meta.data.quality_review).length) {
+          setQualityReview(meta.data.quality_review);
+        }
+        if (meta.data?.field_confidence && Object.keys(meta.data.field_confidence).length) {
+          setFieldConfidence(meta.data.field_confidence);
         }
       } catch (e) { /* non-critical */ }
 
@@ -1281,6 +1544,14 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
           </div>
         )}
       </div>
+
+      {/* ───────── LAYER 2 + LAYER 3 — Quality Review & Per-Field Confidence Flags ───────── */}
+      {hasChargeSheet && (qualityReview || fieldConfidence) && (
+        <QualityReviewPanel
+          qualityReview={qualityReview}
+          fieldConfidence={fieldConfidence}
+        />
+      )}
 
       {/* ───────── EDIT & REGENERATE (Section G of V3.0 spec) — placed RIGHT AFTER the charge sheet so it's discoverable without scrolling past 3 more cards. */}
       {hasChargeSheet && (
