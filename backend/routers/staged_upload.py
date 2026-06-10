@@ -15,6 +15,7 @@ from pathlib import Path
 import os
 import jwt
 import logging
+import re
 import shutil
 import uuid
 import json
@@ -1468,6 +1469,136 @@ async def get_intelligent_chargesheet_metadata(
     return {"success": True, **doc}
 
 
+def _build_cctns_autofill(cs: dict) -> dict:
+    """
+    Build a FLAT JSON block matching the CCTNS Charge Sheet form fields so
+    the police writer can copy/paste straight into the CCTNS portal.
+
+    CCTNS form (Crime and Criminal Tracking Network & Systems) expects a
+    fixed shape — this helper flattens the V3.0 chargesheet structured_data
+    into that shape with verbatim values (never re-derived, never AI'd).
+    """
+    if not isinstance(cs, dict):
+        cs = {}
+
+    def _safe(v, default=""):
+        if v is None:
+            return default
+        s = str(v).strip()
+        return s if s and s != "NOT FOUND IN DOCUMENTS" else default
+
+    def _person_flat(p, prefix):
+        p = p or {}
+        return {
+            f"{prefix}_salutation":   _safe(p.get("salutation")),
+            f"{prefix}_name":         _safe(p.get("name")),
+            f"{prefix}_relation":     _safe(p.get("relation")),
+            f"{prefix}_father_name":  _safe(p.get("father_name") or p.get("father")),
+            f"{prefix}_gender":       _safe(p.get("gender")),
+            f"{prefix}_marital":      _safe(p.get("marital_status")),
+            f"{prefix}_age":          _safe(p.get("age")),
+            f"{prefix}_caste":        _safe(p.get("caste")),
+            f"{prefix}_occupation":   _safe(p.get("occupation") or p.get("occ")),
+            f"{prefix}_address":      _safe(p.get("address") or p.get("permanent_address")),
+            f"{prefix}_phone":        _safe(p.get("phone")),
+            f"{prefix}_aadhaar":      _safe(p.get("aadhaar_number")),
+        }
+
+    io_d = cs.get("io") or {}
+    sections_raw = _safe(cs.get("sections"))
+    sections_list = [s.strip() for s in re.split(r"[,;]", sections_raw) if s.strip()] if sections_raw else []
+
+    accused = cs.get("accused") or []
+    witnesses = cs.get("witnesses") or []
+
+    flat: dict = {
+        # Case header
+        "fir_number":            _safe(cs.get("fir_number")),
+        "fir_date":              _safe(cs.get("fir_date")),
+        "chargesheet_no":        _safe(cs.get("chargesheet_no")),
+        "chargesheet_date":      _safe(cs.get("chargesheet_date")),
+        "district":              _safe(cs.get("district")),
+        "police_station":        _safe(cs.get("police_station")),
+        "state":                 "Telangana",
+        "court_name":            _safe(cs.get("court")),
+        # Offence
+        "sections":              sections_raw,
+        "sections_list":         sections_list,
+        "report_type":           _safe(cs.get("report_type"), "Charge Sheet"),
+        "chargesheet_type":      _safe(cs.get("chargesheet_type"), "Original"),
+        "fr_unoccurred_reason":  _safe(cs.get("un_occurred_reason"), "----"),
+        # Investigating Officer
+        "io_salutation":         _safe(io_d.get("salutation"), "Sri."),
+        "io_name":               _safe(io_d.get("name")),
+        "io_rank":               _safe(io_d.get("rank") or io_d.get("designation")),
+        "io_station":            _safe(io_d.get("station")),
+        # Counts
+        "total_accused":         len(accused),
+        "total_witnesses":       len(witnesses),
+        # Property
+        "property_seized":       _safe(cs.get("property_recovered"), "---"),
+        # Notice / arrest
+        "notice_35_3":           _safe(cs.get("arrest_release"), "--"),
+        "sureties":              _safe(cs.get("sureties"), "--"),
+        "previous_convictions":  _safe(cs.get("previous_convictions"), "--"),
+        "absconding":            _safe(cs.get("absconding"), "--"),
+        "accused_not_chargesheeted": _safe(cs.get("accused_not_chargesheeted"), "Nil"),
+        # FR / Lab / Brief facts
+        "fr_false_action":       _safe(cs.get("fr_false_action"), "--Nil--"),
+        "lab_result":            _safe(cs.get("lab_result"), "--Nil--"),
+        "brief_facts":           _safe(cs.get("brief_facts"))[:8000],
+        "prayer":                _safe(cs.get("prayer")),
+        "notice_ack_enclosed":   _safe(cs.get("notice_ack_enclosed"), "No."),
+        "dispatch_date":         _safe(cs.get("dispatch_date")),
+    }
+    # Flat complainant block
+    flat.update(_person_flat(cs.get("complainant"), "complainant"))
+    # Flat A1..AN blocks
+    for i, a in enumerate(accused, 1):
+        flat.update(_person_flat(a, f"a{i}"))
+        flat[f"a{i}_alias"] = (a or {}).get("alias", "")
+        flat[f"a{i}_notice_35_3_date"] = (a or {}).get("section_35_3_notice_date", "")
+    # Flat LW-1..LW-N blocks (with role)
+    for i, w in enumerate(witnesses, 1):
+        flat.update(_person_flat(w, f"lw{i}"))
+        flat[f"lw{i}_role"] = (w or {}).get("role") or (w or {}).get("type") or ""
+
+    # Generated-at metadata
+    flat["_cctns_schema_version"] = "1.0"
+    flat["_generated_at"] = datetime.now(timezone.utc).isoformat()
+    return flat
+
+
+@router.get("/cctns-autofill/{case_id}")
+async def get_cctns_autofill(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Return a FLAT JSON object mapping the case's intelligent charge sheet
+    onto the CCTNS (Crime & Criminal Tracking Network) form fields. The
+    police writer can copy-paste the values into the CCTNS portal without
+    re-deriving anything. 0 credits — pure data view.
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    officer_id = officer.get("officer_id", "unknown")
+    ics = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not ics or not ics.get("structured_data"):
+        return {
+            "success": False,
+            "message": "Generate the Intelligent Charge Sheet first — CCTNS autofill is built from its structured data.",
+        }
+    return {
+        "success": True,
+        "case_id": case_id,
+        "fir_number": ics.get("fir_number", ""),
+        "cctns_autofill": _build_cctns_autofill(ics["structured_data"]),
+    }
+
+
 # =====================================================================
 # REGENERATE WITH CORRECTIONS — Section G of V3.0 spec
 # Reads the last-generated chargesheet JSON, applies user-supplied
@@ -1676,9 +1807,175 @@ async def regenerate_charge_sheet(
 
 
 # =====================================================================
-# Intelligent Case Diary Part-I Generator
-# Reuses the already-corrected ICGS structured data to compose the
-# chronological investigation log narrative via Claude Sonnet 4.5.
+# V3.0 helpers — shared raw-data builder for Case Diary & Remand Report
+# =====================================================================
+async def _assemble_subdoc_raw_data(
+    *, case_id: str, officer_id: str, ics_payload: dict,
+) -> dict:
+    """
+    Build the common raw_data dict that both the case-diary V3.0 and
+    remand V3.0 LLM calls consume:
+
+        - manual_input fields (Phase 1, authoritative)
+        - ics_structured_data (the already-corrected charge sheet JSON)
+        - documents_corpus    (full OCR'd text — sole Phase-2 truth)
+
+    Mirrors the assembly logic in generate_intelligent_charge_sheet_endpoint
+    so behaviour and edge cases stay consistent.
+    """
+    folder = get_case_folder(officer_id, case_id)
+    metadata_path = folder / "metadata.json"
+    metadata: dict = {}
+    if metadata_path.exists():
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+    files_meta = metadata.get("files") or []
+    uploaded_documents: List[str] = []
+    corpus_parts: List[str] = []
+    for fmeta in files_meta:
+        fname = fmeta.get("filename") or fmeta.get("saved_name") or "unknown"
+        uploaded_documents.append(fname)
+        text = (fmeta.get("ocr_text") or fmeta.get("text") or "").strip()
+        if not text or len(text) < 40 or text.startswith("[No text in PDF]") or text.startswith("[PDF error"):
+            saved = fmeta.get("saved_name")
+            if saved:
+                fp = folder / saved
+                if fp.exists():
+                    try:
+                        text = (await extract_text_from_staged_file(fp)).strip()
+                        fmeta["ocr_text"] = text
+                    except Exception as e:
+                        logger.warning(f"[V3-SUBDOC] re-OCR failed for {saved}: {e}")
+        if text:
+            corpus_parts.append(
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"FILE: {fname}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{text[:25000]}"
+            )
+    # Persist freshened OCR so subsequent calls skip the re-OCR work
+    try:
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    documents_corpus = "\n\n".join(corpus_parts)
+
+    def _fmt_date(d):
+        if not d:
+            return ""
+        s = str(d).strip()
+        if "-" in s and len(s.split("-")[0]) == 4:
+            y, m, dd = s.split("-")
+            return f"{dd}.{m}.{y}"
+        return s.replace("/", ".")
+
+    manual = metadata.get("manual_input") or {}
+    raw = {
+        "district":           manual.get("district") or metadata.get("district", ""),
+        "police_station":     manual.get("police_station") or metadata.get("police_station", ""),
+        "fir_number":         manual.get("fir_number") or metadata.get("fir_number", ""),
+        "fir_date":           _fmt_date(manual.get("fir_date")) or "",
+        "sections":           manual.get("sections") or metadata.get("sections", ""),
+        "court_name":         manual.get("court_name") or "",
+        "chargesheet_date":   _fmt_date(manual.get("chargesheet_date")) or "",
+        "report_type":        manual.get("report_type") or "Charge Sheet.",
+        "io": {
+            "name":    manual.get("io_name") or (ics_payload.get("io") or {}).get("name", ""),
+            "rank":    manual.get("io_rank") or (ics_payload.get("io") or {}).get("rank", ""),
+            "salutation": (ics_payload.get("io") or {}).get("salutation") or "Sri.",
+            "station": manual.get("police_station") or "",
+        },
+        "ics_structured_data": ics_payload,
+        "uploaded_documents":  uploaded_documents,
+        "documents_corpus":    documents_corpus,
+    }
+    return raw
+
+
+def _adapt_case_diary_for_fixed_layout(cd: dict) -> dict:
+    """Translate intelligent_case_diary V3.0 JSON → fixed_layout_renderer schema."""
+    if not isinstance(cd, dict):
+        return {}
+    io_d = cd.get("io") or {}
+    return {
+        "police_station":    _nf(cd.get("police_station"), ""),
+        "district":          _nf(cd.get("district"), ""),
+        "fir_number":        _nf(cd.get("fir_number"), ""),
+        "fir_date":          _nf(cd.get("fir_date"), ""),
+        "sections":          _nf(cd.get("sections"), ""),
+        "occurrence_dtp":    _nf(cd.get("occurrence_dtp"), ""),
+        "cd_date":           _nf(cd.get("cd_date") or cd.get("fir_date"), ""),
+        "report_datetime":   _nf(cd.get("report_datetime"), ""),
+        "last_cd_date":      _nf(cd.get("last_cd_date"), "First CD"),
+        "property_lost":     _nf(cd.get("property_lost"), "Nil"),
+        "property_recovered":_nf(cd.get("property_recovered"), "Nil"),
+        "deceased":          _nf(cd.get("deceased"), "Nil"),
+        "circle":            _nf(cd.get("circle"), ""),
+        "place":             _nf(cd.get("police_station"), ""),
+        "io": {
+            "salutation":  io_d.get("salutation") or "Sri.",
+            "name":        _nf(io_d.get("name"), ""),
+            "designation": _nf(io_d.get("rank") or io_d.get("designation"),
+                                "Sub Inspector of Police"),
+            "rank":        _nf(io_d.get("rank") or io_d.get("designation"),
+                                "Sub Inspector of Police"),
+        },
+        "complainant":         _adapt_person(cd.get("complainant") or {}),
+        "accused":             [_adapt_person(a) for a in (cd.get("accused") or [])],
+        "witnesses_examined":  [_adapt_person(w) for w in (cd.get("witnesses_examined") or cd.get("witnesses") or [])],
+        "witnesses":           [_adapt_person(w) for w in (cd.get("witnesses_examined") or cd.get("witnesses") or [])],
+        "brief_facts":         _nf(cd.get("brief_facts"), ""),
+        "investigation_steps": [str(s).strip() for s in (cd.get("investigation_steps") or []) if s],
+    }
+
+
+def _adapt_remand_for_fixed_layout(rr: dict) -> dict:
+    """Translate intelligent_remand_report V3.0 JSON → fixed_layout_renderer schema."""
+    if not isinstance(rr, dict):
+        return {}
+    io_d = rr.get("io") or {}
+    court_place = rr.get("court_place") or ""
+    if not court_place:
+        court = (rr.get("court_name") or "").upper()
+        if " AT " in court:
+            court_place = court.split(" AT ", 1)[1].strip().rstrip(",.")
+    return {
+        "police_station":        _nf(rr.get("police_station"), ""),
+        "district":              _nf(rr.get("district"), ""),
+        "fir_number":            _nf(rr.get("fir_number"), ""),
+        "fir_date":               _nf(rr.get("fir_date"), ""),
+        "sections":              _nf(rr.get("sections"), ""),
+        "occurrence_dtp":        _nf(rr.get("occurrence_dtp"), ""),
+        "action_taken_datetime": _nf(rr.get("action_taken_datetime"), _nf(rr.get("fir_date"), "")),
+        "court_place":           court_place or _nf(rr.get("district"), ""),
+        "property_lost":         _nf(rr.get("property_lost"), "Nil"),
+        "property_recovered":    _nf(rr.get("property_recovered"), "Nil"),
+        "deceased":              _nf(rr.get("deceased"), "Nil"),
+        "remand_type":           _nf(rr.get("remand_type"), "judicial"),
+        "io": {
+            "salutation":  io_d.get("salutation") or "Sri.",
+            "name":        _nf(io_d.get("name"), ""),
+            "designation": _nf(io_d.get("rank") or io_d.get("designation"),
+                                "Sub Inspector of Police"),
+            "rank":        _nf(io_d.get("rank") or io_d.get("designation"),
+                                "Sub Inspector of Police"),
+        },
+        "complainant":       _adapt_person(rr.get("complainant") or {}),
+        "accused":           [_adapt_person(a) for a in (rr.get("accused") or [])],
+        "witnesses":         [_adapt_person(w) for w in (rr.get("witnesses") or [])],
+        "brief_facts":       _nf(rr.get("brief_facts"), ""),
+        "investigation_done":_nf(rr.get("investigation_done"), ""),
+        "grounds_of_arrest": _nf(rr.get("grounds_of_arrest"), ""),
+        "enclosures":        [str(e).strip() for e in (rr.get("enclosures") or []) if e],
+        "escort":            _nf(rr.get("escort"), ""),
+    }
+
+
+# =====================================================================
+# V3.0 — Intelligent Case Diary Part-I (Master IO persona)
 # =====================================================================
 @router.post("/generate-intelligent-case-diary/{case_id}")
 async def generate_intelligent_case_diary_endpoint(
@@ -1686,14 +1983,15 @@ async def generate_intelligent_case_diary_endpoint(
     officer: dict = Depends(get_current_officer),
 ):
     """
-    Generate Case Diary Part-I for a case that already has an ICGS output.
-
-    Must be called AFTER /generate-intelligent-charge-sheet/{case_id} so the
-    structured data is available. COST: 2 credits (deducted on success).
+    Generate Case Diary Part-I in the V3.0 Master IO style. Reuses the
+    already-corrected ICGS structured data, the documents_corpus, and the
+    15-field manual input. Output is rendered via the deterministic
+    `fixed_layout_renderer.render_case_diary_part1` template.
+    COST: 2 credits (deducted on success).
     """
     from fastapi.responses import Response
     from services.intelligent_case_diary import generate_intelligent_case_diary
-    from services.station_case_diary_renderer import render_case_diary_docx
+    from services.fixed_layout_renderer import render_case_diary_part1
 
     officer_id = officer.get("officer_id", "unknown")
     credits_to_deduct = 2
@@ -1701,7 +1999,6 @@ async def generate_intelligent_case_diary_endpoint(
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Credit balance pre-check
     officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
     current = int((officer_doc or {}).get("credits", 0) or 0)
     if current < credits_to_deduct:
@@ -1720,13 +2017,18 @@ async def generate_intelligent_case_diary_endpoint(
             detail="No intelligent charge sheet found. Run 'Generate Station-Format Charge Sheet' first."
         )
 
+    raw_data = await _assemble_subdoc_raw_data(
+        case_id=case_id, officer_id=officer_id,
+        ics_payload=ics["structured_data"],
+    )
+
     try:
-        logger.info(f"[ICD] Generating case diary for case {case_id}")
+        logger.info(f"[ICD] Generating Case Diary Part-I for case {case_id}")
         cd_data = await generate_intelligent_case_diary(
-            ics["structured_data"],
-            session_id=f"icd-{case_id}",
+            raw_data, session_id=f"icd-{case_id}",
         )
-        docx_bytes = render_case_diary_docx(cd_data)
+        adapted = _adapt_case_diary_for_fixed_layout(cd_data)
+        docx_bytes = render_case_diary_part1(adapted)
 
         await db.intelligent_case_diaries.update_one(
             {"case_id": case_id, "officer_id": officer_id},
@@ -1735,10 +2037,11 @@ async def generate_intelligent_case_diary_endpoint(
                 "officer_id": officer_id,
                 "fir_number": cd_data.get("fir_number", ""),
                 "structured_data": cd_data,
-                "entries_count": len(cd_data.get("entries", [])),
+                "steps_count": len(cd_data.get("investigation_steps", [])),
                 "model_used": cd_data.get("_model_used", ""),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "credits_used": credits_to_deduct,
+                "regeneration_count": 0,
             }},
             upsert=True,
         )
@@ -1758,13 +2061,28 @@ async def generate_intelligent_case_diary_endpoint(
 
         fir_safe = (cd_data.get("fir_number") or "case").replace("/", "-")
         filename = f"{fir_safe}_IntelligentCaseDiary.docx"
+        report = cd_data.get("extraction_report") or {}
+        import json as _json
+        report_header = _json.dumps({
+            "manual_input_fields_used": report.get("manual_input_fields_used", 9),
+            "investigation_steps_count": len(cd_data.get("investigation_steps", [])),
+            "total_accused": len(cd_data.get("accused") or []),
+            "total_witnesses": len(cd_data.get("witnesses_examined") or cd_data.get("witnesses") or []),
+            "not_found_fields": report.get("not_found_fields", []),
+            "confidence": report.get("confidence", "High"),
+            "confidence_reason": report.get("confidence_reason", ""),
+        })[:6000]
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
-                "X-Entries-Count": str(len(cd_data.get("entries", []))),
+                "X-Steps-Count": str(len(cd_data.get("investigation_steps", []))),
                 "X-Model-Used": cd_data.get("_model_used", ""),
+                "X-Extraction-Report": report_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Steps-Count, X-Model-Used, X-Extraction-Report"
+                ),
             }
         )
     except HTTPException:
@@ -1785,6 +2103,375 @@ async def generate_intelligent_case_diary_endpoint(
             status_code=500,
             detail=f"Case Diary generation failed. NO CREDITS DEDUCTED. Error: {str(e)}"
         )
+
+
+@router.get("/intelligent-case-diary/{case_id}")
+async def get_intelligent_case_diary_metadata(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """Return the corrections applied + structured data for the last intelligent case diary."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    doc = await db.intelligent_case_diaries.find_one(
+        {"case_id": case_id, "officer_id": officer.get("officer_id", "unknown")},
+        {"_id": 0}
+    )
+    if not doc:
+        return {"success": False, "message": "No intelligent case diary generated for this case yet"}
+    return {"success": True, **doc}
+
+
+@router.post("/regenerate-case-diary/{case_id}")
+async def regenerate_case_diary(
+    case_id: str,
+    body: _RegenerateRequest,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Re-run the Intelligent Case Diary with user-supplied corrections.
+    Cost: 0 credits (re-render of an already-paid run).
+    """
+    from fastapi.responses import Response
+    from services.intelligent_case_diary import generate_intelligent_case_diary
+    from services.fixed_layout_renderer import render_case_diary_part1
+
+    officer_id = officer.get("officer_id", "unknown")
+    if not body.corrections:
+        raise HTTPException(status_code=400, detail="Provide at least one correction")
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    prev = await db.intelligent_case_diaries.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not prev:
+        raise HTTPException(
+            status_code=400,
+            detail="No previous intelligent case diary found. Generate one first.",
+        )
+    ics = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not ics or not ics.get("structured_data"):
+        raise HTTPException(status_code=400, detail="ICGS payload missing")
+
+    raw_data = await _assemble_subdoc_raw_data(
+        case_id=case_id, officer_id=officer_id,
+        ics_payload=ics["structured_data"],
+    )
+    raw_data["corrections"] = [c.dict() for c in body.corrections]
+    raw_data["previous_payload"] = prev.get("structured_data") or {}
+
+    try:
+        logger.info(
+            f"[ICD-REGEN] case {case_id}: applying {len(body.corrections)} correction(s)"
+        )
+        cd_data = await generate_intelligent_case_diary(
+            raw_data, session_id=f"icd-regen-{case_id}-{uuid.uuid4().hex[:6]}",
+        )
+        adapted = _adapt_case_diary_for_fixed_layout(cd_data)
+        docx_bytes = render_case_diary_part1(adapted)
+
+        rev = (prev.get("regeneration_count", 0) or 0) + 1
+        await db.intelligent_case_diaries.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id, "officer_id": officer_id,
+                "fir_number": cd_data.get("fir_number", ""),
+                "structured_data": cd_data,
+                "corrections_applied": cd_data.get("corrections_applied", []),
+                "regeneration_count": rev,
+                "last_corrections": [c.dict() for c in body.corrections],
+                "model_used": cd_data.get("_model_used", ""),
+                "regenerated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_CASE_DIARY_REGENERATE",
+            "credit_cost": 0,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metadata": {"correction_count": len(body.corrections)},
+        })
+
+        fir_safe = (cd_data.get("fir_number") or "case").replace("/", "-")
+        filename = f"{fir_safe}_IntelligentCaseDiary_rev{rev}.docx"
+        import json as _json
+        cascade_header = _json.dumps({
+            "corrections_applied": cd_data.get("corrections_applied", []),
+            "regeneration_count": rev,
+            "user_corrections": [c.dict() for c in body.corrections],
+        })[:6000]
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Corrections-Count": str(len(cd_data.get("corrections_applied", []))),
+                "X-Regeneration-Count": str(rev),
+                "X-Cascade-Report": cascade_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Corrections-Count, X-Regeneration-Count, X-Cascade-Report"
+                ),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[ICD-REGEN] failed for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Regenerate failed: {str(e)}")
+
+
+# =====================================================================
+# V3.0 — Intelligent Remand Report (Master IO persona)
+# =====================================================================
+@router.post("/generate-intelligent-remand-report/{case_id}")
+async def generate_intelligent_remand_report_endpoint(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Generate Remand Case Diary Part-I letter in V3.0 Master IO style.
+    Reuses the ICGS structured data + documents_corpus + manual input.
+    Output rendered via `fixed_layout_renderer.render_remand_report`.
+    COST: 2 credits (deducted on success).
+    """
+    from fastapi.responses import Response
+    from services.intelligent_remand_report import generate_intelligent_remand_report
+    from services.fixed_layout_renderer import render_remand_report
+
+    officer_id = officer.get("officer_id", "unknown")
+    credits_to_deduct = 2
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    officer_doc = await db.officers.find_one({"officer_id": officer_id}, {"_id": 0, "credits": 1})
+    current = int((officer_doc or {}).get("credits", 0) or 0)
+    if current < credits_to_deduct:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient credits — Intelligent Remand Report costs {credits_to_deduct} credits, you have {current}. Buy more at /credits.",
+        )
+
+    ics = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        {"_id": 0}
+    )
+    if not ics or not ics.get("structured_data"):
+        raise HTTPException(
+            status_code=400,
+            detail="No intelligent charge sheet found. Run 'Generate Station-Format Charge Sheet' first."
+        )
+
+    raw_data = await _assemble_subdoc_raw_data(
+        case_id=case_id, officer_id=officer_id,
+        ics_payload=ics["structured_data"],
+    )
+
+    try:
+        logger.info(f"[IRR] Generating Remand Report for case {case_id}")
+        rr_data = await generate_intelligent_remand_report(
+            raw_data, session_id=f"irr-{case_id}",
+        )
+        adapted = _adapt_remand_for_fixed_layout(rr_data)
+        docx_bytes = render_remand_report(adapted)
+
+        await db.intelligent_remand_reports.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id,
+                "officer_id": officer_id,
+                "fir_number": rr_data.get("fir_number", ""),
+                "structured_data": rr_data,
+                "model_used": rr_data.get("_model_used", ""),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "credits_used": credits_to_deduct,
+                "regeneration_count": 0,
+            }},
+            upsert=True,
+        )
+        await db.officers.update_one(
+            {"officer_id": officer_id},
+            {"$inc": {"credits": -credits_to_deduct}}
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_REMAND_GENERATE",
+            "credit_cost": credits_to_deduct,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "model_used": rr_data.get("_model_used", ""),
+        })
+
+        fir_safe = (rr_data.get("fir_number") or "case").replace("/", "-")
+        filename = f"{fir_safe}_IntelligentRemandReport.docx"
+        report = rr_data.get("extraction_report") or {}
+        import json as _json
+        report_header = _json.dumps({
+            "manual_input_fields_used": report.get("manual_input_fields_used", 9),
+            "total_accused": len(rr_data.get("accused") or []),
+            "total_witnesses": len(rr_data.get("witnesses") or []),
+            "not_found_fields": report.get("not_found_fields", []),
+            "confidence": report.get("confidence", "High"),
+            "confidence_reason": report.get("confidence_reason", ""),
+        })[:6000]
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Model-Used": rr_data.get("_model_used", ""),
+                "X-Extraction-Report": report_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Model-Used, X-Extraction-Report"
+                ),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[IRR] Remand Report FAILED for case {case_id}: {e}")
+        if db is not None:
+            await db.action_logs.insert_one({
+                "officer_id": officer_id,
+                "action": "INTELLIGENT_REMAND_GENERATE",
+                "credit_cost": 0,
+                "status": "FAILED",
+                "correlation_id": case_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": str(e),
+            })
+        raise HTTPException(
+            status_code=500,
+            detail=f"Remand Report generation failed. NO CREDITS DEDUCTED. Error: {str(e)}"
+        )
+
+
+@router.get("/intelligent-remand-report/{case_id}")
+async def get_intelligent_remand_report_metadata(
+    case_id: str,
+    officer: dict = Depends(get_current_officer),
+):
+    """Return the corrections applied + structured data for the last intelligent remand report."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    doc = await db.intelligent_remand_reports.find_one(
+        {"case_id": case_id, "officer_id": officer.get("officer_id", "unknown")},
+        {"_id": 0}
+    )
+    if not doc:
+        return {"success": False, "message": "No intelligent remand report generated for this case yet"}
+    return {"success": True, **doc}
+
+
+@router.post("/regenerate-remand-report/{case_id}")
+async def regenerate_remand_report(
+    case_id: str,
+    body: _RegenerateRequest,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Re-run the Intelligent Remand Report with user-supplied corrections.
+    Cost: 0 credits (re-render of an already-paid run).
+    """
+    from fastapi.responses import Response
+    from services.intelligent_remand_report import generate_intelligent_remand_report
+    from services.fixed_layout_renderer import render_remand_report
+
+    officer_id = officer.get("officer_id", "unknown")
+    if not body.corrections:
+        raise HTTPException(status_code=400, detail="Provide at least one correction")
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    prev = await db.intelligent_remand_reports.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not prev:
+        raise HTTPException(
+            status_code=400,
+            detail="No previous intelligent remand report found. Generate one first.",
+        )
+    ics = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not ics or not ics.get("structured_data"):
+        raise HTTPException(status_code=400, detail="ICGS payload missing")
+
+    raw_data = await _assemble_subdoc_raw_data(
+        case_id=case_id, officer_id=officer_id,
+        ics_payload=ics["structured_data"],
+    )
+    raw_data["corrections"] = [c.dict() for c in body.corrections]
+    raw_data["previous_payload"] = prev.get("structured_data") or {}
+
+    try:
+        logger.info(
+            f"[IRR-REGEN] case {case_id}: applying {len(body.corrections)} correction(s)"
+        )
+        rr_data = await generate_intelligent_remand_report(
+            raw_data, session_id=f"irr-regen-{case_id}-{uuid.uuid4().hex[:6]}",
+        )
+        adapted = _adapt_remand_for_fixed_layout(rr_data)
+        docx_bytes = render_remand_report(adapted)
+
+        rev = (prev.get("regeneration_count", 0) or 0) + 1
+        await db.intelligent_remand_reports.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id, "officer_id": officer_id,
+                "fir_number": rr_data.get("fir_number", ""),
+                "structured_data": rr_data,
+                "corrections_applied": rr_data.get("corrections_applied", []),
+                "regeneration_count": rev,
+                "last_corrections": [c.dict() for c in body.corrections],
+                "model_used": rr_data.get("_model_used", ""),
+                "regenerated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_REMAND_REGENERATE",
+            "credit_cost": 0,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metadata": {"correction_count": len(body.corrections)},
+        })
+
+        fir_safe = (rr_data.get("fir_number") or "case").replace("/", "-")
+        filename = f"{fir_safe}_IntelligentRemandReport_rev{rev}.docx"
+        import json as _json
+        cascade_header = _json.dumps({
+            "corrections_applied": rr_data.get("corrections_applied", []),
+            "regeneration_count": rev,
+            "user_corrections": [c.dict() for c in body.corrections],
+        })[:6000]
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Corrections-Count": str(len(rr_data.get("corrections_applied", []))),
+                "X-Regeneration-Count": str(rev),
+                "X-Cascade-Report": cascade_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Corrections-Count, X-Regeneration-Count, X-Cascade-Report"
+                ),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[IRR-REGEN] failed for case {case_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Regenerate failed: {str(e)}")
 
 
 

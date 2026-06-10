@@ -7,33 +7,85 @@ Build a production-ready, highly modular backend document generation pipeline fo
 3. Generate exact replica DOCX files using `docxtpl` templates
 4. High-accuracy (90%+) Tabular OCR pipeline using OpenCV preprocessing, spatial clustering, and rule-based validation
 5. Visual Diff / Overlay Tool with color-coded bounding boxes
+6. "Intelligent Charge Sheet Generator" V3.0 acting as Master IO
+7. Direct OpenAI API integration (user's own key)
+8. 15-field manual input form (manual values are authoritative, never AI-altered)
+9. "Edit & Regenerate" cascading corrections
+10. Apply V3.0 treatment to Case Diary Part-I and Remand Report (same architecture)
+11. CCTNS Autofill JSON (external database interoperability)
 
 ## Core Requirements
 
 ### 1. Modular Backend Architecture
 - FastAPI pipeline with micro-services (OCR, extraction, validation, aggregation)
 - Triple-Tab frontend UI for document processing
-- Google Vision API as active OCR engine (Azure ready for future)
+- Google Vision API as active OCR engine
 
 ### 2. Unified JSON Schema
 - Strict extraction for legal forms (Chargesheet, Remand, Case Diary)
-- Fields: FIR Number, Police Station, District, Sections, Accused (A1-A9), Witnesses (LW-1+)
 
 ### 3. Template-based DOCX Generation
-- Use `docxtpl` for layout compliance
-- Replace programmatic `python-docx` layouts
+- `fixed_layout_renderer.py` produces deterministic 18-section Telangana Charge Sheet,
+  8-field Case Diary Part-I, and 10-field Remand Report letter format
+- AI fills cell values only — layout never drifts
 
-### 4. AI Usage Limits
-- AI ONLY for: "Brief Facts", "Remand Narrative", translation
-- Everything else: Azure/Google Vision + regex/clustering
+### 4. AI Usage
+- OpenAI gpt-4o (via `llm_compat.py` shim) for:
+  - Charge Sheet narrative composition + extraction
+  - Case Diary Part-I chronological log + steps
+  - Remand Report letter + grounds of arrest
 
-### 5. Visual Diff / Overlay Tool ✅ COMPLETE
-- Color-coded bounding boxes (Green=High >90%, Yellow=Medium 70-90%, Red=Low <70%)
-- Generates `annotated_diff_<filename>.pdf`
+### 5. Two-phase Manual Input
+- 15-field manual form blocks ANY LLM alteration of Phase 1 fields
+- Court name, IO name+rank, FIR no, FIR date, etc. come from manual input verbatim
 
-## Completed Features
+## Completed Features (latest first)
 
-### 2025-04-04: Enhanced Legal Parser v4.0 - 90%+ Accuracy
+### 2026-06-10: V3.0 Master IO treatment for Case Diary Part-I + Remand Report + CCTNS Autofill
+- ✅ Rewrote `services/intelligent_case_diary.py` with V3.0 Master IO persona (was using Claude+EMERGENT_LLM_KEY, now uses direct OpenAI via `llm_compat`). Output JSON maps cleanly to `fixed_layout_renderer.render_case_diary_part1` — 8 numbered fields + chronological investigation_steps list + closing line + signature
+- ✅ Created `services/intelligent_remand_report.py` (NEW) — V3.0 Master IO persona for the formal remand letter (10 numbered fields + Brief Facts + Investigation Done So Far + Grounds of Arrest + standard prayer + enclosures + escort). Output maps to `fixed_layout_renderer.render_remand_report`
+- ✅ New endpoints:
+  - `POST /api/staging/generate-intelligent-case-diary/{case_id}` — 2 credits (rewrites the old endpoint that was using legacy renderer)
+  - `POST /api/staging/regenerate-case-diary/{case_id}` — 0 credits, cascading corrections
+  - `GET /api/staging/intelligent-case-diary/{case_id}` — metadata + structured_data
+  - `POST /api/staging/generate-intelligent-remand-report/{case_id}` — 2 credits
+  - `POST /api/staging/regenerate-remand-report/{case_id}` — 0 credits
+  - `GET /api/staging/intelligent-remand-report/{case_id}` — metadata + structured_data
+  - `GET /api/staging/cctns-autofill/{case_id}` — flat JSON for CCTNS portal
+- ✅ Helper `_assemble_subdoc_raw_data()` re-uses the same OCR-corpus assembly + manual_input override pattern as ICGS
+- ✅ Adapter helpers `_adapt_case_diary_for_fixed_layout()` + `_adapt_remand_for_fixed_layout()` translate V3.0 LLM JSON → fixed_layout_renderer schema
+- ✅ Frontend `ChargeSheetFusion.js`:
+  - New "Generate Remand Report" button (orange) — disabled until charge sheet is generated
+  - New "CCTNS Autofill JSON" card with "Copy JSON to Clipboard" + "Download .json" buttons
+  - `EditAndRegeneratePanel` extended with doc-type tabs (Charge Sheet / Case Diary / Remand Report) — picks the correct backend endpoint based on selection
+  - Field-options dropdowns are per-doc-type so corrections make sense for each layout
+- ✅ E2E verified against FIR 100/2025 (Makthal PS, Jingiti Aruna case):
+  - Charge Sheet: 6 accused, 9 witnesses (LW-1 to LW-9), Brief Facts ¶1 mentions "Wrongful Restraint, Criminal Intimidation, and Simple Hurt" + 23.04.2025 + 12:30 + Yellammakunta, ¶2 includes full FIR narrative (death ceremony of Chinna Thayappa, sister-in-laws, hands+stones, throat, Neerati Narasimha intervening), medical paragraph mentions "Dr. A. Mahesh Raj, CAS, CHC Makthal" with "simple in nature" verbatim, IO Field 08 = "Sri. K. Lal Singh, HC 248, PS Makthal", court header = "AT MAKTHAL", S/o vs W/o correctly assigned to each accused
+  - Case Diary: 7 chronological steps, header strip + 8 fields + brief facts + steps + closing line + signature block all populated correctly
+  - Remand Report: 10 fields + 4-section narrative + standard prayer clause + 7 enclosures + escort line, "judicial" remand type
+  - CCTNS Autofill: flat JSON with all a1..a6 + lw1..lw9 blocks + complainant block + sections_list array + total_accused/witnesses counts
+- ✅ Tests: 12/12 in `/app/backend/tests/test_v3_subdocs.py` (adapter + prompt builders + CCTNS shape + JSON-fence stripping). 29/29 total across V3 + fixed-layout + narration suites with zero regressions
+
+### 2026-05-06: V3.0 Master IO — Charge Sheet
+- ✅ Direct OpenAI integration via `llm_compat.py` (bypasses Emergent proxy)
+- ✅ 15-field manual input form on frontend, persisted to `metadata.manual_input`
+- ✅ Master IO V3.0 system prompt — 11 mandatory Brief Facts paragraphs, "skip missing details gracefully" rule, no S/o W/o combos, Telugu name order preserved, sections sub-numbers preserved
+- ✅ `_adapt_llm_schema_to_fixed_layout()` translates LLM JSON → fixed_layout_renderer 18-section Telangana template
+- ✅ V3.0 Phase-1 RE-LOCK applies manual values verbatim after LLM call (LLM cannot drift court name, IO, sections, etc.)
+- ✅ Edit & Regenerate panel (Section G) — pick a field, type a correction, AI cascades the fix through all dependent paragraphs
+
+### 2026-04-27: Narration Generator ("Wing 1")
+- ✅ Curated 113-phrase KEYWORD_BANK across 10 station-writer categories
+- ✅ Deterministic stitcher (no LLM) joins selected phrases with FIR/PS/IO/complainant intro and accused+sections outro
+- ✅ Frontend `/narration-generator` 3-column page with click-to-toggle, reorder, copy-to-clipboard
+
+### 2026-04-27: Encrypted Translation/Petition Cache (At-Rest Encryption)
+- ✅ Petition/complaint translation + entity-extraction results cached in MongoDB `document_cache` collection are now **encrypted at rest** with AES-128-CBC + HMAC-SHA256 (Fernet)
+- ✅ Per-record DEK derived via HKDF-SHA256 from a master `CACHE_ENCRYPTION_KEY`
+- ✅ `cache_crypto.py` + updated `document_cache.py`; tampered ciphertext fails HMAC = cache miss
+- ✅ Admin Dashboard exposes encryption status; 6/6 tests pass
+
+### 2026-04-19: Triple Fusion — DB-Backed Async Job Queue (P0 FIX) — RESOLVED
 - ✅ LINE-BASED parsing (robust to OCR errors)
 - ✅ Garbage text filtering ("tances from you", "Age: 2 years" removed)
 - ✅ Stacked serial handling (LW-5/6/7 grouped)

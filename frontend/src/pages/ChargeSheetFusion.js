@@ -833,11 +833,15 @@ const FusionGeneratingView = ({ progress = 0, stage = '', fileCount = 0 }) => {
 const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId }) => {
   const [smartLoading, setSmartLoading] = React.useState(false);
   const [diaryLoading, setDiaryLoading] = React.useState(false);
+  const [remandLoading, setRemandLoading] = React.useState(false);
   const [corrections, setCorrections] = React.useState(null);
   const [hasChargeSheet, setHasChargeSheet] = React.useState(false);
+  const [hasCaseDiary, setHasCaseDiary] = React.useState(false);
+  const [hasRemandReport, setHasRemandReport] = React.useState(false);
   const [fixedLoading, setFixedLoading] = React.useState(null); // 'charge_sheet' | 'case_diary_part1' | 'remand_report' | null
   const [smartElapsed, setSmartElapsed] = React.useState(0);
   const [diaryElapsed, setDiaryElapsed] = React.useState(0);
+  const [remandElapsed, setRemandElapsed] = React.useState(0);
 
   // Live elapsed-time counters so the user sees real progress, not a stuck "~20s" hint
   React.useEffect(() => {
@@ -850,6 +854,11 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
     const t = setInterval(() => setDiaryElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [diaryLoading]);
+  React.useEffect(() => {
+    if (!remandLoading) return undefined;
+    const t = setInterval(() => setRemandElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [remandLoading]);
 
   const downloadFixedLayout = async (docType) => {
     if (!caseId) {
@@ -966,6 +975,7 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      setHasCaseDiary(true);
       toast.success(`Case Diary Part-I downloaded (${entries || 0} chronological entries)`);
     } catch (error) {
       let msg = error.response?.data?.detail || 'Case diary generation failed';
@@ -975,6 +985,48 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
       toast.error(msg);
     } finally {
       setDiaryLoading(false);
+    }
+  };
+
+  const downloadSmartRemand = async () => {
+    if (!caseId) {
+      toast.error('No case selected');
+      return;
+    }
+    if (!hasChargeSheet) {
+      toast.error('Generate the Station-Format Charge Sheet first (it provides the structured data)');
+      return;
+    }
+    setRemandElapsed(0);
+    setRemandLoading(true);
+    try {
+      toast.info('Composing Remand Report letter with AI...');
+      const resp = await api.post(
+        `/staging/generate-intelligent-remand-report/${caseId}`,
+        null,
+        { responseType: 'blob', timeout: 180000 }
+      );
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentRemandReport.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setHasRemandReport(true);
+      toast.success('Intelligent Remand Report downloaded (2 credits)');
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Remand Report generation failed';
+      if (error.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await error.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setRemandLoading(false);
     }
   };
 
@@ -1085,9 +1137,113 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         )}
       </div>
 
-      {/* ───────── EDIT & REGENERATE (Section G of V3.0 spec) ───────── */}
+      {/* STATION-FORMAT REMAND CASE DIARY */}
+      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#FF6B3D]/10 to-[#FF8800]/5 border border-[#FF6B3D]/30">
+        <div className="flex items-start gap-3 mb-3">
+          <FileText className="text-[#FF6B3D] shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h4 className="text-[#FF6B3D] font-bold text-base">Station-Format Remand Report (Part-I)</h4>
+            <p className="text-white/60 text-xs mt-1 leading-relaxed">
+              Formal letter to the Hon&apos;ble Magistrate requesting remand custody. Composed in V3.0 Master IO style — 10 numbered fields, brief facts, investigation done so far, grounds of arrest, standard prayer clause + enclosures + escort. 2 credits.
+            </p>
+          </div>
+        </div>
+        <Button
+          onClick={downloadSmartRemand}
+          disabled={remandLoading || !hasChargeSheet}
+          className="w-full h-11 bg-gradient-to-r from-[#FF6B3D] to-[#FF8800] text-white font-bold hover:opacity-90 disabled:opacity-40"
+          data-testid="download-intelligent-remand-report"
+          title={!hasChargeSheet ? 'Generate Station-Format Charge Sheet first' : 'Generate & download Remand Report'}
+        >
+          {remandLoading ? (
+            <><Loader2 className="animate-spin mr-2" size={16} /> Composing remand letter · {remandElapsed}s elapsed...</>
+          ) : (
+            <><FileText size={16} className="mr-2" /> Generate Remand Report</>
+          )}
+        </Button>
+        {!hasChargeSheet && (
+          <p className="mt-2 text-xs text-white/40 italic">Generate the charge sheet above first.</p>
+        )}
+      </div>
+
+      {/* CCTNS Autofill JSON */}
+      <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#00C2FF]/10 to-[#00FFB3]/5 border border-[#00C2FF]/30">
+        <div className="flex items-start gap-3 mb-3">
+          <FileStack className="text-[#00C2FF] shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h4 className="text-[#00C2FF] font-bold text-base">CCTNS Autofill JSON (0 credits)</h4>
+            <p className="text-white/60 text-xs mt-1 leading-relaxed">
+              Flat JSON mapping the chargesheet onto CCTNS portal fields (fir_number, sections_list, all a1..an + lw1..lwN blocks). Copy/paste into the CCTNS form without re-deriving anything.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Button
+            onClick={async () => {
+              if (!caseId) { toast.error('No case selected'); return; }
+              if (!hasChargeSheet) { toast.error('Generate the Station-Format Charge Sheet first'); return; }
+              try {
+                const resp = await api.get(`/staging/cctns-autofill/${caseId}`);
+                if (resp.data?.success === false) {
+                  toast.error(resp.data.message || 'CCTNS autofill unavailable');
+                  return;
+                }
+                const txt = JSON.stringify(resp.data.cctns_autofill || {}, null, 2);
+                await navigator.clipboard.writeText(txt);
+                const a1 = resp.data?.cctns_autofill?.total_accused ?? 0;
+                const lwN = resp.data?.cctns_autofill?.total_witnesses ?? 0;
+                toast.success(`CCTNS JSON copied · ${a1} accused · ${lwN} witnesses`);
+              } catch (e) {
+                toast.error(e.response?.data?.detail || 'Failed to fetch CCTNS JSON');
+              }
+            }}
+            disabled={!hasChargeSheet}
+            className="h-10 bg-[#00C2FF]/20 border border-[#00C2FF]/40 text-[#00C2FF] hover:bg-[#00C2FF]/30 font-medium text-xs disabled:opacity-40"
+            data-testid="copy-cctns-autofill"
+            title={!hasChargeSheet ? 'Generate the Station-Format Charge Sheet first' : 'Copy CCTNS autofill JSON to clipboard'}
+          >
+            <Download size={14} className="mr-1.5" />Copy JSON to Clipboard
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!caseId) { toast.error('No case selected'); return; }
+              if (!hasChargeSheet) { toast.error('Generate the Station-Format Charge Sheet first'); return; }
+              try {
+                const resp = await api.get(`/staging/cctns-autofill/${caseId}`);
+                if (resp.data?.success === false) {
+                  toast.error(resp.data.message || 'CCTNS autofill unavailable');
+                  return;
+                }
+                const blob = new Blob([JSON.stringify(resp.data.cctns_autofill || {}, null, 2)], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${(firNumber || 'case').replaceAll('/', '-')}_CCTNS_autofill.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                toast.success('CCTNS autofill JSON downloaded');
+              } catch (e) {
+                toast.error(e.response?.data?.detail || 'Failed to download CCTNS JSON');
+              }
+            }}
+            disabled={!hasChargeSheet}
+            className="h-10 bg-[#00FFB3]/20 border border-[#00FFB3]/40 text-[#00FFB3] hover:bg-[#00FFB3]/30 font-medium text-xs disabled:opacity-40"
+            data-testid="download-cctns-autofill"
+            title={!hasChargeSheet ? 'Generate the Station-Format Charge Sheet first' : 'Download CCTNS autofill JSON file'}
+          >
+            <Download size={14} className="mr-1.5" />Download .json
+          </Button>
+        </div>
+      </div>
       {hasChargeSheet && (
-        <EditAndRegeneratePanel firNumber={firNumber} caseId={caseId} />
+        <EditAndRegeneratePanel
+          firNumber={firNumber}
+          caseId={caseId}
+          hasCaseDiary={hasCaseDiary}
+          hasRemandReport={hasRemandReport}
+        />
       )}
 
       {/* FIXED-LAYOUT (NO AI) DETERMINISTIC TEMPLATES */}
@@ -1166,37 +1322,99 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
 
 // =====================================================================
 // EDIT & REGENERATE PANEL — Section G of V3.0 spec
+// Supports all 3 V3.0 documents: Charge Sheet, Case Diary Part-I, Remand Report.
+// Pick the doc to fix, list corrections, click Apply → backend re-runs the
+// LLM with cascade rules and emits a fresh DOCX.
 // =====================================================================
-const FIELD_OPTIONS = [
-  { value: 'Field 01 District / Police Station',     label: 'Field 01 — District / PS' },
-  { value: 'Field 02 Charge Sheet Number',           label: 'Field 02 — CS Number' },
-  { value: 'Field 03 Date of Charge',                label: 'Field 03 — Date of Charge' },
-  { value: 'Field 04 Act & Sections',                label: 'Field 04 — Act & Sections' },
-  { value: 'Field 05 Type of Final Report',          label: 'Field 05 — Report Type' },
-  { value: 'Field 07 Original or Supplementary',     label: 'Field 07 — Original/Supp.' },
-  { value: 'Field 08 IO Name',                       label: 'Field 08 — IO Name' },
-  { value: 'Field 09 Complainant',                   label: 'Field 09 — Complainant' },
-  { value: 'Field 10 Property Seized',               label: 'Field 10 — Property Seized' },
-  { value: 'Field 11 Accused',                       label: 'Field 11 — Accused (A1–AN)' },
-  { value: 'Field 11(a) Date of Arrest / Release',   label: 'Field 11(a) — Arrest / Release' },
-  { value: 'Field 13 Witnesses',                     label: 'Field 13 — Witnesses (LW-1…LW-N)' },
-  { value: 'Field 14 If FR is false',                label: 'Field 14 — FR-false action' },
-  { value: 'Field 15 Lab Result',                    label: 'Field 15 — Lab result' },
-  { value: 'Field 16 Brief Facts (narrative)',       label: 'Field 16 — Brief Facts narrative' },
-  { value: 'Field 17 Ack Copy Enclosed',             label: 'Field 17 — Ack copy enclosed' },
-  { value: 'Field 18 Dispatched On',                 label: 'Field 18 — Dispatched on' },
-  { value: 'Signing Block',                          label: 'Signing block (IO sign-off)' },
-  { value: 'Court Name (top heading)',               label: 'Court Name (top heading)' },
+const DOC_TYPE_OPTIONS = [
+  { value: 'charge_sheet', label: 'Charge Sheet', endpoint: 'regenerate-charge-sheet', filename: 'ChargeSheet' },
+  { value: 'case_diary',   label: 'Case Diary Part-I', endpoint: 'regenerate-case-diary', filename: 'CaseDiary' },
+  { value: 'remand_report',label: 'Remand Report', endpoint: 'regenerate-remand-report', filename: 'RemandReport' },
 ];
 
-const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
+const FIELD_OPTIONS_BY_DOC = {
+  charge_sheet: [
+    { value: 'Field 01 District / Police Station',     label: 'Field 01 — District / PS' },
+    { value: 'Field 02 Charge Sheet Number',           label: 'Field 02 — CS Number' },
+    { value: 'Field 03 Date of Charge',                label: 'Field 03 — Date of Charge' },
+    { value: 'Field 04 Act & Sections',                label: 'Field 04 — Act & Sections' },
+    { value: 'Field 05 Type of Final Report',          label: 'Field 05 — Report Type' },
+    { value: 'Field 07 Original or Supplementary',     label: 'Field 07 — Original/Supp.' },
+    { value: 'Field 08 IO Name',                       label: 'Field 08 — IO Name' },
+    { value: 'Field 09 Complainant',                   label: 'Field 09 — Complainant' },
+    { value: 'Field 10 Property Seized',               label: 'Field 10 — Property Seized' },
+    { value: 'Field 11 Accused',                       label: 'Field 11 — Accused (A1–AN)' },
+    { value: 'Field 11(a) Date of Arrest / Release',   label: 'Field 11(a) — Arrest / Release' },
+    { value: 'Field 13 Witnesses',                     label: 'Field 13 — Witnesses (LW-1…LW-N)' },
+    { value: 'Field 14 If FR is false',                label: 'Field 14 — FR-false action' },
+    { value: 'Field 15 Lab Result',                    label: 'Field 15 — Lab result' },
+    { value: 'Field 16 Brief Facts (narrative)',       label: 'Field 16 — Brief Facts narrative' },
+    { value: 'Field 17 Ack Copy Enclosed',             label: 'Field 17 — Ack copy enclosed' },
+    { value: 'Field 18 Dispatched On',                 label: 'Field 18 — Dispatched on' },
+    { value: 'Signing Block',                          label: 'Signing block (IO sign-off)' },
+    { value: 'Court Name (top heading)',               label: 'Court Name (top heading)' },
+  ],
+  case_diary: [
+    { value: 'Header — District / PS / FIR',           label: 'Header — Dist / PS / FIR' },
+    { value: 'Date, Time & Place of occurrence',       label: 'Occurrence date / time / place' },
+    { value: 'CD Date',                                label: 'CD Date (Field cd_date)' },
+    { value: 'Field 1 Date and time of report',        label: 'Field 1 — Date / time of report' },
+    { value: 'Field 2 Complainant / Informant',        label: 'Field 2 — Complainant' },
+    { value: 'Field 3 Accused (A1–AN)',                label: 'Field 3 — Accused list' },
+    { value: 'Field 4 Property Lost',                  label: 'Field 4 — Property Lost' },
+    { value: 'Field 5 Property Recovered',             label: 'Field 5 — Property Recovered' },
+    { value: 'Field 6 Date of Last Case Diary',        label: 'Field 6 — Last CD date' },
+    { value: 'Field 7 Deceased',                       label: 'Field 7 — Deceased' },
+    { value: 'Field 8 Witnesses examined (LW-1…LW-N)', label: 'Field 8 — Witnesses examined' },
+    { value: 'Brief Facts paragraph',                  label: 'Brief Facts paragraph' },
+    { value: 'Investigation Steps (chronological)',    label: 'Investigation Steps' },
+    { value: 'IO Name (Signing Block)',                label: 'IO Signing Block' },
+  ],
+  remand_report: [
+    { value: 'Court Heading (AT <place>)',             label: 'Court heading (AT <place>)' },
+    { value: 'Header — PS / Dist / FIR / Date',        label: 'Header — PS / Dist / FIR / Date' },
+    { value: 'Field 1 Investigating Officer',          label: 'Field 1 — IO block' },
+    { value: 'Field 2 Date and place of occurrence',   label: 'Field 2 — Occurrence' },
+    { value: 'Field 3 Offence U/s (Sections)',         label: 'Field 3 — Sections' },
+    { value: 'Field 4 Date of action taken',           label: 'Field 4 — Action date' },
+    { value: 'Field 5 Complainant',                    label: 'Field 5 — Complainant' },
+    { value: 'Field 6 Accused (A1–AN)',                label: 'Field 6 — Accused' },
+    { value: 'Field 7 Property lost',                  label: 'Field 7 — Property lost' },
+    { value: 'Field 8 Property recovered',             label: 'Field 8 — Property recovered' },
+    { value: 'Field 9 Deceased',                       label: 'Field 9 — Deceased' },
+    { value: 'Field 10 Witnesses',                     label: 'Field 10 — Witnesses' },
+    { value: 'Brief Facts paragraph',                  label: 'Brief Facts paragraph' },
+    { value: 'Investigation Done So Far',              label: 'Investigation Done So Far' },
+    { value: 'Reasons / Grounds for arrest',           label: 'Reasons / Grounds for arrest' },
+    { value: 'Remand Type (judicial / police)',        label: 'Remand Type' },
+    { value: 'Enclosures list',                        label: 'Enclosures list' },
+    { value: 'Escort line',                            label: 'Escort line' },
+    { value: 'Signing Block',                          label: 'Signing Block' },
+  ],
+};
+
+const EditAndRegeneratePanel = ({ firNumber, caseId, hasCaseDiary, hasRemandReport }) => {
+  const [docType, setDocType] = React.useState('charge_sheet');
   const [items, setItems] = React.useState([
-    { field: FIELD_OPTIONS[7].value, instruction: '' },
+    { field: FIELD_OPTIONS_BY_DOC.charge_sheet[6].value, instruction: '' },
   ]);
   const [loading, setLoading] = React.useState(false);
   const [cascade, setCascade] = React.useState(null);
   const [lastBlobUrl, setLastBlobUrl] = React.useState(null);
   const [lastFilename, setLastFilename] = React.useState('');
+
+  // When user switches doc type, reset the field selector to the first option
+  const handleDocTypeChange = (newType) => {
+    const opts = FIELD_OPTIONS_BY_DOC[newType] || [];
+    setDocType(newType);
+    setItems((prev) => prev.map((it) => ({
+      ...it,
+      field: opts.some((o) => o.value === it.field) ? it.field : (opts[0]?.value || it.field),
+    })));
+  };
+
+  const FIELD_OPTIONS = FIELD_OPTIONS_BY_DOC[docType] || [];
+  const docCfg = DOC_TYPE_OPTIONS.find((d) => d.value === docType) || DOC_TYPE_OPTIONS[0];
 
   const updateItem = (idx, key, val) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
@@ -1215,7 +1433,7 @@ const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
     setCascade(null);
     try {
       const resp = await api.post(
-        `/staging/regenerate-charge-sheet/${caseId}`,
+        `/staging/${docCfg.endpoint}/${caseId}`,
         { corrections: ready },
         { responseType: 'blob', timeout: 180000 }
       );
@@ -1228,7 +1446,7 @@ const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
 
       const cd = resp.headers['content-disposition'] || '';
       const m = cd.match(/filename="([^"]+)"/);
-      const fname = m ? m[1] : `${(firNumber || 'case').replaceAll('/', '-')}_ChargeSheet_updated.docx`;
+      const fname = m ? m[1] : `${(firNumber || 'case').replaceAll('/', '-')}_${docCfg.filename}_updated.docx`;
       setLastFilename(fname);
 
       try {
@@ -1237,7 +1455,7 @@ const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
       } catch (e) {
         setCascade({ corrections_applied: [], regeneration_count: 1 });
       }
-      toast.success(`Updated. ${ready.length} correction(s) applied, cascading fields refreshed.`);
+      toast.success(`${docCfg.label} updated · ${ready.length} correction(s) applied, cascading fields refreshed.`);
     } catch (err) {
       let msg = err.response?.data?.detail || 'Regenerate failed';
       if (err.response?.data instanceof Blob) {
@@ -1269,11 +1487,39 @@ const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
         <div className="flex-1">
           <h4 className="text-[#FF6B3D] font-bold text-base">Edit &amp; Regenerate (0 credits)</h4>
           <p className="text-white/60 text-xs mt-1 leading-relaxed">
-            Pick a field, describe what is wrong, and click <strong>Apply Correction and Regenerate</strong>.
+            Pick a document and field, describe what is wrong, and click <strong>Apply Correction and Regenerate</strong>.
             The AI will fix the field + cascade the change through every dependent paragraph
             (IO references, A-numbers, LW numbers, dates, sections, signing block) and emit an updated DOCX.
           </p>
         </div>
+      </div>
+
+      {/* Document-type selector */}
+      <div className="mb-3 flex gap-1.5 flex-wrap" data-testid="edit-regenerate-doctype">
+        {DOC_TYPE_OPTIONS.map((opt) => {
+          const disabled =
+            (opt.value === 'case_diary' && !hasCaseDiary) ||
+            (opt.value === 'remand_report' && !hasRemandReport);
+          const active = docType === opt.value;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => !disabled && handleDocTypeChange(opt.value)}
+              disabled={disabled}
+              data-testid={`edit-regenerate-doctype-${opt.value}`}
+              className={`text-xs px-3 py-1.5 rounded font-medium border transition-colors ${
+                active
+                  ? 'bg-[#FF6B3D] text-white border-[#FF6B3D]'
+                  : disabled
+                  ? 'bg-[#030614] text-white/25 border-white/10 cursor-not-allowed'
+                  : 'bg-[#030614] text-white/70 border-white/20 hover:border-[#FF6B3D]/60 hover:text-white'
+              }`}
+              title={disabled ? `Generate the ${opt.label} first to enable corrections.` : `Edit & regenerate ${opt.label}`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="space-y-2.5">
