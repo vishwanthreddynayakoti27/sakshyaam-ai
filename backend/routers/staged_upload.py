@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timezone
 from typing import Optional, List
+from pydantic import BaseModel
 from pathlib import Path
 import os
 import jwt
@@ -1465,6 +1466,213 @@ async def get_intelligent_chargesheet_metadata(
     if not doc:
         return {"success": False, "message": "No intelligent charge sheet generated for this case yet"}
     return {"success": True, **doc}
+
+
+# =====================================================================
+# REGENERATE WITH CORRECTIONS — Section G of V3.0 spec
+# Reads the last-generated chargesheet JSON, applies user-supplied
+# corrections via the LLM cascade rules, and emits a fresh DOCX.
+# Cost: 0 credits (it's a re-render, the user already paid for v1).
+# =====================================================================
+class _CorrectionItem(BaseModel):
+    field: str   # e.g., "Field 08 IO Name"
+    instruction: str  # e.g., "Change IO name from K Lal to K. Lal Singh"
+
+
+class _RegenerateRequest(BaseModel):
+    corrections: List[_CorrectionItem]
+
+
+@router.post("/regenerate-charge-sheet/{case_id}")
+async def regenerate_charge_sheet(
+    case_id: str,
+    body: _RegenerateRequest,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Re-run the intelligent charge sheet with user-supplied corrections.
+    The LLM receives the previously-generated JSON + a CORRECTIONS block
+    listing the cascade rules from the V3.0 spec, then regenerates a
+    complete fresh chargesheet with all dependent fields updated.
+
+    Cost: 0 credits (re-render of an already-paid run).
+    """
+    officer_id = officer.get("officer_id", "unknown")
+    folder = get_case_folder(officer_id, case_id)
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail="Case folder not found")
+    if not body.corrections:
+        raise HTTPException(status_code=400, detail="Provide at least one correction")
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Load the previously-generated chargesheet JSON (sole source of truth for v2)
+    prev = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id}, {"_id": 0}
+    )
+    if not prev:
+        raise HTTPException(
+            status_code=400,
+            detail="No previous intelligent charge sheet found. Run Generate Station-Format Charge Sheet first.",
+        )
+
+    prev_payload = prev.get("structured_data") or {}
+
+    # Re-derive the documents corpus so the LLM still has the ground truth
+    # available alongside the previous payload + corrections.
+    metadata_path = folder / "metadata.json"
+    if not metadata_path.exists():
+        raise HTTPException(status_code=404, detail="Case metadata missing")
+    with open(metadata_path) as f:
+        metadata = json.load(f)
+
+    files_meta = metadata.get("files") or []
+    uploaded_documents = [
+        f.get("filename") or f.get("saved_name") or "?" for f in files_meta
+    ]
+    corpus_parts = []
+    for fmeta in files_meta:
+        text = (fmeta.get("ocr_text") or fmeta.get("text") or "").strip()
+        if not text:
+            saved = fmeta.get("saved_name")
+            if saved:
+                fp = folder / saved
+                if fp.exists():
+                    try:
+                        text = (await extract_text_from_staged_file(fp)).strip()
+                    except Exception:
+                        text = ""
+        if text:
+            corpus_parts.append(
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"FILE: {fmeta.get('filename') or fmeta.get('saved_name')}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{text[:25000]}"
+            )
+
+    # Build a raw_data payload that includes BOTH the previous JSON and the
+    # user corrections — the LLM's prompt builder will append the
+    # corrections + cascade rules block automatically.
+    manual = metadata.get("manual_input") or {}
+    raw_data = {
+        **prev_payload,
+        "uploaded_documents": uploaded_documents,
+        "documents_corpus": "\n\n".join(corpus_parts),
+        "corrections": [c.dict() for c in body.corrections],
+        "previous_payload": prev_payload,
+    }
+    # Re-apply manual lock (so corrections don't drift to use stale defaults)
+    if manual:
+        raw_data["manual_input_locked"] = True
+
+    try:
+        logger.info(
+            f"[ICGS-REGEN] case {case_id}: applying {len(body.corrections)} "
+            f"correction(s) via {os.environ.get('OPENAI_DEFAULT_MODEL', 'gpt-4o')}"
+        )
+        from services.intelligent_charge_sheet import generate_intelligent_charge_sheet
+        from services.fixed_layout_renderer import render_charge_sheet as render_authentic_charge_sheet
+        from fastapi.responses import Response
+        cs_data = await generate_intelligent_charge_sheet(
+            raw_data, session_id=f"ics-regen-{case_id}-{uuid.uuid4().hex[:6]}"
+        )
+
+        # V3.0 PHASE-1 RE-LOCK (same as the original endpoint)
+        if manual:
+            def _fmt_date(d):
+                if not d:
+                    return ""
+                s = str(d).strip()
+                if "-" in s and len(s.split("-")[0]) == 4:
+                    y, m, dd = s.split("-")
+                    return f"{dd}.{m}.{y}"
+                return s.replace("/", ".")
+            cs_data["court"] = (
+                f"IN THE COURT OF {manual['court_name']}" if manual.get("court_name")
+                else cs_data.get("court", "")
+            )
+            cs_data["district"]         = manual.get("district") or cs_data.get("district", "")
+            cs_data["police_station"]   = manual.get("police_station") or cs_data.get("police_station", "")
+            # When the user explicitly corrects the FIR / sections / IO, the LLM's
+            # corrections_applied will reflect the new value. Otherwise re-lock to
+            # the manual input.
+            user_corrected_fields = " ".join(
+                (c.field + " " + c.instruction).lower() for c in body.corrections
+            )
+            if "fir" not in user_corrected_fields:
+                cs_data["fir_number"] = manual.get("fir_number") or cs_data.get("fir_number", "")
+                cs_data["fir_date"]   = _fmt_date(manual.get("fir_date")) or cs_data.get("fir_date", "")
+            if "section" not in user_corrected_fields and "sections" not in user_corrected_fields:
+                cs_data["sections"]   = manual.get("sections") or cs_data.get("sections", "")
+            if "io" not in user_corrected_fields:
+                io_now = cs_data.get("io") or {}
+                io_now["name"]    = manual.get("io_name") or io_now.get("name", "")
+                io_now["rank"]    = manual.get("io_rank") or io_now.get("rank", "")
+                io_now["station"] = manual.get("police_station") or io_now.get("station", "")
+                cs_data["io"] = io_now
+            if "dispatch" not in user_corrected_fields:
+                cs_data["dispatch_date"] = _fmt_date(manual.get("dispatch_date")) or cs_data.get("dispatch_date", "")
+            if "ack" not in user_corrected_fields:
+                cs_data["notice_ack_enclosed"] = (manual.get("ack_enclosed") or "No") + "."
+
+        adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
+        docx_bytes = render_authentic_charge_sheet(adapted)
+
+        # Persist the new version (overwrites the previous one — corrections are cumulative)
+        await db.intelligent_chargesheets.update_one(
+            {"case_id": case_id, "officer_id": officer_id},
+            {"$set": {
+                "case_id": case_id, "officer_id": officer_id,
+                "fir_number": cs_data.get("fir_number", ""),
+                "structured_data": cs_data,
+                "corrections_applied": cs_data.get("corrections_applied", []),
+                "regeneration_count": (prev.get("regeneration_count", 0) or 0) + 1,
+                "last_corrections": [c.dict() for c in body.corrections],
+                "model_used": cs_data.get("_model_used", ""),
+                "regenerated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        await db.action_logs.insert_one({
+            "officer_id": officer_id,
+            "action": "INTELLIGENT_CHARGESHEET_REGENERATE",
+            "credit_cost": 0,
+            "status": "SUCCESS",
+            "correlation_id": case_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "metadata": {"correction_count": len(body.corrections)},
+        })
+
+        fir_safe = (cs_data.get("fir_number") or "case").replace("/", "-")
+        rev = (prev.get("regeneration_count", 0) or 0) + 1
+        filename = f"{fir_safe}_IntelligentChargeSheet_rev{rev}.docx"
+        import json as _json
+        cascade_header = _json.dumps({
+            "corrections_applied": cs_data.get("corrections_applied", []),
+            "regeneration_count": rev,
+            "user_corrections": [c.dict() for c in body.corrections],
+        })[:6000]
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Corrections-Count": str(len(cs_data.get("corrections_applied", []))),
+                "X-Regeneration-Count": str(rev),
+                "X-Cascade-Report": cascade_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Corrections-Count, X-Regeneration-Count, X-Cascade-Report"
+                ),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[ICGS-REGEN] failed for case {case_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Regenerate failed: {str(e)}"
+        )
 
 
 # =====================================================================

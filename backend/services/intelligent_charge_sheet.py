@@ -314,6 +314,9 @@ def _build_user_prompt(raw_data: Dict[str, Any]) -> str:
     """Package raw data for the LLM in the two-phase format (V3.0)."""
     accused_list = raw_data.get("accused_persons") or []
     witness_list = raw_data.get("witnesses") or []
+    # Optional: corrections from a previous generation that the user asked us to apply
+    corrections = raw_data.get("corrections") or []
+    prev_payload = raw_data.get("previous_payload") or {}
     parts = [
         "═══════════════════════════════════════════════════════════════",
         "ISOLATION BANNER — THIS PAYLOAD IS THE ENTIRE UNIVERSE OF FACTS",
@@ -379,6 +382,64 @@ def _build_user_prompt(raw_data: Dict[str, Any]) -> str:
         " • Append the extraction_report object as the LAST top-level key.",
         "═══════════════════════════════════════════════════════════════",
     ]
+
+    # ─────────────────────────────────────────────────────────────────
+    # CORRECTIONS BLOCK (Section G of the V3.0 spec) — appended LAST so
+    # the LLM treats them as authoritative overrides on this regeneration.
+    # ─────────────────────────────────────────────────────────────────
+    if corrections:
+        parts.extend([
+            "",
+            "═══════════════════════════════════════════════════════════════",
+            "  USER-SUPPLIED CORRECTIONS (regenerate with these applied)",
+            "═══════════════════════════════════════════════════════════════",
+            "The chargesheet was generated previously. The user has now",
+            "identified the following corrections. Apply each correction AND",
+            "automatically update ALL other fields & paragraphs affected by",
+            "each change. Then regenerate the complete chargesheet JSON.",
+            "",
+            "CASCADE RULES (apply silently to every regeneration):",
+            "  • IO name correction       → Field 08, every LW-IO reference",
+            "                                in Field 13 + Brief Facts paragraphs,",
+            "                                and the signing block.",
+            "  • Accused name correction  → Field 11 + every A-number reference",
+            "                                in ¶10 Evidence Conclusion + Prayer.",
+            "  • Sections correction      → Field 04 + ¶3 FIR Registration +",
+            "                                ¶10 Evidence Conclusion.",
+            "  • Date correction          → every date reference across the",
+            "                                whole chargesheet.",
+            "  • Court name correction    → top heading + Field 08 station line.",
+            "  • Complainant correction   → Field 09 + every LW-1 reference",
+            "                                in Brief Facts paragraphs.",
+            "  • Witness correction       → Field 13 row + every LW-N",
+            "                                reference in Brief Facts.",
+            "",
+            "Each correction is one line: 'Field <X>: <plain-English fix>'.",
+            "Apply ALL of them. Honour them VERBATIM — do not push back, do",
+            "not 'NOT FOUND' a corrected value. The user has the final word.",
+            "",
+            "After applying, populate `corrections_applied` in the response",
+            "with one entry per affected field, e.g.:",
+            "   \"Field 08 IO Name → updated to 'K. Lal Singh'\"",
+            "   \"Field 13 LW-IO references → updated to K. Lal Singh in 4 paragraphs\"",
+            "   \"Signing block → updated to '(K. Lal Singh)' HC 248, PS Makthal.\"",
+            "",
+            "USER CORRECTIONS:",
+        ])
+        for i, corr in enumerate(corrections, 1):
+            field = (corr.get("field") or "").strip()
+            instr = (corr.get("instruction") or "").strip()
+            parts.append(f"  {i}. {field}: {instr}")
+        parts.append("")
+        if prev_payload:
+            parts.extend([
+                "─── PREVIOUSLY-GENERATED CHARGESHEET JSON (use as the starting point) ───",
+                json.dumps(prev_payload, ensure_ascii=False)[:30000],
+            ])
+        parts.append(
+            "═══════════════════════════════════════════════════════════════"
+        )
+
     return "\n".join(parts)
 
 

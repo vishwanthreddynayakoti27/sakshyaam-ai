@@ -15,9 +15,12 @@ import {
   BookOpen,
   Lock,
   RefreshCw,
+  Edit3,
+  X,
 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/textarea';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import api from '../utils/api';
@@ -1082,6 +1085,11 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         )}
       </div>
 
+      {/* ───────── EDIT & REGENERATE (Section G of V3.0 spec) ───────── */}
+      {hasChargeSheet && (
+        <EditAndRegeneratePanel firNumber={firNumber} caseId={caseId} />
+      )}
+
       {/* FIXED-LAYOUT (NO AI) DETERMINISTIC TEMPLATES */}
       <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#00FFB3]/10 to-[#00C2FF]/5 border border-[#00FFB3]/30" data-testid="fixed-layout-section">
         <div className="flex items-start gap-3 mb-3">
@@ -1155,5 +1163,213 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
     </div>
   );
 };
+
+// =====================================================================
+// EDIT & REGENERATE PANEL — Section G of V3.0 spec
+// =====================================================================
+const FIELD_OPTIONS = [
+  { value: 'Field 01 District / Police Station',     label: 'Field 01 — District / PS' },
+  { value: 'Field 02 Charge Sheet Number',           label: 'Field 02 — CS Number' },
+  { value: 'Field 03 Date of Charge',                label: 'Field 03 — Date of Charge' },
+  { value: 'Field 04 Act & Sections',                label: 'Field 04 — Act & Sections' },
+  { value: 'Field 05 Type of Final Report',          label: 'Field 05 — Report Type' },
+  { value: 'Field 07 Original or Supplementary',     label: 'Field 07 — Original/Supp.' },
+  { value: 'Field 08 IO Name',                       label: 'Field 08 — IO Name' },
+  { value: 'Field 09 Complainant',                   label: 'Field 09 — Complainant' },
+  { value: 'Field 10 Property Seized',               label: 'Field 10 — Property Seized' },
+  { value: 'Field 11 Accused',                       label: 'Field 11 — Accused (A1–AN)' },
+  { value: 'Field 11(a) Date of Arrest / Release',   label: 'Field 11(a) — Arrest / Release' },
+  { value: 'Field 13 Witnesses',                     label: 'Field 13 — Witnesses (LW-1…LW-N)' },
+  { value: 'Field 14 If FR is false',                label: 'Field 14 — FR-false action' },
+  { value: 'Field 15 Lab Result',                    label: 'Field 15 — Lab result' },
+  { value: 'Field 16 Brief Facts (narrative)',       label: 'Field 16 — Brief Facts narrative' },
+  { value: 'Field 17 Ack Copy Enclosed',             label: 'Field 17 — Ack copy enclosed' },
+  { value: 'Field 18 Dispatched On',                 label: 'Field 18 — Dispatched on' },
+  { value: 'Signing Block',                          label: 'Signing block (IO sign-off)' },
+  { value: 'Court Name (top heading)',               label: 'Court Name (top heading)' },
+];
+
+const EditAndRegeneratePanel = ({ firNumber, caseId }) => {
+  const [items, setItems] = React.useState([
+    { field: FIELD_OPTIONS[7].value, instruction: '' },
+  ]);
+  const [loading, setLoading] = React.useState(false);
+  const [cascade, setCascade] = React.useState(null);
+  const [lastBlobUrl, setLastBlobUrl] = React.useState(null);
+  const [lastFilename, setLastFilename] = React.useState('');
+
+  const updateItem = (idx, key, val) =>
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [key]: val } : it)));
+  const addItem = () =>
+    setItems((prev) => [...prev, { field: FIELD_OPTIONS[0].value, instruction: '' }]);
+  const removeItem = (idx) =>
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+
+  const applyAndRegenerate = async () => {
+    const ready = items.filter((i) => i.instruction.trim());
+    if (ready.length === 0) {
+      toast.error('Type at least one correction before regenerating');
+      return;
+    }
+    setLoading(true);
+    setCascade(null);
+    try {
+      const resp = await api.post(
+        `/staging/regenerate-charge-sheet/${caseId}`,
+        { corrections: ready },
+        { responseType: 'blob', timeout: 180000 }
+      );
+      const blob = new Blob([resp.data], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      if (lastBlobUrl) window.URL.revokeObjectURL(lastBlobUrl);
+      const url = window.URL.createObjectURL(blob);
+      setLastBlobUrl(url);
+
+      const cd = resp.headers['content-disposition'] || '';
+      const m = cd.match(/filename="([^"]+)"/);
+      const fname = m ? m[1] : `${(firNumber || 'case').replaceAll('/', '-')}_ChargeSheet_updated.docx`;
+      setLastFilename(fname);
+
+      try {
+        const report = JSON.parse(resp.headers['x-cascade-report'] || '{}');
+        setCascade(report);
+      } catch (e) {
+        setCascade({ corrections_applied: [], regeneration_count: 1 });
+      }
+      toast.success(`Updated. ${ready.length} correction(s) applied, cascading fields refreshed.`);
+    } catch (err) {
+      let msg = err.response?.data?.detail || 'Regenerate failed';
+      if (err.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadUpdated = () => {
+    if (!lastBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = lastBlobUrl;
+    a.download = lastFilename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  return (
+    <div
+      className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#FF6B3D]/8 to-[#FFB800]/5 border border-[#FF6B3D]/30"
+      data-testid="edit-regenerate-panel"
+    >
+      <div className="flex items-start gap-3 mb-3">
+        <Edit3 className="text-[#FF6B3D] shrink-0 mt-0.5" size={20} />
+        <div className="flex-1">
+          <h4 className="text-[#FF6B3D] font-bold text-base">Edit &amp; Regenerate (0 credits)</h4>
+          <p className="text-white/60 text-xs mt-1 leading-relaxed">
+            Pick a field, describe what is wrong, and click <strong>Apply Correction and Regenerate</strong>.
+            The AI will fix the field + cascade the change through every dependent paragraph
+            (IO references, A-numbers, LW numbers, dates, sections, signing block) and emit an updated DOCX.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {items.map((it, idx) => (
+          <div key={idx} className="p-2.5 rounded bg-[#030614] border border-white/10" data-testid={`correction-row-${idx}`}>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-white/50 text-[10px] uppercase tracking-wide">Correction #{idx + 1}</label>
+              {items.length > 1 && (
+                <button
+                  onClick={() => removeItem(idx)}
+                  className="text-white/40 hover:text-red-400 text-xs"
+                  data-testid={`remove-correction-${idx}`}
+                >
+                  <X size={12} className="inline" /> remove
+                </button>
+              )}
+            </div>
+            <select
+              value={it.field}
+              onChange={(e) => updateItem(idx, 'field', e.target.value)}
+              className="w-full bg-[#0B0F1A] border border-white/15 text-white text-xs h-8 rounded px-2 mb-1.5"
+              data-testid={`correction-field-${idx}`}
+            >
+              {FIELD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <Textarea
+              value={it.instruction}
+              onChange={(e) => updateItem(idx, 'instruction', e.target.value)}
+              placeholder={"What is wrong → what is correct?\ne.g., 'IO name shows K Lal — should be K. Lal Singh'"}
+              className="bg-[#0B0F1A] border-white/15 text-white text-xs min-h-[60px] leading-relaxed"
+              data-testid={`correction-instruction-${idx}`}
+            />
+          </div>
+        ))}
+
+        <button
+          onClick={addItem}
+          className="text-[#FF6B3D] hover:text-[#FF8855] text-xs font-medium underline"
+          data-testid="add-correction-btn"
+        >
+          + Add another correction
+        </button>
+
+        <Button
+          onClick={applyAndRegenerate}
+          disabled={loading || !caseId}
+          className="w-full h-10 bg-gradient-to-r from-[#FF6B3D] to-[#FFB800] text-black font-bold hover:opacity-90 mt-2"
+          data-testid="apply-corrections-btn"
+        >
+          {loading ? (
+            <><Loader2 className="animate-spin mr-2" size={14} /> Regenerating with corrections…</>
+          ) : (
+            <><RefreshCw size={14} className="mr-2" /> Apply Correction and Regenerate</>
+          )}
+        </Button>
+
+        {cascade && (
+          <div
+            className="mt-3 p-3 rounded bg-[#0B0F1A] border border-[#00FFB3]/30"
+            data-testid="cascade-summary"
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              <CheckCircle2 size={14} className="text-[#00FFB3]" />
+              <p className="text-[#00FFB3] text-xs font-bold uppercase tracking-wider">
+                Update applied · revision {cascade.regeneration_count || 1}
+              </p>
+            </div>
+            {Array.isArray(cascade.corrections_applied) && cascade.corrections_applied.length > 0 ? (
+              <ul className="text-white/70 text-[11px] leading-relaxed space-y-0.5 ml-1">
+                {cascade.corrections_applied.slice(0, 12).map((c, i) => (
+                  <li key={i}>• {c}</li>
+                ))}
+                {cascade.corrections_applied.length > 12 && (
+                  <li className="text-white/40 italic">… +{cascade.corrections_applied.length - 12} more</li>
+                )}
+              </ul>
+            ) : (
+              <p className="text-white/50 text-[11px] italic">
+                Corrections applied. Download the updated DOCX below to see the changes.
+              </p>
+            )}
+            <Button
+              onClick={downloadUpdated}
+              className="w-full h-9 mt-3 bg-[#00FFB3]/15 border border-[#00FFB3]/40 text-[#00FFB3] hover:bg-[#00FFB3]/25 text-xs font-bold"
+              data-testid="download-updated-docx-btn"
+            >
+              <Download size={14} className="mr-2" /> Download Updated DOCX (rev {cascade.regeneration_count || 1})
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 
 export default ChargeSheetFusion;
