@@ -1684,11 +1684,16 @@ async def regenerate_charge_sheet(
     # Build a raw_data payload that includes BOTH the previous JSON and the
     # user corrections — the LLM's prompt builder will append the
     # corrections + cascade rules block automatically.
+    # Regenerate is FAST-PATH: the LLM has the previous_payload as ground truth,
+    # so we trim the documents_corpus to keep the call under the 60s ingress.
     manual = metadata.get("manual_input") or {}
+    trimmed_corpus = "\n\n".join(corpus_parts)
+    if trimmed_corpus:
+        trimmed_corpus = trimmed_corpus[:8000]
     raw_data = {
         **prev_payload,
         "uploaded_documents": uploaded_documents,
-        "documents_corpus": "\n\n".join(corpus_parts),
+        "documents_corpus": trimmed_corpus,
         "corrections": [c.dict() for c in body.corrections],
         "previous_payload": prev_payload,
     }
@@ -2162,6 +2167,11 @@ async def regenerate_case_diary(
     )
     raw_data["corrections"] = [c.dict() for c in body.corrections]
     raw_data["previous_payload"] = prev.get("structured_data") or {}
+    # Regenerate is FAST-PATH: the LLM has the previous_payload as ground truth;
+    # trimming the documents_corpus keeps the call under the 60s K8s ingress limit
+    # while still allowing the LLM to reference source documents when needed.
+    if raw_data.get("documents_corpus"):
+        raw_data["documents_corpus"] = raw_data["documents_corpus"][:8000]
 
     try:
         logger.info(
@@ -2410,6 +2420,9 @@ async def regenerate_remand_report(
     )
     raw_data["corrections"] = [c.dict() for c in body.corrections]
     raw_data["previous_payload"] = prev.get("structured_data") or {}
+    # Regenerate is FAST-PATH: trim documents_corpus to keep under K8s 60s ingress.
+    if raw_data.get("documents_corpus"):
+        raw_data["documents_corpus"] = raw_data["documents_corpus"][:8000]
 
     try:
         logger.info(

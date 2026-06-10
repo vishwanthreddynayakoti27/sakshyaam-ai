@@ -54,6 +54,7 @@ Build a production-ready, highly modular backend document generation pipeline fo
   - `GET /api/staging/cctns-autofill/{case_id}` — flat JSON for CCTNS portal
 - ✅ Helper `_assemble_subdoc_raw_data()` re-uses the same OCR-corpus assembly + manual_input override pattern as ICGS
 - ✅ Adapter helpers `_adapt_case_diary_for_fixed_layout()` + `_adapt_remand_for_fixed_layout()` translate V3.0 LLM JSON → fixed_layout_renderer schema
+- ✅ **Regenerate FAST-PATH**: regenerate-* endpoints now trim documents_corpus to 8K chars since the LLM has the full previous_payload as ground truth. Brings regenerate calls from ~75s to ~22s (verified end-to-end via public Cloudflare ingress — HTTP/2 200 in 20.5s, was previously hitting the 60s timeout)
 - ✅ Frontend `ChargeSheetFusion.js`:
   - New "Generate Remand Report" button (orange) — disabled until charge sheet is generated
   - New "CCTNS Autofill JSON" card with "Copy JSON to Clipboard" + "Download .json" buttons
@@ -64,7 +65,7 @@ Build a production-ready, highly modular backend document generation pipeline fo
   - Case Diary: 7 chronological steps, header strip + 8 fields + brief facts + steps + closing line + signature block all populated correctly
   - Remand Report: 10 fields + 4-section narrative + standard prayer clause + 7 enclosures + escort line, "judicial" remand type
   - CCTNS Autofill: flat JSON with all a1..a6 + lw1..lw9 blocks + complainant block + sections_list array + total_accused/witnesses counts
-- ✅ Tests: 12/12 in `/app/backend/tests/test_v3_subdocs.py` (adapter + prompt builders + CCTNS shape + JSON-fence stripping). 29/29 total across V3 + fixed-layout + narration suites with zero regressions
+- ✅ Tests: 12/12 in `/app/backend/tests/test_v3_subdocs.py` (adapter + prompt builders + CCTNS shape + JSON-fence stripping). 29/29 total across V3 + fixed-layout + narration suites with zero regressions. Testing agent ran iteration 19 — 14/14 functional pass
 
 ### 2026-05-06: V3.0 Master IO — Charge Sheet
 - ✅ Direct OpenAI integration via `llm_compat.py` (bypasses Emergent proxy)
