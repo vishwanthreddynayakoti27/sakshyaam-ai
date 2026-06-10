@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Upload,
@@ -68,6 +68,65 @@ const ChargeSheetFusion = () => {
   const [jobStage, setJobStage] = useState('');
   
   const fileInputRef = useRef(null);
+
+  // ─── Auto-resume the active case on mount ────────────────────────────
+  // Persist the active caseId to localStorage so a page refresh / mobile
+  // browser-tab kill doesn't lose the user's work. On mount, if there's a
+  // saved caseId AND its triple-fusion is `completed`, restore the full
+  // FusionCompletedView so the Edit & Regenerate / Case Diary / Remand /
+  // CCTNS buttons are immediately discoverable without re-uploading.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = localStorage.getItem('np_active_case_id');
+        if (!saved) return;
+        const tf = await api.get(`/staging/fusion/${saved}`).catch(() => null);
+        if (cancelled || !tf?.data?.success) return;
+        const fusion = tf.data.fusion || {};
+        if (fusion.status !== 'completed') return;
+        // Restore state
+        setCaseId(saved);
+        setFusionReady(true);
+        setExtractedData(fusion.extracted_data || null);
+        setDocumentsCount(fusion.documents_processed || 0);
+        setCreditsUsed(fusion.credits_used || 0);
+        setFirNumber(fusion.fir_number || '');
+        // Hydrate manual_input form too so the user sees their last values
+        const meta = await api.get(`/staging/case/${saved}`).catch(() => null);
+        const mi = meta?.data?.metadata?.manual_input || {};
+        if (mi && Object.keys(mi).length) {
+          if (mi.district) setDistrict(mi.district);
+          if (mi.police_station) setPoliceStation(mi.police_station);
+          if (mi.fir_number) setFirNumber(mi.fir_number);
+          if (mi.fir_date) setFirDate(mi.fir_date);
+          if (mi.chargesheet_no) setChargeSheetNo(mi.chargesheet_no);
+          if (mi.chargesheet_date) setChargesheetDate(mi.chargesheet_date);
+          if (mi.sections) setSections(mi.sections);
+          if (mi.report_type) setReportType(mi.report_type);
+          if (mi.un_occurred_reason) setUnOccurredReason(mi.un_occurred_reason);
+          if (mi.chargesheet_type) setChargesheetType(mi.chargesheet_type);
+          if (mi.io_name) setIoName(mi.io_name);
+          if (mi.io_rank) setIoRank(mi.io_rank);
+          if (mi.court_name) setCourtName(mi.court_name);
+          if (mi.dispatch_date) setDispatchDate(mi.dispatch_date);
+          if (mi.ack_enclosed) setAckEnclosed(mi.ack_enclosed);
+          setManualFormSubmitted(true);
+        }
+        toast.success(`Resumed case ${(fusion.fir_number || saved).slice(0, 30)} — Edit & Regenerate is ready below`, { duration: 5000 });
+      } catch (e) {
+        // Silent — best-effort restore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist active caseId so next reload can resume
+  useEffect(() => {
+    if (caseId) {
+      try { localStorage.setItem('np_active_case_id', caseId); } catch (e) { /* quota / private mode */ }
+    }
+  }, [caseId]);
 
   // === CREATE STAGING CASE ===
   const createStagingCase = async () => {
@@ -860,6 +919,33 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
     return () => clearInterval(t);
   }, [remandLoading]);
 
+  // Re-hydrate the "already generated" flags on mount / when caseId changes
+  // so a page refresh after the user has generated docs doesn't hide the
+  // Edit & Regenerate panel or the Case Diary / Remand buttons.
+  React.useEffect(() => {
+    if (!caseId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cs, cd, rr] = await Promise.all([
+          api.get(`/staging/intelligent-chargesheet/${caseId}`).catch(() => null),
+          api.get(`/staging/intelligent-case-diary/${caseId}`).catch(() => null),
+          api.get(`/staging/intelligent-remand-report/${caseId}`).catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (cs?.data?.success) {
+          setHasChargeSheet(true);
+          if (cs.data.corrections_applied?.length) setCorrections(cs.data.corrections_applied);
+        }
+        if (cd?.data?.success) setHasCaseDiary(true);
+        if (rr?.data?.success) setHasRemandReport(true);
+      } catch (e) {
+        // Silent — auto-hydration is best-effort
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [caseId]);
+
   const downloadFixedLayout = async (docType) => {
     if (!caseId) {
       toast.error('No case selected');
@@ -1108,6 +1194,16 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         )}
       </div>
 
+      {/* ───────── EDIT & REGENERATE (Section G of V3.0 spec) — placed RIGHT AFTER the charge sheet so it's discoverable without scrolling past 3 more cards. */}
+      {hasChargeSheet && (
+        <EditAndRegeneratePanel
+          firNumber={firNumber}
+          caseId={caseId}
+          hasCaseDiary={hasCaseDiary}
+          hasRemandReport={hasRemandReport}
+        />
+      )}
+
       {/* STATION-FORMAT CASE DIARY PART-I */}
       <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#4F7EFF]/10 to-[#00C2FF]/5 border border-[#4F7EFF]/30">
         <div className="flex items-start gap-3 mb-3">
@@ -1237,14 +1333,6 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
           </Button>
         </div>
       </div>
-      {hasChargeSheet && (
-        <EditAndRegeneratePanel
-          firNumber={firNumber}
-          caseId={caseId}
-          hasCaseDiary={hasCaseDiary}
-          hasRemandReport={hasRemandReport}
-        />
-      )}
 
       {/* FIXED-LAYOUT (NO AI) DETERMINISTIC TEMPLATES */}
       <div className="mb-4 p-4 rounded-lg bg-gradient-to-br from-[#00FFB3]/10 to-[#00C2FF]/5 border border-[#00FFB3]/30" data-testid="fixed-layout-section">

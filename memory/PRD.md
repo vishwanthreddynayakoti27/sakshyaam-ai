@@ -42,7 +42,9 @@ Build a production-ready, highly modular backend document generation pipeline fo
 ## Completed Features (latest first)
 
 ### 2026-06-10: V3.0 Master IO treatment for Case Diary Part-I + Remand Report + CCTNS Autofill
-- ✅ Rewrote `services/intelligent_case_diary.py` with V3.0 Master IO persona (was using Claude+EMERGENT_LLM_KEY, now uses direct OpenAI via `llm_compat`). Output JSON maps cleanly to `fixed_layout_renderer.render_case_diary_part1` — 8 numbered fields + chronological investigation_steps list + closing line + signature
+- ✅ **UI fix (user-reported via video)**: Edit & Regenerate panel moved to RIGHT AFTER the Charge Sheet card (was below CCTNS — required scrolling past 3 cards). Now first thing visible once the chargesheet is generated. (`/app/frontend/src/pages/ChargeSheetFusion.js`)
+- ✅ **UI fix (user-reported via video)**: webpack-dev-server runtime-error overlay disabled in `craco.config.js` (was hiding the entire UI on mobile when any cross-origin "Script error" fired). Real errors still hit `window.onerror` + browser devtools console.
+- ✅ **UI fix (user-reported via video)**: Active case auto-resumes on page reload. `localStorage.np_active_case_id` is persisted whenever a case is opened; on mount, `ChargeSheetFusion` re-fetches `/staging/fusion/{case_id}` + `/staging/case/{case_id}` and re-hydrates the 15-field manual input form + fusion status + extraction summary. A toast tells the user "Resumed case X — Edit & Regenerate is ready below." `FusionCompletedView` auto-detects whether a Case Diary / Remand Report has been generated for the resumed case (parallel GET requests) so the Edit & Regen panel's "Case Diary Part-I" + "Remand Report" tabs are enabled instantly.
 - ✅ Created `services/intelligent_remand_report.py` (NEW) — V3.0 Master IO persona for the formal remand letter (10 numbered fields + Brief Facts + Investigation Done So Far + Grounds of Arrest + standard prayer + enclosures + escort). Output maps to `fixed_layout_renderer.render_remand_report`
 - ✅ New endpoints:
   - `POST /api/staging/generate-intelligent-case-diary/{case_id}` — 2 credits (rewrites the old endpoint that was using legacy renderer)

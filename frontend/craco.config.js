@@ -78,6 +78,19 @@ if (config.enableVisualEdits && babelMetadataPlugin) {
 }
 
 webpackConfig.devServer = (devServerConfig) => {
+  // Disable webpack-dev-server's full-screen runtime-error overlay so transient
+  // mobile-browser "Script error." events from cross-origin scripts don't hide
+  // the rest of the UI. Real errors still hit window.onerror / the axios
+  // interceptor + browser devtools console.
+  devServerConfig.client = {
+    ...(devServerConfig.client || {}),
+    overlay: {
+      errors: false,
+      warnings: false,
+      runtimeErrors: false,
+    },
+  };
+
   // Apply visual edits dev server setup only if enabled
   if (config.enableVisualEdits && setupDevServer) {
     devServerConfig = setupDevServer(devServerConfig);
