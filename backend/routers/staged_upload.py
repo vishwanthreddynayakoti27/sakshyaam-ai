@@ -1061,8 +1061,23 @@ def _adapt_person(p: dict) -> dict:
     """Translate LLM person schema → fixed_layout_renderer schema."""
     if not isinstance(p, dict):
         return {}
+    # Infer marital status from salutation when possible (Smt. → married, Kum. → unmarried)
+    salutation = (p.get("salutation") or "").strip()
+    marital = p.get("marital_status") or ""
+    if not marital:
+        if salutation.lower().startswith("smt"):
+            marital = "married"
+        elif salutation.lower().startswith("kum"):
+            marital = "unmarried"
+    # Infer gender from salutation if not provided
+    gender = (p.get("gender") or "").lower()
+    if not gender:
+        if salutation.lower().startswith(("smt", "kum")):
+            gender = "female"
+        elif salutation.lower().startswith("sri"):
+            gender = "male"
     return {
-        "salutation": p.get("salutation") or "",
+        "salutation": salutation,
         "name": _nf(p.get("name"), ""),
         "father": _nf(p.get("father_name") or p.get("father"), ""),
         "age": _nf(p.get("age"), ""),
@@ -1070,7 +1085,9 @@ def _adapt_person(p: dict) -> dict:
         "occupation": _nf(p.get("occupation") or p.get("occ"), ""),
         "address": _nf(p.get("address") or p.get("permanent_address"), ""),
         "phone": _nf(p.get("phone"), ""),
-        "gender": p.get("gender") or "",
+        "gender": gender,
+        "marital_status": marital,
+        "relation": p.get("relation") or "",
         "aadhaar_number": p.get("aadhaar_number") or "",
         "type": p.get("role") or p.get("type") or "",
         "role": p.get("role") or p.get("type") or "",

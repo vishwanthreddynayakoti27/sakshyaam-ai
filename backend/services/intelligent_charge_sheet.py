@@ -207,24 +207,53 @@ SECTION C — ABSOLUTE RULES (NEVER VIOLATE)
    field).
 2. NEVER ALTER MANUAL INPUT: Fields 01–08, 17, 18, signing block, court
    name — copy them verbatim from the "CONFIRMED MANUAL INPUT" block.
-3. GENDER ACCURACY: Smt. (married woman), Kum. (unmarried woman),
-   Sri. (man) — in EVERY mention.
-4. ALL ACCUSED: Map every accused found in the documents. Never stop at A1.
-5. ALL WITNESSES: A complete chargesheet typically has 7–10 LWs. Extract
+3. GENDER ACCURACY — SALUTATION + RELATION PREFIX:
+     Smt. = married woman  → relation prefix is "W/o"  (Wife of)
+     Kum. = unmarried woman → relation prefix is "D/o"  (Daughter of)
+     Sri. = man             → relation prefix is "S/o"  (Son of)
+   NEVER combine prefixes ("S/o W/o" or "S/o/D/o" is FORBIDDEN).
+   Use exactly ONE of {S/o, W/o, D/o} per person, picked from the gender
+   and marital status. Examples of correct format:
+     Female  married:  "Smt. Jingiti Aruna W/o Jangiti Anjaneyulu,..."
+     Female unmarried: "Kum. Kavitha D/o Ramaiah, Age: 19 years,..."
+     Male:             "Sri. Chityala Praveen S/o Chityala Ramulu,..."
+4. NAME EXTRACTION — PRESERVE TELUGU NAME ORDER VERBATIM:
+   Telugu names are written SURNAME-FIRST then given name (e.g.,
+   "Jingiti Aruna" not "Aruna Jingiti"). Copy the complete name exactly
+   as it appears in the FIR petition / complaint. Do NOT reorder, do NOT
+   shorten, do NOT swap "first" and "last" name positions. Same rule for
+   the parent/spouse name — extract the FULL name including initials
+   (e.g., "Jangiti Anjaneyulu", never just "Jangiti"). If the source
+   shows "Smt. X Y W/o A B", you must emit name="X Y" and
+   father_name="A B" — both in full, both in source order.
+5. SECTIONS — PRESERVE SUB-SECTION NUMBERS VERBATIM:
+   Section numbers MUST include their sub-section parts in brackets.
+   Examples of valid section strings:
+       "118(1)", "351(2)", "126(2)", "115(2)", "3(5) BNS"
+   Examples of FORBIDDEN truncations:
+       "351"  (missing the "(2)")
+       "118"  (missing the "(1)")
+       "115"  (missing the "(2)")
+   When you see "351(2) BNS" in the source, emit it as "351(2)" in the
+   `sections` field. Never strip the bracketed sub-section. Final
+   sections string must be a comma-separated list with "R/w 3(5) BNS"
+   appended when ≥ 2 accused acted together.
+6. ALL ACCUSED: Map every accused found in the documents. Never stop at A1.
+7. ALL WITNESSES: A complete chargesheet typically has 7–10 LWs. Extract
    every witness found.
-6. LW CONSISTENCY: The same person has the same LW number in Field 13
+8. LW CONSISTENCY: The same person has the same LW number in Field 13
    AND in every Brief Facts paragraph.
-7. SECTIONS EXACT: Copy `sections` verbatim from the manual input — use
+9. SECTIONS EXACT: Copy `sections` verbatim from the manual input — use
    the same string in ¶3 FIR registration and ¶10 evidence conclusion.
-8. DATES FROM DOCUMENTS ONLY: Never use today's date. Never invent dates.
-9. MEDICAL FINDING VERBATIM: Use the doctor's exact words for the injury
-   nature in ¶8.
-10. COURT NAME EXACT: Use the court name exactly as provided — never add
+10. DATES FROM DOCUMENTS ONLY: Never use today's date. Never invent dates.
+11. MEDICAL FINDING VERBATIM: Use the doctor's exact words for the injury
+    nature in ¶8.
+12. COURT NAME EXACT: Use the court name exactly as provided — never add
     "ADDL." or any prefix not in the manual input.
-11. NOT FOUND RULE: If a value is genuinely absent from every uploaded
+13. NOT FOUND RULE: If a value is genuinely absent from every uploaded
     document, write "NOT FOUND IN DOCUMENTS" for that exact value. Never
     guess, invent, or approximate.
-12. TEMPLATE FIDELITY: The downstream renderer matches the empty
+14. TEMPLATE FIDELITY: The downstream renderer matches the empty
     chargesheet template — your job is to fill it, not redesign it.
 
 ═══════════════════════════════════════════════════════════
@@ -243,9 +272,9 @@ SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object, no markdown fences):
   "un_occurred_reason": "<from manual input or '----'>",
   "chargesheet_type": "<from manual input — Original/Supplementary>",
   "io": {"salutation":"<Sri./Smt.>","name":"<from manual>","rank":"<from manual>","station":"<from manual>"},
-  "complainant": {"salutation":"","name":"","father_name":"","age":"","caste":"","occupation":"","address":"","phone":""},
+  "complainant": {"salutation":"Smt./Kum./Sri.","name":"<surname-first per source>","father_name":"<full name per source>","relation":"W/o|S/o|D/o (exactly one)","gender":"male|female","marital_status":"married|unmarried","age":"","caste":"","occupation":"","address":"","phone":""},
   "accused": [
-    {"serial":"A1","salutation":"","name":"","alias":"","father_name":"","age":"","caste":"","occupation":"","address":"","phone":"","section_35_3_notice_date":""}
+    {"serial":"A1","salutation":"Smt./Kum./Sri.","name":"<surname-first per source>","alias":"","father_name":"<full name per source>","relation":"W/o|S/o|D/o (exactly one)","gender":"male|female","marital_status":"married|unmarried","age":"","caste":"","occupation":"","address":"","phone":"","section_35_3_notice_date":""}
   ],
   "arrest_release": "A notice U/s 35(3) BNSS was served to accused persons A1 to A<n> on <DD.MM.YYYY>.",
   "sureties": "--",
@@ -253,7 +282,7 @@ SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object, no markdown fences):
   "absconding": "--",
   "accused_not_chargesheeted": "Nil",
   "witnesses": [
-    {"serial":"LW-1","salutation":"","name":"","father_name":"","age":"","caste":"","occupation":"","address":"","phone":"","role":"Complainant and Injured"}
+    {"serial":"LW-1","salutation":"Smt./Kum./Sri.","name":"<surname-first per source>","father_name":"<full name per source>","relation":"W/o|S/o|D/o","gender":"male|female","marital_status":"married|unmarried","age":"","caste":"","occupation":"","address":"","phone":"","role":"Complainant and Injured"}
   ],
   "property_recovered": "---",
   "fr_false_action": "--Nil--",

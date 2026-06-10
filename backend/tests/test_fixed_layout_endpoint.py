@@ -140,8 +140,8 @@ def test_render_happy_path(auth, staged_case, doc_type, expected_heading):
     # FIR number + police_station should be in rendered doc
     assert "Makthal PS" in all_text
     assert "TEST/57/2026" in all_text
-    # Missing fields should render as blanks
-    assert "_____" in all_text, "Blanks not present for missing fields"
+    # Missing fields should render as the standard 'NOT FOUND IN DOCUMENTS' marker
+    assert "NOT FOUND IN DOCUMENTS" in all_text, "Missing-field marker not present"
 
 
 def test_zero_credits_deducted(auth, me, staged_case):

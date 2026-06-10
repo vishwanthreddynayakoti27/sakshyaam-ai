@@ -149,30 +149,68 @@ def _set_margins(doc, top: float = 1.5, right: float = 1.5,
 # ============================================================
 # Person / witness formatting helpers (matches station style)
 # ============================================================
+def _pick_relation(p: Dict[str, Any]) -> str:
+    """Choose the correct parentage/spouse prefix from gender + marital hints.
+
+    Returns exactly ONE of: 'W/o', 'S/o', 'D/o'.
+    Never combines them (fixes the 'S/o W/o' bug).
+    Priority:
+      1. Explicit p["relation"] if it cleanly matches one of the three.
+      2. Female + (married | salutation starts 'Smt.') → W/o
+      3. Female + unmarried → D/o
+      4. Male / default                              → S/o
+    """
+    explicit = (p.get("relation") or "").strip()
+    # Strip combined garbage like "S/o W/o" → fallback to gender-based pick
+    valid = {"w/o": "W/o", "s/o": "S/o", "d/o": "D/o"}
+    low = explicit.lower()
+    if low in valid:
+        return valid[low]
+    gender = (p.get("gender") or "").strip().lower()
+    salutation = (p.get("salutation") or "").strip().lower()
+    marital = (p.get("marital_status") or "").strip().lower()
+    is_female = gender.startswith("f") or salutation.startswith(("smt", "kum"))
+    is_married = salutation.startswith("smt") or marital == "married"
+    if is_female:
+        return "W/o" if is_married else "D/o"
+    return "S/o"
+
+
 def _format_person_block(p: Dict[str, Any]) -> str:
     """
     Compose a station-style person block:
-    "Sri. <Name> S/o <Father>, Age: <N> years, Caste: <X>, Occ: <Y>,
-     R/o <Address>, Ph.<phone>"
-    Missing parts collapse to '_____' so officer can fill in.
+      "Smt./Sri./Kum. <Name> <W/o|S/o|D/o> <Parent/Spouse>,
+       Age: <N> years, Caste: <X>, Occ: <Y>, R/o <Address>, Ph.<phone>"
+    Missing parts collapse to '_____' (or 'NOT FOUND IN DOCUMENTS' upstream).
     """
     if not isinstance(p, dict):
         return BLANK
-    salutation = p.get("salutation") or ("Smt." if (p.get("gender") or "").lower().startswith("f") else "Sri.")
-    name = p.get("name") or ""
-    relation = p.get("relation") or "S/o"
-    father = p.get("father") or p.get("guardian") or ""
-    age = p.get("age") or ""
-    caste = p.get("caste") or ""
-    occ = p.get("occupation") or p.get("occ") or ""
-    addr = p.get("address") or p.get("permanent_address") or ""
-    phone = p.get("phone") or ""
+    name = (p.get("name") or "").strip()
+    # Gender → salutation default
+    gender = (p.get("gender") or "").strip().lower()
+    is_female = gender.startswith("f")
+    marital = (p.get("marital_status") or "").strip().lower()
+    if p.get("salutation"):
+        salutation = p["salutation"]
+    elif is_female and marital == "married":
+        salutation = "Smt."
+    elif is_female:
+        salutation = "Kum."
+    else:
+        salutation = "Sri."
+    relation = _pick_relation(p)
+    father = (p.get("father") or p.get("guardian") or "").strip()
+    age = (p.get("age") or "").strip()
+    caste = (p.get("caste") or "").strip()
+    occ = (p.get("occupation") or p.get("occ") or "").strip()
+    addr = (p.get("address") or p.get("permanent_address") or "").strip()
+    phone = (p.get("phone") or "").strip()
 
     def f(v): return v if v else BLANK
     pieces = [
         f"{salutation} {f(name)}",
         f"{relation} {f(father)}",
-        f"Age: {f(age)} years" if age else "Age: _____ years",
+        f"Age: {f(age)} years" if age else f"Age: {BLANK} years",
         f"Caste: {f(caste)}",
         f"Occ: {f(occ)}",
         f"R/o {f(addr)}",
@@ -180,10 +218,9 @@ def _format_person_block(p: Dict[str, Any]) -> str:
     if phone:
         pieces.append(f"Ph.{phone}")
     else:
-        pieces.append("Ph._____")
+        pieces.append(f"Ph.{BLANK}")
     aadhaar = p.get("aadhaar_number")
     if aadhaar:
-        # Format 12-digit aadhaar as "1234 5678 9012" for readability
         digits = re.sub(r"\D", "", str(aadhaar))
         if len(digits) == 12:
             aadhaar_disp = f"{digits[:4]} {digits[4:8]} {digits[8:]}"
