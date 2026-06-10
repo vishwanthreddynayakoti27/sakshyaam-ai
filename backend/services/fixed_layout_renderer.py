@@ -35,7 +35,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 logger = logging.getLogger(__name__)
 
-BLANK = "_____"
+BLANK = "NOT FOUND IN DOCUMENTS"
 
 
 # ============================================================

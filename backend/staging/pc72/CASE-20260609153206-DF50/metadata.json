@@ -1,0 +1,167 @@
+{
+  "case_id": "CASE-20260609153206-DF50",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "100",
+  "sections": "",
+  "created_at": "2026-06-09T15:32:06.037379+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "24-4-25.pdf",
+      "saved_name": "3a783afc_24-4-25.pdf",
+      "size": 1098366,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T15:32:17.406345+00:00"
+    },
+    {
+      "original_name": "28--4-25.pdf",
+      "saved_name": "38739ff2_28--4-25.pdf",
+      "size": 888749,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T15:32:17.406788+00:00"
+    },
+    {
+      "original_name": "All.pdf",
+      "saved_name": "1873dcb9_All.pdf",
+      "size": 5990345,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T15:32:17.410961+00:00"
+    },
+    {
+      "original_name": "cdf.pdf",
+      "saved_name": "4aabdaf4_cdf.pdf",
+      "size": 865918,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T15:32:17.411389+00:00"
+    },
+    {
+      "original_name": "mcs.pdf",
+      "saved_name": "d6818ea2_mcs.pdf",
+      "size": 3005236,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-09T15:32:17.413054+00:00"
+    },
+    {
+      "original_name": "29&4-25_1(1).jpg",
+      "saved_name": "f3da28d4_29&4-25_1(1).jpg",
+      "size": 475250,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.413304+00:00"
+    },
+    {
+      "original_name": "29&4-25_1.jpg",
+      "saved_name": "9aa83129_29&4-25_1.jpg",
+      "size": 609075,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.413591+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(1).jpg",
+      "saved_name": "7855a79a_41 crpc_1(1).jpg",
+      "size": 325994,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.413768+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(2).jpg",
+      "saved_name": "d928c9c6_41 crpc_1(2).jpg",
+      "size": 565003,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.414006+00:00"
+    },
+    {
+      "original_name": "41 crpc_1(3).jpg",
+      "saved_name": "52252f17_41 crpc_1(3).jpg",
+      "size": 381388,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.414203+00:00"
+    },
+    {
+      "original_name": "41 crpc_1.jpg",
+      "saved_name": "b4aa418d_41 crpc_1.jpg",
+      "size": 558942,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.414609+00:00"
+    },
+    {
+      "original_name": "Aadhars_1 (1).jpg",
+      "saved_name": "86fcd2dd_Aadhars_1 (1).jpg",
+      "size": 283657,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.414790+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(1) (1).jpg",
+      "saved_name": "dd66a59b_Aadhars_1(1) (1).jpg",
+      "size": 680444,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415087+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(1).jpg",
+      "saved_name": "3ff86460_Aadhars_1(1).jpg",
+      "size": 0,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415130+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(2).jpg",
+      "saved_name": "80517560_Aadhars_1(2).jpg",
+      "size": 297300,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415279+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(3).jpg",
+      "saved_name": "da348342_Aadhars_1(3).jpg",
+      "size": 253597,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415415+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(4).jpg",
+      "saved_name": "611de1fa_Aadhars_1(4).jpg",
+      "size": 254811,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415562+00:00"
+    },
+    {
+      "original_name": "Aadhars_1(5).jpg",
+      "saved_name": "15fc278f_Aadhars_1(5).jpg",
+      "size": 213735,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415675+00:00"
+    },
+    {
+      "original_name": "Aadhars_1.jpg",
+      "saved_name": "158dad78_Aadhars_1.jpg",
+      "size": 283657,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.415820+00:00"
+    },
+    {
+      "original_name": "Part-II_1(1).jpg",
+      "saved_name": "44dc47c6_Part-II_1(1).jpg",
+      "size": 663835,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.416104+00:00"
+    },
+    {
+      "original_name": "Part-II_1(2).jpg",
+      "saved_name": "7b72fb8d_Part-II_1(2).jpg",
+      "size": 582029,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.416365+00:00"
+    },
+    {
+      "original_name": "Part-II_1.jpg",
+      "saved_name": "563c824c_Part-II_1.jpg",
+      "size": 617591,
+      "type": ".jpg",
+      "uploaded_at": "2026-06-09T15:32:17.416657+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260609153227-188e"
+}

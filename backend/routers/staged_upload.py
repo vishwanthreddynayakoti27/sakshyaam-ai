@@ -890,41 +890,52 @@ async def get_job_status(
 # =====================================================================
 # Schema adapter: LLM JSON → fixed_layout_renderer schema
 # =====================================================================
+NOT_FOUND = "NOT FOUND IN DOCUMENTS"
+
+
+def _nf(value, default=NOT_FOUND):
+    """Return value or 'NOT FOUND IN DOCUMENTS' instead of an empty string.
+
+    Phase-1 (manual) values that come in as empty are rare; they should
+    still be flagged so the officer sees the gap.
+    """
+    if value is None:
+        return default
+    s = str(value).strip()
+    if not s or s == "_____":
+        return default
+    return s
+
+
 def _adapt_person(p: dict) -> dict:
-    """Translate LLM person schema (father_name, occupation, ...) →
-    fixed_layout_renderer schema (father, occ, ...)."""
+    """Translate LLM person schema → fixed_layout_renderer schema."""
     if not isinstance(p, dict):
         return {}
     return {
         "salutation": p.get("salutation") or "",
-        "name": p.get("name") or "",
-        "father": p.get("father_name") or p.get("father") or "",
-        "age": p.get("age") or "",
-        "caste": p.get("caste") or "",
-        "occupation": p.get("occupation") or p.get("occ") or "",
-        "address": p.get("address") or p.get("permanent_address") or "",
-        "phone": p.get("phone") or "",
+        "name": _nf(p.get("name"), ""),
+        "father": _nf(p.get("father_name") or p.get("father"), ""),
+        "age": _nf(p.get("age"), ""),
+        "caste": _nf(p.get("caste"), ""),
+        "occupation": _nf(p.get("occupation") or p.get("occ"), ""),
+        "address": _nf(p.get("address") or p.get("permanent_address"), ""),
+        "phone": _nf(p.get("phone"), ""),
         "gender": p.get("gender") or "",
         "aadhaar_number": p.get("aadhaar_number") or "",
         "type": p.get("role") or p.get("type") or "",
         "role": p.get("role") or p.get("type") or "",
+        "alias": p.get("alias") or "",
     }
 
 
 def _adapt_llm_schema_to_fixed_layout(cs: dict) -> dict:
     """
-    Translate the intelligent_charge_sheet LLM JSON output into the
+    Translate the V3.0 intelligent_charge_sheet LLM JSON output into the
     schema expected by services.fixed_layout_renderer.render_charge_sheet
     so the AUTHENTIC 18-section Telangana layout is produced.
 
-    Mapping highlights:
-      court               → court_name + court_place (split from "AT <PLACE>")
-      chargesheet_date    → today_date
-      chargesheet_type    → charge_sheet_kind
-      io.rank/station     → io.designation / police_station fallback
-      property_recovered  → properties_seized
-      notice_ack_enclosed → ack_notice_enclosed
-      brief_facts (str)   → brief_facts_paragraphs (list of cleaned paragraphs)
+    "Not found" policy: blank cells render as 'NOT FOUND IN DOCUMENTS'
+    (never '_____').
     """
     if not isinstance(cs, dict):
         return {}
@@ -932,7 +943,7 @@ def _adapt_llm_schema_to_fixed_layout(cs: dict) -> dict:
     court_name, court_place = "", ""
     if " AT " in court.upper():
         idx = court.upper().rfind(" AT ")
-        court_name = court[:idx].replace("IN THE COURT OF", "").strip().lstrip()
+        court_name = court[:idx].replace("IN THE COURT OF", "").strip()
         court_place = court[idx + 4:].strip().rstrip(",.").strip()
     brief = cs.get("brief_facts") or ""
     if isinstance(brief, list):
@@ -941,45 +952,49 @@ def _adapt_llm_schema_to_fixed_layout(cs: dict) -> dict:
         brief_paragraphs = [p.strip() for p in brief.split("\n\n") if p.strip()]
     else:
         brief_paragraphs = []
-    # Append the LLM-composed prayer as a final paragraph if present
     prayer = (cs.get("prayer") or "").strip()
     if prayer and (not brief_paragraphs or prayer not in brief_paragraphs[-1]):
         brief_paragraphs.append(prayer)
 
     io_d = cs.get("io") or {}
     return {
-        "court_name": court_name or "ADDL. JUDICIAL FIRST CLASS MAGISTRATE",
-        "court_place": court_place or (cs.get("district") or ""),
-        "police_station": cs.get("police_station") or "",
-        "district": cs.get("district") or "",
-        "fir_number": cs.get("fir_number") or "",
-        "fir_date": cs.get("fir_date") or "",
-        "today_date": cs.get("chargesheet_date") or "",
-        "sections": cs.get("sections") or "",
-        "final_report_type": "Charge Sheet.",
-        "charge_sheet_kind": cs.get("chargesheet_type") or "Original.",
+        "court_name": court_name or "JUDICIAL FIRST CLASS MAGISTRATE",
+        "court_place": court_place or _nf(cs.get("district"), "NOT FOUND IN DOCUMENTS"),
+        "police_station": _nf(cs.get("police_station")),
+        "district": _nf(cs.get("district")),
+        "fir_number": _nf(cs.get("fir_number")),
+        "fir_date": _nf(cs.get("fir_date")),
+        "charge_sheet_no": _nf(cs.get("chargesheet_no")),
+        "today_date": _nf(cs.get("chargesheet_date")),
+        "sections": _nf(cs.get("sections")),
+        "final_report_type": _nf(cs.get("report_type"), "Charge Sheet."),
+        "fr_unoccurred": _nf(cs.get("un_occurred_reason"), "----"),
+        "charge_sheet_kind": _nf(cs.get("chargesheet_type"), "Original."),
         "io": {
             "salutation": io_d.get("salutation") or "Sri.",
-            "name": io_d.get("name") or "",
-            "designation": io_d.get("rank") or io_d.get("designation") or "Sub inspector of Police",
-            "rank": io_d.get("rank") or io_d.get("designation") or "Sub inspector of Police",
+            "name": _nf(io_d.get("name"), "NOT FOUND IN DOCUMENTS"),
+            "designation": _nf(io_d.get("rank") or io_d.get("designation"),
+                                "Sub Inspector of Police"),
+            "rank": _nf(io_d.get("rank") or io_d.get("designation"),
+                         "Sub Inspector of Police"),
         },
         "complainant": _adapt_person(cs.get("complainant") or {}),
         "accused": [_adapt_person(a) for a in (cs.get("accused") or [])],
         "witnesses": [_adapt_person(w) for w in (cs.get("witnesses") or [])],
-        "properties_seized": cs.get("property_recovered") or "---",
-        "ack_notice_enclosed": cs.get("notice_ack_enclosed") or "No.",
-        "dispatch_date": cs.get("chargesheet_date") or "",
+        "properties_seized": _nf(cs.get("property_recovered"), "---"),
+        "ack_notice_enclosed": _nf(cs.get("notice_ack_enclosed"), "No."),
+        "dispatch_date": _nf(cs.get("dispatch_date")),
         "brief_facts_paragraphs": brief_paragraphs,
-        # Sub-rows 11(a)-(d) — LLM-cleaned or sane defaults
-        "arrest_release": cs.get("arrest_release") or "--",
-        "sureties": cs.get("sureties") or "--",
-        "previous_convictions": cs.get("previous_convictions") or "---",
-        "absconding": cs.get("absconding") or "---",
-        "accused_not_chargesheeted": cs.get("accused_not_chargesheeted") or "Nil",
-        "fr_unoccurred": "----",
-        "fr_false_action": "--",
-        "lab_result": cs.get("lab_result") or "--",
+        "arrest_release": _nf(cs.get("arrest_release"), "--"),
+        "sureties": _nf(cs.get("sureties"), "--"),
+        "previous_convictions": _nf(cs.get("previous_convictions"), "--"),
+        "absconding": _nf(cs.get("absconding"), "--"),
+        "accused_not_chargesheeted": _nf(cs.get("accused_not_chargesheeted"), "Nil"),
+        "fr_false_action": _nf(cs.get("fr_false_action"), "--Nil--"),
+        "lab_result": _nf(cs.get("lab_result"), "--Nil--"),
+        # Pass-through fields used by the response (not rendered)
+        "_extraction_report": cs.get("extraction_report") or {},
+        "_corrections_applied": cs.get("corrections_applied") or [],
     }
 
 
@@ -1100,6 +1115,21 @@ async def generate_intelligent_charge_sheet_endpoint(
 
         fir_safe = (cs_data.get("fir_number") or "case").replace("/", "-")
         filename = f"{fir_safe}_IntelligentChargeSheet.docx"
+        # Surface the extraction report on response headers so the frontend can
+        # show it in a toast / inline panel without re-fetching.
+        report = cs_data.get("extraction_report") or {}
+        import json as _json
+        report_header = _json.dumps({
+            "manual_input_fields_used": report.get("manual_input_fields_used", 10),
+            "extracted_fields_count": report.get("extracted_fields_count", 0),
+            "total_accused": len(cs_data.get("accused") or []),
+            "total_witnesses": len(cs_data.get("witnesses") or []),
+            "brief_facts_paragraphs": report.get("brief_facts_paragraphs",
+                                                  len((cs_data.get("brief_facts") or "").split("\n\n"))),
+            "not_found_fields": report.get("not_found_fields", []),
+            "confidence": report.get("confidence", "High"),
+            "confidence_reason": report.get("confidence_reason", ""),
+        })[:6000]
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -1107,6 +1137,10 @@ async def generate_intelligent_charge_sheet_endpoint(
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "X-Corrections-Count": str(len(cs_data.get("corrections_applied", []))),
                 "X-Model-Used": cs_data.get("_model_used", ""),
+                "X-Extraction-Report": report_header,
+                "Access-Control-Expose-Headers": (
+                    "X-Corrections-Count, X-Model-Used, X-Extraction-Report"
+                ),
             }
         )
     except HTTPException:
