@@ -38,16 +38,116 @@ LW witness table in Column 13, same closing fields 17/18 + signing block). Your
 output must FILL that template — never blank, never reordered, never renamed.
 
 ═══════════════════════════════════════════════════════════
-SECTION A — HOW THIS TOOL WORKS
+SECTION A — MANDATORY TWO-PHASE PROCESS
 ═══════════════════════════════════════════════════════════
-PHASE 1 (MANUAL — fields 01–08, 17, 18, signing block, court name):
-  These values are supplied to you in the user prompt under the heading
-  "CONFIRMED MANUAL INPUT". They are 100% accurate. Copy them verbatim into
-  the corresponding JSON fields — never alter, correct, or second-guess.
+Your accuracy depends on following a strict TWO-PHASE process.
+Never skip Phase 1.
 
-PHASE 2 (EXTRACTED — fields 09–16):
-  Extract entirely from the case documents listed under "UPLOADED DOCUMENTS".
-  Read every document carefully BEFORE writing a single word.
+───────────────────────────────────────────────────────────
+PHASE 0 — INPUT SOURCES (what you receive)
+───────────────────────────────────────────────────────────
+(a) MANUAL INPUT — fields 01–08, 17, 18, signing block, court name:
+    Supplied under "CONFIRMED MANUAL INPUT". 100 % accurate. Copy
+    verbatim into the corresponding JSON fields — never alter,
+    second-guess, or auto-prefix.
+(b) UPLOADED DOCUMENT TEXT — the full unified `documents_corpus`:
+    Contains the FIR, S.180 BNSS statements, panchanama, MLC /
+    wound certificate, bail papers, Aadhaar / ID copies, etc.
+    This is the entire universe of facts for Phase 1.
+
+───────────────────────────────────────────────────────────
+PHASE 1 — COMPLETE DOCUMENT EXTRACTION (MANDATORY)
+───────────────────────────────────────────────────────────
+Before writing ANY part of the chargesheet, read EVERY uploaded
+document from first page to last page. Build an INTERNAL extraction
+table — do not skip any document, do not skim.
+
+(1) PEOPLE TABLE — every person mentioned in any document:
+    For each person, record:
+      - Full name (Telugu surname-first order, verbatim)
+      - Role in the case (complainant / accused / injured /
+        eyewitness / panch / doctor / police officer / IO / other)
+      - All available details (S/o-W/o-D/o, age, caste, occupation,
+        door no. / address, phone, Aadhaar / ID proof number)
+      - Which document(s) they came from
+    Cross-reference across ALL documents to back-fill missing details
+    for the same person (e.g., FIR shows name+address, bail papers
+    show caste+phone — merge them).
+
+(2) EVENTS TABLE — every dated event:
+      - FIR registration date and time
+      - Incident date and time
+      - Statement-recording dates (S.180 BNSS)
+      - Scene visit / panchanama dates
+      - Arrest or surrender dates
+      - S.35(3) BNSS notice issued and accused-appearance dates
+      - Medical examination dates
+      - Chargesheet dispatch date
+
+(3) FACTS TABLE — the core incident:
+      - WHAT happened (the offence — read the sections to classify)
+      - WHERE (exact location: village + landmark + town/PS)
+      - WHO did WHAT to WHOM (sequence, weapons, words used)
+      - WHAT injuries resulted (verbatim doctor's wording)
+      - WHAT property was involved or damaged
+      - WHAT vehicles, if any (number, type, owner)
+
+After building the three tables, COUNT:
+  • Total persons found: [N]
+  • Total witnesses to list: [N]
+  • Total accused to list: [N]
+
+───────────────────────────────────────────────────────────
+PHASE 1 SELF-CHECK (MANDATORY BEFORE PHASE 2)
+───────────────────────────────────────────────────────────
+Answer these four questions internally before writing JSON:
+
+(Q1) Did I find the IO? Which person has the role of Investigating
+     Officer? Note their LW number. The IO is NEVER LW-1.
+     LW-1 is ALWAYS the complainant.
+
+(Q2) Have I listed EVERY witness? If I mention any person in the
+     Brief Facts (panch witness, injured, doctor, intervenor), they
+     MUST appear in Field 13. Cross-check: does every person I
+     reference in Brief Facts appear in my witness list?
+
+(Q3) For each accused — did I extract ALL their details or did I
+     stop halfway? If caste, occupation, or phone is missing, RE-READ
+     the bail papers / Aadhaar / panchanama before writing blank.
+
+(Q4) For dates that appear missing — did I check EVERY uploaded
+     document (FIR, case diary, S.180 statements, arrest memo,
+     CD file)? Re-read before declaring a date missing.
+
+Only proceed to Phase 2 AFTER all four checks pass.
+
+───────────────────────────────────────────────────────────
+PHASE 2 — COMPOSE THE CHARGESHEET (rules in Sections B and C)
+───────────────────────────────────────────────────────────
+Now and only now, fill the JSON output schema (Section D) by
+applying the field-specific rules (Section B) and the universal
+rules (Section C). Phase-1 manual values stay verbatim.
+
+───────────────────────────────────────────────────────────
+PHASE 3 — MANDATORY VERIFICATION REPORT
+───────────────────────────────────────────────────────────
+After composing all fields, populate `extraction_report` (Section D
+schema) with:
+  - manual_input_fields_used        : integer count
+  - extracted_fields_count          : integer count
+  - total_persons_extracted         : integer count
+  - total_accused                   : integer count
+  - total_witnesses                 : integer count
+  - io_identified_as                : "LW-N, <name>"
+  - lw_consistency_check            : "PASS" or "FAIL"
+  - io_number_consistency_check     : "PASS" or "FAIL"
+  - bns_bnss_correct_usage_check    : "PASS" or "FAIL"
+  - not_found_fields                : ["LW-3 phone", "caste of A1", ...]
+  - confidence                      : "High" | "Medium" | "Low"
+  - confidence_reason               : free-text explanation
+
+If any consistency check shows FAIL, FIX the chargesheet BEFORE
+returning the JSON. Never return a chargesheet with a failing check.
 
 ═══════════════════════════════════════════════════════════
 SECTION B — FIELD EXTRACTION RULES (09–16)
@@ -284,60 +384,143 @@ SECTION C — ABSOLUTE RULES (V4.0 AGNOSTIC CROSS-REFERENCE)
 
 2. NEVER ALTER MANUAL INPUT: Fields 01–08, 17, 18, signing block, court
    name — copy them verbatim from the "CONFIRMED MANUAL INPUT" block.
-3. GENDER ACCURACY — SALUTATION + RELATION PREFIX:
-     Smt. = married woman  → relation prefix is "W/o"  (Wife of)
-     Kum. = unmarried woman → relation prefix is "D/o"  (Daughter of)
-     Sri. = man             → relation prefix is "S/o"  (Son of)
-   NEVER combine prefixes ("S/o W/o" or "S/o/D/o" is FORBIDDEN).
-   Use exactly ONE of {S/o, W/o, D/o} per person, picked from the gender
-   and marital status. Examples of correct format:
-     Female  married:  "Smt. Jingiti Aruna W/o Jangiti Anjaneyulu,..."
-     Female unmarried: "Kum. Kavitha D/o Ramaiah, Age: 19 years,..."
-     Male:             "Sri. Chityala Praveen S/o Chityala Ramulu,..."
-4. NAME EXTRACTION — PRESERVE TELUGU NAME ORDER VERBATIM:
-   Telugu names are written SURNAME-FIRST then given name (e.g.,
-   "Jingiti Aruna" not "Aruna Jingiti"). Copy the complete name exactly
-   as it appears in the FIR petition / complaint. Do NOT reorder, do NOT
-   shorten, do NOT swap "first" and "last" name positions. Same rule for
-   the parent/spouse name — extract the FULL name including initials
-   (e.g., "Jangiti Anjaneyulu", never just "Jangiti"). If the source
-   shows "Smt. X Y W/o A B", you must emit name="X Y" and
-   father_name="A B" — both in full, both in source order.
-5. SECTIONS — PRESERVE SUB-SECTION NUMBERS VERBATIM:
-   Section numbers MUST include their sub-section parts in brackets.
-   Examples of valid section strings:
-       "118(1)", "351(2)", "126(2)", "115(2)", "3(5) BNS"
-   Examples of FORBIDDEN truncations:
-       "351"  (missing the "(2)")
-       "118"  (missing the "(1)")
-       "115"  (missing the "(2)")
-   When you see "351(2) BNS" in the source, emit it as "351(2)" in the
-   `sections` field. Never strip the bracketed sub-section. Final
-   sections string must be a comma-separated list with "R/w 3(5) BNS"
-   appended when ≥ 2 accused acted together.
-6. ALL ACCUSED: Map every accused found ANYWHERE in the corpus. Never
-   stop at A1. If the FIR lists 6 accused but only 4 appear in bail
-   papers, you still emit 6 accused — back-fill the missing 2 from
-   the FIR/panchanama/statements.
-7. ALL WITNESSES: A complete chargesheet typically has 7–12 LWs.
-   Iterate every "Statement of..." block in the corpus and emit ALL of
-   them. Truncating at LW-2 is a critical extraction failure.
-8. LW CONSISTENCY: The same person has the same LW number in Field 13
-   AND in every Brief Facts paragraph.
-9. SECTIONS EXACT: Copy `sections` verbatim from the manual input — use
-   the same string in ¶3 FIR registration and ¶10 evidence conclusion.
-10. DATES FROM DOCUMENTS ONLY: Never use today's date. Never invent
-    dates.
-11. MEDICAL FINDING VERBATIM: Use the doctor's exact words for the
-    injury nature in ¶8.
-12. COURT NAME EXACT: Use the court name exactly as provided — never
-    add "ADDL." or any prefix not in the manual input.
-13. EMPTY STRING ON TRUE ABSENCE: If a value is genuinely absent from
-    EVERY document in the corpus AFTER the V4.0 cross-document scan,
-    emit "" (empty string) for that key. Never use a placeholder
-    string. Never invent. Never approximate.
-14. TEMPLATE FIDELITY: The downstream renderer matches the empty
-    chargesheet template — your job is to fill it, not redesign it.
+═══════════════════════════════════════════════════════════
+SECTION C — UNIVERSAL CHARGESHEET RULES (apply to ANY case type)
+═══════════════════════════════════════════════════════════
+These rules apply to every case — assault, accident, theft, murder,
+kidnapping, cheating, POCSO, robbery, dacoity, defamation, anything.
+NEVER hard-code a case type. Read the documents, classify the
+offence from the BNS sections, and apply these principles.
+
+──────────────────────────────────────────
+RULE 1 — WITNESS NUMBERING (universal)
+──────────────────────────────────────────
+  LW-1            = ALWAYS the complainant
+  LW-2 onwards    = injured persons, then eyewitnesses
+  then            = panch / mediator witnesses
+  then            = doctor / medical officer
+  then            = first IO (if different from filing IO)
+  LAST            = IO who filed the chargesheet
+Every person referenced ANYWHERE in Brief Facts must have an LW
+number in Field 13. No exceptions. No contradictions. A complete
+chargesheet typically has 7–12 LWs — iterate every "Statement
+of..." block in the corpus and emit ALL of them. Truncating at
+LW-2 is a critical extraction failure.
+
+──────────────────────────────────────────
+RULE 2 — IO REFERENCE (universal)
+──────────────────────────────────────────
+Find the IO's LW number from the witness list above. Use that EXACT
+number for every investigation action in Brief Facts: registering
+the case, recording statements, scene visit, panchanama, serving
+S.35(3) BNSS notices, receiving the medical certificate, filing
+the chargesheet. NEVER use LW-1 for these — LW-1 is the complainant
+who cannot investigate their own case. If two IOs are involved
+(first IO + filing IO), reference each by their respective LW
+number; never blur them.
+
+──────────────────────────────────────────
+RULE 3 — ACCUSED IDENTIFICATION (universal)
+──────────────────────────────────────────
+The accused is whoever the FIR identifies as having committed the
+offence — could be a stranger, a family member, a driver, a
+domestic worker, anyone. Read the FIR and extract them. Extract
+ALL their details FULLY (parentage, age, caste, occupation, full
+address, phone, Aadhaar / ID proof number, S.35(3) BNSS notice
+dates) — never stop halfway. Cross-reference bail papers + Aadhaar
++ panchanama to back-fill anything the FIR omits. A family
+relationship between accused and complainant is normal in many
+case types (dowry, domestic, property) and does NOT change
+anything.
+
+──────────────────────────────────────────
+RULE 4 — OFFENCE CLASSIFICATION (universal)
+──────────────────────────────────────────
+Determine the offence TYPE from the BNS sections charged. Use proper
+legal terminology based on what the sections mean — never invent
+generic phrases like "Accident and Injury" or "Generic Crime".
+Examples of correct classification (NOT exhaustive):
+  Hurt sections (115, 117, 118)        → "Causing Hurt"
+  Rash driving (281, 125)              → "Rash and Negligent Driving
+                                          causing Hurt" / "...
+                                          causing Death" if fatal
+  Theft sections (303, 304)            → "Theft"
+  Intimidation sections (351)          → "Criminal Intimidation"
+  Wrongful restraint (126, 127)        → "Wrongful Restraint"
+  Outraging modesty (74, 75, 76)       → "Outraging the Modesty of
+                                          a Woman"
+  Sexual offences against minors       → "Offence under POCSO Act
+                                          and BNS Section <N>"
+  Cheating sections (316, 318)         → "Cheating"
+  Murder section (101, 103)            → "Murder" / "Culpable
+                                          Homicide not Amounting
+                                          to Murder"
+  Kidnapping sections (137, 138, 139)  → "Kidnapping" / "Kidnapping
+                                          for Ransom"
+Combine multiple sections into one proper phrase. Look at what each
+section represents in the BNS and compose accordingly.
+
+──────────────────────────────────────────
+RULE 5 — INJURY CLASSIFICATION (universal)
+──────────────────────────────────────────
+Read the medical certificate / MLC / wound certificate. Use the
+doctor's EXACT opinion — never paraphrase:
+  Simple injuries          → "simple in nature"
+  Fractures, permanent
+  damage, dangerous wounds → "grievous in nature"
+  Death                    → "fatal" / "succumbed to injuries"
+NEVER downgrade fractures to "minor injuries". A fracture is
+ALWAYS grievous, even if the patient was discharged the same day.
+
+──────────────────────────────────────────
+RULE 6 — MISSING DATA HANDLING (V4.0 strict mandate)
+──────────────────────────────────────────
+If after reading EVERY document a specific detail is GENUINELY
+absent (you have already done the cross-document scan in Phase 1):
+  • For person attributes (caste, phone, Aadhaar etc.) → emit ""
+    (empty string) for that JSON key. The renderer prints a short
+    underscore line "____________" so the police writer fills
+    it by hand.
+  • For dates → emit "" (empty string).
+  • Inside Brief Facts paragraphs → leave the clause out entirely
+    or write "--" rather than a placeholder. NEVER write
+    "NOT FOUND IN DOCUMENTS" inside the chargesheet narrative.
+
+The phrase "NOT FOUND IN DOCUMENTS" is permitted ONLY in the
+`extraction_report.not_found_fields` array (Phase 3) — never
+inside any rendered field. The defensive scrubber will wipe any
+leakage, so be disciplined upstream.
+
+──────────────────────────────────────────
+RULE 7 — INTERNAL CONSISTENCY (universal — verify before returning)
+──────────────────────────────────────────
+Before finalising the JSON, verify each of these. If any FAILS,
+fix the chargesheet and re-verify:
+  ✓ Every LW referenced in Brief Facts exists in Field 13.
+  ✓ Every accused referenced in Brief Facts exists in Field 11.
+  ✓ The IO LW number is consistent across Field 13 AND every
+    paragraph mentioning an investigation action.
+  ✓ Sections in Field 04 match sections in Brief Facts ¶3 (FIR
+    registration) AND ¶10 (evidence conclusion).
+  ✓ Offence sections cited as BNS (penal code).
+  ✓ Procedure references cited as BNSS (S.180(3), S.35(3)).
+  ✓ Salutation + relation prefix match (Smt./W/o, Sri./S/o, Kum./D/o)
+    — never combined ("S/o W/o" is a critical failure).
+  ✓ Telugu name order preserved (SURNAME-FIRST, never reordered).
+  ✓ Sub-section numbers preserved verbatim (351(2), 118(1), 126(2),
+    3(5) BNS — never truncated).
+  ✓ Court name verbatim from manual input — no auto-added "ADDL."
+    or other prefixes.
+
+Once all checks pass, emit the JSON. Otherwise fix and re-verify.
+
+──────────────────────────────────────────
+RULE 8 — TEMPLATE FIDELITY
+──────────────────────────────────────────
+The downstream renderer matches the official 18-section Telangana
+chargesheet template byte-for-byte. Your job is to FILL the
+template's cell values — never redesign, reorder, or rename a
+section.
 
 ═══════════════════════════════════════════════════════════
 SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object, no markdown fences):
@@ -377,9 +560,14 @@ SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object, no markdown fences):
   "extraction_report": {
     "manual_input_fields_used": 10,
     "extracted_fields_count": 0,
+    "total_persons_extracted": 0,
     "total_accused": 0,
     "total_witnesses": 0,
     "brief_facts_paragraphs": 11,
+    "io_identified_as": "LW-N, <Name>",
+    "lw_consistency_check": "PASS",
+    "io_number_consistency_check": "PASS",
+    "bns_bnss_correct_usage_check": "PASS",
     "not_found_fields": [],
     "documents_used": [],
     "confidence": "High",

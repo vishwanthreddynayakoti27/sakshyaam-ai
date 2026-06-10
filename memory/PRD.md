@@ -41,6 +41,27 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-10: V4.0 + Master IO Phase 1 / Phase 2 / Phase 3 prompt
+- ✅ **User-mandated Phase 1 / 2 / 3 prompt structure** integrated into the ICGS SYSTEM_PROMPT:
+  - **Phase 1 — Complete Document Extraction (mandatory)**: LLM is required to build three internal extraction tables before composing — PEOPLE (with role + cross-document back-fill), EVENTS (every dated event), FACTS (offence + location + injuries + property + vehicles). Then COUNT total persons/witnesses/accused.
+  - **Phase 1 Self-Check (mandatory before Phase 2)**: four internal questions — (Q1) IO identified, never LW-1; (Q2) every person in Brief Facts has an LW number; (Q3) accused details extracted fully not halfway; (Q4) every missing date re-checked across all files.
+  - **Phase 2 — 7 Universal Rules (case-type agnostic)**: rewrites Section C as RULE 1 (Witness Numbering: LW-1 = ALWAYS complainant), RULE 2 (IO Reference: NEVER LW-1), RULE 3 (Accused Identification with full back-fill), RULE 4 (Offence Classification from BNS sections — never invent "Accident and Injury", look up what each section represents), RULE 5 (Injury Classification: fractures = grievous), RULE 6 (Missing Data — `""` in JSON, never `NOT FOUND IN DOCUMENTS` in narrative; the literal phrase is allowed ONLY in `extraction_report.not_found_fields`), RULE 7 (Internal Consistency — 10-point checklist run before returning).
+  - **Phase 3 — Mandatory Verification Report**: `extraction_report` JSON now includes `total_persons_extracted`, `io_identified_as` (with LW number), `lw_consistency_check`, `io_number_consistency_check`, `bns_bnss_correct_usage_check` (all `"PASS"`/`"FAIL"`). LLM must FIX any FAIL before returning.
+- ✅ **Verified end-to-end on FIR 100/2025** (post-prompt update):
+  ```
+  io_identified_as: "LW-8, K Lal Singh"    ← Phase 1 Q1 answered
+  lw_consistency_check: "PASS"             ← RULE 7
+  io_number_consistency_check: "PASS"      ← RULE 2
+  bns_bnss_correct_usage_check: "PASS"     ← RULE 7
+  total_persons_extracted: 15
+  total_accused: 6, total_witnesses: 9
+  not_found_fields: []                     ← cross-reference back-fill worked
+  confidence: "High"
+  NOT FOUND occurrences in rendered DOCX: 0
+  ```
+- ✅ Sample available at: https://legal-fusion-queue.preview.emergentagent.com/test-docs/FIR_100-2025_ChargeSheet_V4_Phase123.docx
+- ✅ Tests: 36/36 pass · 7 new V4.0-specific tests now also assert the Phase 1/2/3 structure + 10 RULE titles are present in the prompt.
+
 ### 2026-06-10: V4.0 — Agnostic Cross-Reference Extraction Layer
 - ✅ **STRICT PLACEHOLDER BAN enforced**: V4.0 mandate rewrites the SYSTEM_PROMPT for all three LLM services (`intelligent_charge_sheet.py`, `intelligent_case_diary.py`, `intelligent_remand_report.py`). The literal strings `"NOT FOUND IN DOCUMENTS"`, `"NOT FOUND"`, `"N/A"`, `"—"`, `"?"`, `"TBD"` are now FORBIDDEN in the LLM output. If a field is truly missing across all files, the LLM emits empty string `""` and the renderer prints a short underscore line `____________` (police-form convention).
 - ✅ **Unified Data Pool + Cross-Document Field Back-Filling**: explicit prompt rules now instruct the LLM to scan the FULL unified `documents_corpus` for each entity (Accused profile = parentage + age + caste + occupation + address + phone + S.35(3) BNSS dates) by cross-examining FIR + bail papers + panchanama + S.180 BNSS statements + Aadhaar/ID files — not just one source file per field.

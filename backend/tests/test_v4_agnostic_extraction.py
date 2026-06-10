@@ -80,13 +80,20 @@ def test_fixed_layout_renderer_blank_constant_is_underscore_line():
 
 
 def test_intelligent_chargesheet_prompt_contains_v4_rules():
-    """Verify the V4.0 cross-reference rules are present in the prompt."""
+    """Verify the V4.0 cross-reference rules + Phase 1/2/3 mandate are present."""
     from services.intelligent_charge_sheet import SYSTEM_PROMPT
     assert "STRICT PLACEHOLDER BAN" in SYSTEM_PROMPT
     assert "Dynamic Witness Compilation" in SYSTEM_PROMPT
     assert "Accused Profiling" in SYSTEM_PROMPT
     assert "FORBIDDEN from emitting the literal strings" in SYSTEM_PROMPT
-    assert "EMPTY STRING ON TRUE ABSENCE" in SYSTEM_PROMPT
+    # Phase 1/2/3 mandatory structure
+    assert "PHASE 1 — COMPLETE DOCUMENT EXTRACTION" in SYSTEM_PROMPT
+    assert "PHASE 1 SELF-CHECK" in SYSTEM_PROMPT
+    assert "PHASE 3 — MANDATORY VERIFICATION REPORT" in SYSTEM_PROMPT
+    assert "WITNESS NUMBERING (universal)" in SYSTEM_PROMPT
+    assert "LW-1            = ALWAYS the complainant" in SYSTEM_PROMPT
+    assert "OFFENCE CLASSIFICATION (universal)" in SYSTEM_PROMPT
+    assert "INJURY CLASSIFICATION (universal)" in SYSTEM_PROMPT
 
 
 def test_intelligent_case_diary_prompt_contains_v4_rules():
