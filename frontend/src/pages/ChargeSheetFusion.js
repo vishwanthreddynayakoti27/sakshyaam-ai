@@ -53,6 +53,49 @@ const ChargeSheetFusion = () => {
   );                                                                        // Field 13
   const [dispatchDate, setDispatchDate] = useState('');                    // Field 14
   const [ackEnclosed, setAckEnclosed] = useState('No');                    // Field 15 (Yes/No)
+  // ── 2026-06 writer-feedback additions ──────────────────────────────
+  // Explicit "death / inquest case" checkbox so panch witnesses don't
+  // get false-flagged as missing statements when sections include
+  // 194 BNSS / 174 CrPC / 103 / 105 BNS.
+  const [isDeathCase, setIsDeathCase] = useState(false);
+  // localStorage-backed "Saved Courts" list — datalist suggestions for
+  // the court input. Seeded with the 4 most common courts handled by
+  // Makthal / Narayanpet / Mahabubnagar writers, then user can save
+  // additional courts via the small "+ Save" button next to the input.
+  const _DEFAULT_COURTS = React.useMemo(() => ([
+    'JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL',
+    'JUDICIAL FIRST CLASS MAGISTRATE AT NARAYANPET',
+    'JUDICIAL FIRST CLASS MAGISTRATE AT MAHABUBNAGAR',
+    'PRINCIPAL DISTRICT & SESSIONS COURT AT MAHABUBNAGAR',
+  ]), []);
+  const [savedCourts, setSavedCourts] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('np_saved_courts') || '[]');
+      const merged = [..._DEFAULT_COURTS, ...stored];
+      return Array.from(new Set(merged));
+    } catch { return _DEFAULT_COURTS; }
+  });
+  const _saveCurrentCourt = () => {
+    const trimmed = (courtName || '').trim();
+    if (!trimmed) {
+      toast.error('Type a court name first, then click Save.');
+      return;
+    }
+    if (savedCourts.includes(trimmed)) {
+      toast.info('Already in your saved-courts list.');
+      return;
+    }
+    const next = [...savedCourts, trimmed];
+    setSavedCourts(next);
+    try {
+      localStorage.setItem('np_saved_courts', JSON.stringify(
+        next.filter((c) => !_DEFAULT_COURTS.includes(c))
+      ));
+      toast.success(`Saved "${trimmed}" — will autocomplete next time.`);
+    } catch (e) {
+      toast.warning('Saved for this session only (browser storage unavailable).');
+    }
+  };
   const [manualFormSubmitted, setManualFormSubmitted] = useState(false);
 
   // === FUSION STATUS ===
@@ -149,6 +192,7 @@ const ChargeSheetFusion = () => {
           if (mi.court_name) setCourtName(mi.court_name);
           if (mi.dispatch_date) setDispatchDate(mi.dispatch_date);
           if (mi.ack_enclosed) setAckEnclosed(mi.ack_enclosed);
+          if (mi.is_death_case === true) setIsDeathCase(true);
           setManualFormSubmitted(true);
         }
         toast.success(`Resumed case ${(fusion.fir_number || saved).slice(0, 30)} — Edit & Regenerate is ready below`, { duration: 5000 });
@@ -199,6 +243,8 @@ const ChargeSheetFusion = () => {
       formData.append('court_name', courtName);
       formData.append('dispatch_date', dispatchDate);
       formData.append('ack_enclosed', ackEnclosed);
+      // 2026-06 — explicit death/inquest override checkbox
+      formData.append('is_death_case', isDeathCase ? 'true' : 'false');
 
       const response = await api.post('/staging/create-case', formData);
 
@@ -592,13 +638,63 @@ const ChargeSheetFusion = () => {
                   </div>
                 </div>
 
-                {/* 13 Court Name */}
+                {/* 13 Court Name — 2026-06 writer-feedback: combo with
+                    autocomplete + 4 default suggestions + a small "+ Save"
+                    button that persists new courts in localStorage so the
+                    next FIR auto-suggests them. */}
                 <div>
-                  <label className="text-white/50 text-[10px] uppercase tracking-wide">13 Court Name</label>
-                  <Input value={courtName} onChange={(e) => setCourtName(e.target.value)}
-                    placeholder="JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL"
+                  <div className="flex items-center justify-between">
+                    <label className="text-white/50 text-[10px] uppercase tracking-wide">13 Court Name</label>
+                    <button
+                      type="button"
+                      onClick={_saveCurrentCourt}
+                      className="text-[10px] uppercase tracking-wider text-white/60 hover:text-[#00FFB3] border border-white/15 rounded-full px-2 py-0.5"
+                      title="Add the current court name to your autocomplete list"
+                      data-testid="manual-court-save-btn"
+                    >
+                      + Save
+                    </button>
+                  </div>
+                  <Input
+                    value={courtName}
+                    onChange={(e) => setCourtName(e.target.value)}
+                    placeholder="Start typing — e.g., MAKTHAL JFCM, NARAYANPET, MAHABUBNAGAR SESSIONS"
                     className="bg-[#030614] border-white/20 text-white text-sm h-9"
-                    data-testid="manual-court-name" />
+                    list="court-name-suggestions"
+                    data-testid="manual-court-name"
+                  />
+                  <datalist id="court-name-suggestions">
+                    {savedCourts.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                  <p className="text-white/35 text-[10px] mt-1">
+                    Suggestions auto-fill from saved courts. Cases route to Makthal JFCM /
+                    Narayanpet JFCM / Mahabubnagar Sessions based on severity — edit freely.
+                  </p>
+                </div>
+
+                {/* 13b — 2026-06 writer-feedback: death/inquest case toggle.
+                    Tells the LLM + verifier to treat panchanama as inquest
+                    (no missing-statement flags) and label panchas correctly. */}
+                <div className="flex items-start gap-2 p-2 rounded-md border border-white/10 bg-[#030614]/50">
+                  <input
+                    type="checkbox"
+                    id="manual-is-death-case"
+                    checked={isDeathCase}
+                    onChange={(e) => setIsDeathCase(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-white/30 bg-[#030614] accent-[#FF4D4D] cursor-pointer"
+                    data-testid="manual-is-death-case"
+                  />
+                  <label
+                    htmlFor="manual-is-death-case"
+                    className="text-white/80 text-xs leading-snug cursor-pointer select-none"
+                  >
+                    <span className="font-semibold text-[#FF4D4D]">Death / Inquest case</span>
+                    <span className="text-white/55">
+                      {' '}(Sec. 194 BNSS / 174 CrPC / 103 / 105 BNS) — tick this when the
+                      panchanama is an inquest panchanama. Panch witnesses will be labelled
+                      &ldquo;Panch for inquest&rdquo; and won&rsquo;t be flagged for missing statements.
+                    </span>
+                  </label>
                 </div>
 
                 {/* 14 Dispatched On + 15 Ack toggle */}

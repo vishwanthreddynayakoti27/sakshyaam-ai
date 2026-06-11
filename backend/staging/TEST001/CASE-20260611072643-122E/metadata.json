@@ -1,0 +1,45 @@
+{
+  "case_id": "CASE-20260611072643-122E",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "PROG-58be0f",
+  "sections": "302,307",
+  "manual_input": {
+    "district": "Test District",
+    "police_station": "Test PS",
+    "fir_number": "PROG-58be0f",
+    "fir_date": "",
+    "chargesheet_no": "",
+    "chargesheet_date": "",
+    "sections": "302,307",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "",
+    "chargesheet_type": "Original",
+    "io_name": "",
+    "io_rank": "",
+    "court_name": "",
+    "dispatch_date": "",
+    "ack_enclosed": "No",
+    "is_death_case": false
+  },
+  "created_at": "2026-06-11T07:26:43.395597+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "57-26_Chargesheet.pdf",
+      "saved_name": "8a6e1743_57-26_Chargesheet.pdf",
+      "size": 3391441,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T07:26:43.737384+00:00"
+    },
+    {
+      "original_name": "236_remand.pdf",
+      "saved_name": "df718c57_236_remand.pdf",
+      "size": 1873718,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T07:26:43.738718+00:00"
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260611072643-1cac"
+}

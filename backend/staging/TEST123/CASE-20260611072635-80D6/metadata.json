@@ -1,0 +1,37 @@
+{
+  "case_id": "CASE-20260611072635-80D6",
+  "officer_id": "TEST123",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "UPLOAD-072635/2026",
+  "sections": "118(2) BNS",
+  "manual_input": {
+    "district": "Narayanpet",
+    "police_station": "Makthal",
+    "fir_number": "UPLOAD-072635/2026",
+    "fir_date": "",
+    "chargesheet_no": "",
+    "chargesheet_date": "",
+    "sections": "118(2) BNS",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "",
+    "chargesheet_type": "Original",
+    "io_name": "",
+    "io_rank": "",
+    "court_name": "",
+    "dispatch_date": "",
+    "ack_enclosed": "No",
+    "is_death_case": false
+  },
+  "created_at": "2026-06-11T07:26:35.203962+00:00",
+  "status": "staging",
+  "files": [
+    {
+      "original_name": "test_doc.docx",
+      "saved_name": "f6a2f46a_test_doc.docx",
+      "size": 61,
+      "type": ".docx",
+      "uploaded_at": "2026-06-11T07:26:35.322611+00:00"
+    }
+  ]
+}

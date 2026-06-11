@@ -95,6 +95,10 @@ async def create_staging_case(
     court_name: str = Form(default=""),
     dispatch_date: str = Form(default=""),
     ack_enclosed: str = Form(default="No"),
+    # 2026-06 writer feedback — explicit "death/inquest case" checkbox
+    # so panchas don't get false-flagged as missing statements when
+    # the sections include 194 BNSS / 174 CrPC / 103 / 105 BNS.
+    is_death_case: str = Form(default="false"),
     officer: dict = Depends(get_current_officer)
 ):
     """
@@ -135,6 +139,7 @@ async def create_staging_case(
             "court_name": court_name,
             "dispatch_date": dispatch_date,
             "ack_enclosed": ack_enclosed,
+            "is_death_case": str(is_death_case).lower() in ("true", "1", "yes", "on"),
         },
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "staging",
@@ -1330,6 +1335,10 @@ async def _process_icgs_background(*, case_id: str, officer: dict, credits_to_de
                 "court_name":         manual.get("court_name", ""),
                 "dispatch_date":      _fmt_date(manual.get("dispatch_date")),
                 "notice_ack_enclosed": (manual.get("ack_enclosed") or "No") + ".",
+                # 2026-06 — explicit death-case override flag forwarded
+                # to the LLM (auto-detection by section also runs in the
+                # prompt; this is the writer's override switch).
+                "is_death_case":      bool(manual.get("is_death_case")),
                 "manual_input_locked": True,
             })
 
@@ -1857,6 +1866,8 @@ async def regenerate_charge_sheet(
         "documents_corpus": trimmed_corpus,
         "corrections": [c.dict() for c in body.corrections],
         "previous_payload": prev_payload,
+        # 2026-06 — keep the death-case flag honoured across regenerations
+        "is_death_case": bool(manual.get("is_death_case")) if manual else False,
     }
     # Re-apply manual lock (so corrections don't drift to use stale defaults)
     if manual:

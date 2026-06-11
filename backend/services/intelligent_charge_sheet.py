@@ -166,6 +166,19 @@ FIELD 10 — PROPERTY SEIZED (mahazar / panchanama / seizure memo):
   Itemise with description + qty + mahazar number. Write "---" if nothing
   was seized.
 
+  ── THEFT-CASE SOURCE PRIORITY (PRIORITISED 2026-06) ──
+  When BNS sections include any of 303, 304, 305, 306, 307, 308, 309 (theft
+  / extortion / robbery / dacoity) OR IPC 378-382, the property in
+  Field 10 MUST come from one of these sources, in order of preference:
+    (a) Separate "Confession-cum-Seizure" / "F-91" / "Seizure Memo" PDF
+        in the corpus — extract every item, qty, identifying mark, value.
+    (b) The "Seizure column" / "Property recovered" section on the BACK
+        SIDE of the Crime Detail Form (CDF) — see CDF rule below.
+    (c) Inline mahazar inside the panchanama narrative.
+  If NONE of these contain seizure data even though sections suggest
+  theft, emit "---" and flag the case for officer review — do NOT
+  invent property.
+
 FIELD 11 — ACCUSED CHARGE SHEETED:
   Extract EVERY accused. Never list only A1 when ≥2 exist. Format per row:
   "A<n>: <Name> @ <alias> S/o <Father>, Age: <X> years, Caste: <X>,
@@ -188,6 +201,52 @@ FIELD 13 — WITNESSES — assign LW numbers in canonical order:
   LW-m+3              : Medical Officer who issued wound certificate
   LW-N-1              : First IO (if different from filing IO)
   LW-N                : IO who filed charge sheet
+
+  ── WITNESS SOURCE MAP (CRITICAL — added 2026-06 per real-world writer feedback) ──
+  Each witness type lives in a DIFFERENT document. Use the right
+  source for each:
+    • LW-1 + statement witnesses (eyewitnesses, intervenors, injured) →
+      from S.180 BNSS statements / Part-II of the case diary. Each
+      statement is a multi-paragraph block with name + parentage in
+      the heading.
+    • "Panch for Scene of Offence" (typically 2 mediators) →
+      from the BACK SIDE of the Crime Detail Form (CDF). They are
+      NEVER in the statements. See CDF DETECTION RULE below.
+    • Doctor / Medical Officer → from the medical certificate / MLC /
+      wound certificate, NOT from statements.
+    • IO 1st + IO who filed → ALWAYS listed as the last two LWs
+      regardless of whether they physically appear in any uploaded
+      file. Pull names + rank from the manual input + signing block.
+
+  ── CDF DETECTION RULE (added 2026-06 — panch witnesses live ONLY here) ──
+  A "Crime Detail Form" page is identified by TWO conditions, BOTH
+  required. If either fails, the page is NOT a CDF.
+    (1) The page has "Crime Detail Form" or just "CDF" as its
+        ACTUAL PAGE HEADING / form title at the top of the page —
+        not as a passing reference inside body text.
+    (2) The same page contains a SHORT STRUCTURED LIST of 2-3 panch
+        persons, formatted as bullet/numbered entries with
+        name + father + age + address — NOT full prose paragraph
+        statements.
+  Only such a page is the panch source. Mere occurrences of the
+  word "CDF" or "Crime Detail Form" inside FIR text, inside a
+  S.180 statement, or inside a chargesheet body reference are NOT
+  panches — ignore them completely.
+  The CDF often arrives as a 2-page PDF: page 1 is the front (crime
+  details, sections, complainant) and page 2 is the back (panch
+  list + seizure column). Always read BOTH pages of every PDF.
+
+  ── INQUEST / DEATH CASE PANCH (BNSS S.194 / CrPC S.174) ──
+  If the case sections include 194 BNSS or 174 CrPC, the panch
+  witnesses are "Panch for inquest" (corpse panchanama / shava
+  panchanama). They do NOT have S.180 statements — the panchanama
+  itself is the document. In this case:
+    • Set each panch's role to "Panch for inquest" (not "Panch for
+      Scene of Offence").
+    • Do NOT flag them as "missing statement" — that is normal for
+      inquest cases.
+    • The panch list still comes from the inquest panchanama
+      document (or the CDF back side, whichever is uploaded).
 
   ── PERSONAL-DETAIL RULE FOR OFFICIAL WITNESSES (CRITICAL) ──
   For CIVILIAN witnesses (complainant, injured, eyewitness, panch):
@@ -214,7 +273,7 @@ FIELD 13 — WITNESSES — assign LW numbers in canonical order:
   Each civilian row needs: salutation, name, parentage, age, caste,
   occ, address, phone, and `role` chosen exactly from this enum:
     "Complainant and Injured", "Eyewitness", "Eyewitness and Injured",
-    "Panch for Scene of Offence",
+    "Panch for Scene of Offence", "Panch for inquest",
     "Issued wound certificates of LWs <X> to <Y>",
     "IO 1st", "IO & filed Charge Sheet"
 
@@ -249,10 +308,34 @@ FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
       and the outcome>. Hence, requested to take necessary legal
       action as per law."
 
-  ¶3  FIR REGISTRATION:
-      "As per the contents of the above complaint, LW-<IO-number> has
-      registered a Case in Cr.No.<FIR No.>/<year> U/s <all sections
-      exactly> and took up the investigation."
+  ¶3  FIR REGISTRATION + ENDORSEMENT (UPDATED 2026-06 — must include
+      the endorsement line, which was being skipped earlier):
+      The paragraph has TWO sentences. Write BOTH; never skip the
+      endorsement sentence even if the endorsement file is sparse.
+
+      Sentence 1 — registration:
+      "As per the contents of the above complaint, LW-<SHO/registering
+      officer LW number> has registered a Case in Cr.No.<FIR No.>/
+      <year> U/s <all sections exactly as on the FIR header> against
+      the accused."
+
+      Sentence 2 — endorsement to IO (this is the line that was
+      missing):
+      "The said case was endorsed to LW-<filing IO LW number>,
+      <rank + name of filing IO>, <PS Name> Police Station, for
+      further investigation U/s <sections, repeat exactly as on
+      the endorsement / Part-II header>, and he/she took up the
+      investigation."
+
+      If a SECOND IO took over later, that handover goes in ¶9 — do
+      NOT merge it into the endorsement.
+
+      If the documents contain a separate "endorsement" or "Part-II
+      header" page naming a different LW as the registering officer
+      vs. the filing IO, use those LW numbers exactly. If only one
+      officer is named (no SHO endorsement found in documents),
+      collapse the two sentences into one but DO mention the
+      sections again in the same paragraph.
 
   ¶4  STATEMENT RECORDING + HOSPITAL:
       "During the course of investigation, LW-<IO> examined and
@@ -466,6 +549,26 @@ RULE 4 — OFFENCE CLASSIFICATION (universal)
 Determine the offence TYPE from the BNS sections charged. Use proper
 legal terminology based on what the sections mean — never invent
 generic phrases like "Accident and Injury" or "Generic Crime".
+
+  ── SECTIONS-CAN-CHANGE-BETWEEN-FIR-AND-CHARGESHEET (added 2026-06) ──
+  Sections at FIR registration and sections at chargesheet filing
+  are OFTEN different. The IO upgrades or downgrades sections as
+  investigation evidence emerges (e.g., FIR registered U/s 115
+  Hurt → chargesheet U/s 117 Grievous Hurt because the wound
+  certificate showed a fracture). When extracting Field 04 sections:
+    1. Manual input "sections" field (Phase 1) — this is the FINAL
+       chargesheet sections supplied by the writer. ALWAYS use this
+       verbatim. Never override from FIR header.
+    2. Inside Brief Facts ¶3 — quote the FIR sections (as on the
+       FIR header) for the registration sentence; quote the FINAL
+       sections (from manual input) in the endorsement sentence.
+    3. Inside Brief Facts ¶10 — use the FINAL sections (from manual
+       input). The conclusion must reflect what the chargesheet
+       actually charges, not what the FIR registered.
+  If the FIR header sections and the manual-input sections differ,
+  this is NORMAL — never flag it as an error and never silently
+  rewrite either.
+
 Examples of correct classification (NOT exhaustive):
   Hurt sections (115, 117, 118)        → "Causing Hurt"
   Rash driving (281, 125)              → "Rash and Negligent Driving
@@ -498,6 +601,38 @@ doctor's EXACT opinion — never paraphrase:
   Death                    → "fatal" / "succumbed to injuries"
 NEVER downgrade fractures to "minor injuries". A fracture is
 ALWAYS grievous, even if the patient was discharged the same day.
+
+──────────────────────────────────────────
+RULE 5B — INQUEST / DEATH CASE FLAG (added 2026-06)
+──────────────────────────────────────────
+Set the top-level boolean `is_inquest_case = true` IF ANY of:
+  (a) The "sections" string contains "194" (BNSS S.194 inquest), or
+      "174" (CrPC S.174 inquest), regardless of which other sections
+      are also listed.
+  (b) The "sections" string contains "103" or "105" BNS (murder /
+      culpable homicide) and a corpse panchanama / inquest
+      panchanama / shava panchanama is uploaded.
+  (c) The manual input contains `is_death_case: true` (an explicit
+      override checkbox on the manual form).
+When `is_inquest_case = true`:
+  - All panch witnesses MUST be tagged role = "Panch for inquest"
+    in Field 13.
+  - The "missing statement" check on those panches is SKIPPED in
+    extraction_report — do NOT list them in not_found_fields for
+    missing statements.
+  - The brief facts ¶5 description changes from "Scene of Offence
+    Panchanama" to "Inquest / Corpse Panchanama" when relevant.
+
+──────────────────────────────────────────
+RULE 5C — THEFT CASE FLAG (added 2026-06)
+──────────────────────────────────────────
+Set `is_theft_case = true` IF the sections include any of: 303,
+304, 305, 306, 307, 308, 309 BNS, or 378-382 IPC. When set:
+  - Field 10 property MUST come from the confession-cum-seizure
+    document or CDF back side (per Field 10 rule above).
+  - If Field 10 is empty after exhaustive cross-document scan,
+    flag this in extraction_report.not_found_fields so the writer
+    knows to upload the F-91 / seizure memo.
 
 ──────────────────────────────────────────
 RULE 6 — MISSING DATA HANDLING (V4.0 strict mandate)
@@ -565,6 +700,9 @@ SECTION D — OUTPUT JSON SCHEMA (emit ONLY this object, no markdown fences):
   "un_occurred_reason": "<from manual input or '----'>",
   "chargesheet_type": "<from manual input — Original/Supplementary>",
   "io": {"salutation":"<Sri./Smt.>","name":"<from manual>","rank":"<from manual>","station":"<from manual>"},
+  "endorsing_officer": {"name":"<SHO / officer who registered the case if different from filing IO, else same as IO>","rank":"<their rank>","lw_number":"<LW-N of this officer in Field 13>"},
+  "is_inquest_case": false,
+  "is_theft_case": false,
   "complainant": {"salutation":"Smt./Kum./Sri.","name":"<surname-first per source>","father_name":"<full name per source>","relation":"W/o|S/o|D/o (exactly one)","gender":"male|female","marital_status":"married|unmarried","age":"","caste":"","occupation":"","address":"","phone":""},
   "accused": [
     {"serial":"A1","salutation":"Smt./Kum./Sri.","name":"<surname-first per source>","alias":"","father_name":"<full name per source>","relation":"W/o|S/o|D/o (exactly one)","gender":"male|female","marital_status":"married|unmarried","age":"","caste":"","occupation":"","address":"","phone":"","section_35_3_notice_date":""}
@@ -644,6 +782,8 @@ def _build_user_prompt(raw_data: Dict[str, Any]) -> str:
         f"Court Name                        : {raw_data.get('court', raw_data.get('court_name', ''))}",
         f"Ack. copy enclosed (Field 17)     : {raw_data.get('notice_ack_enclosed', 'No.')}",
         f"Dispatched on (Field 18)          : {raw_data.get('dispatch_date', '')}",
+        f"Death/Inquest case flag (override): {'YES' if raw_data.get('is_death_case') else 'NO — auto-detect from sections'}",
+        f"Theft case flag (override)        : {'YES' if raw_data.get('is_theft_case_override') else 'NO — auto-detect from sections'}",
         "",
         "──────────── EXTRACTED FROM UPLOADED DOCUMENTS (Phase 2) ────────────",
         f"Scene of offence                  : {raw_data.get('incident_place', '')}",

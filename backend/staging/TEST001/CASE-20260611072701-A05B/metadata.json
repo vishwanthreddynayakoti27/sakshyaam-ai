@@ -1,0 +1,29 @@
+{
+  "case_id": "CASE-20260611072701-A05B",
+  "officer_id": "TEST001",
+  "police_station": "Test PS",
+  "district": "Test District",
+  "fir_number": "NOJOB-062aa1",
+  "sections": "302,307",
+  "manual_input": {
+    "district": "Test District",
+    "police_station": "Test PS",
+    "fir_number": "NOJOB-062aa1",
+    "fir_date": "",
+    "chargesheet_no": "",
+    "chargesheet_date": "",
+    "sections": "302,307",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "",
+    "chargesheet_type": "Original",
+    "io_name": "",
+    "io_rank": "",
+    "court_name": "",
+    "dispatch_date": "",
+    "ack_enclosed": "No",
+    "is_death_case": false
+  },
+  "created_at": "2026-06-11T07:27:01.238325+00:00",
+  "status": "staging",
+  "files": []
+}

@@ -38,7 +38,7 @@ audit rules below apply to EVERY case type (assault, accident, theft,
 murder, kidnapping, cheating, POCSO, robbery, dacoity, etc.).
 
 ═══════════════════════════════════════════════════════════
-SECTION 1 — NINE MANDATORY AUDIT CHECKS
+SECTION 1 — TWELVE MANDATORY AUDIT CHECKS
 ═══════════════════════════════════════════════════════════
 Read the DRAFT JSON + the original DOCUMENT CORPUS, then fix and report
 each of these issues. For each fix, append one item to the
@@ -105,6 +105,45 @@ C9 — INJURIES ASSIGNED TO WRONG PERSON
   LW. Also fix the singular/plural form ("LW-1 to LW-3 sustained
   injuries" must list the actual injured LWs, not all witnesses).
 
+C10 — ENDORSEMENT MISSING FROM BRIEF FACTS ¶3 (added 2026-06)
+  Read brief_facts paragraph 3. It must contain an ENDORSEMENT
+  sentence — the line that names which officer the case was
+  endorsed to for investigation (e.g., "The said case was endorsed
+  to LW-N, <rank + name>, <PS> Police Station, for further
+  investigation U/s <sections>..."). If the endorsement sentence
+  is MISSING, FIX by inserting it using `endorsing_officer` data
+  + the IO data. PASS if already present. FLAG if endorsing_officer
+  is unknown after exhaustive document scan.
+
+C11 — INQUEST PANCH FLAGGED AS MISSING STATEMENT (added 2026-06)
+  When `is_inquest_case == true` (death/Sec 194 BNSS), panch
+  witnesses do NOT have S.180 statements — the panchanama itself
+  is the document. Walk the panch witnesses in Field 13. If any
+  panch is tagged "Panch for inquest" AND the draft flagged it
+  with "missing statement" / red / yellow / in not_found_fields,
+  REMOVE that flag — it is a FALSE POSITIVE for death cases.
+  Also ensure their role is exactly "Panch for inquest" (not
+  "Panch for Scene of Offence"). PASS if either not a death case
+  OR no panches were wrongly flagged.
+
+C12 — THEFT CASE WITH EMPTY PROPERTY SEIZED (added 2026-06)
+  When `is_theft_case == true`, Field 10 `property_recovered`
+  must NOT be empty / "---". If empty after cross-document scan:
+    - Re-check the corpus for a confession-cum-seizure / F-91 /
+      seizure-memo / CDF back-side seizure column.
+    - If still empty, leave "---" but FLAG (the writer needs to
+      upload the seizure document). Do NOT invent property.
+  PASS if not theft case OR property is populated.
+
+C-SKIP — DO NOT FLAG 11(b) SURETIES, 11(c) PREVIOUS CONVICTIONS,
+  11(d) ABSCONDING when set to "--" or "---" (added 2026-06).
+  These three fields are EMPTY 99% of the time in real-world
+  Telangana chargesheets and "--" / "---" is the CORRECT value.
+  Do NOT mark them as red / yellow in field_confidence. Do NOT
+  list them in items_to_verify. Do NOT add them to not_found_fields.
+  Only flag if the documents explicitly state a surety/conviction/
+  absconding fact that the draft is missing.
+
 ═══════════════════════════════════════════════════════════
 SECTION 2 — PER-FIELD CONFIDENCE TAGGING (LAYER 2)
 ═══════════════════════════════════════════════════════════
@@ -159,7 +198,10 @@ Compute and emit a `quality_review` block:
       "C6_io_as_lw1":                      "PASS" | "FIXED" | "FLAG",
       "C7_lw_mentioned_but_missing":       "PASS" | "FIXED" | "FLAG",
       "C8_duplicate_paragraphs":           "PASS" | "FIXED" | "FLAG",
-      "C9_injuries_wrong_person":          "PASS" | "FIXED" | "FLAG"
+      "C9_injuries_wrong_person":          "PASS" | "FIXED" | "FLAG",
+      "C10_endorsement_missing":           "PASS" | "FIXED" | "FLAG",
+      "C11_inquest_panch_false_flag":      "PASS" | "FIXED" | "FLAG",
+      "C12_theft_property_empty":          "PASS" | "FIXED" | "FLAG"
     },
     "overall_status":  "READY_TO_FILE" | "REVIEW_NEEDED" | "OFFICER_MUST_COMPLETE"
   }
