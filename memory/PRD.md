@@ -41,6 +41,41 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-12: FIR Auto-Prefill (Step 0) + ¶10 LW/A-Tagging (V5.0)
+
+**Part A — FIR Auto-Prefill for Fields 01-08:**
+- ✅ **NEW backend service `services/fir_prefill_extractor.py`** — focused LLM call (gpt-4o, temp 0.0, max 1200 tokens) that lifts 12 high-confidence header fields off a single FIR file: district, police_station, fir_number, fir_date, chargesheet_no (rare on FIR), sections, report_type (default "Charge Sheet"), chargesheet_type (default "Original"), io_name, io_rank, second_io_name, second_io_rank. Each field carries a confidence colour (green/yellow/empty). Graceful degradation: short OCR → blank payload; LLM exception → blank payload + _error message.
+- ✅ **NEW endpoint `POST /api/staging/fir-prefill`** — accepts a single PDF/PNG/JPG/WEBP/HEIC/TIF up to 20 MB, OCRs via `extract_text_from_staged_file`, calls the extractor, returns `{success, fields:{...12 keys}, confidence:{...}, ocr_chars}`. Stateless (no MongoDB writes). Robust error handling: unauth→401, no file→400, bad type→400, oversized→400, empty→400, short OCR→success=false with error message.
+- ✅ **Frontend Step 0 card** (`ChargeSheetFusion.js` lines ~558-660) — sits above the manual-input-form. Single "Upload FIR & auto-fill" button (`fir-prefill-upload-btn`) triggers a hidden file input (`fir-prefill-file-input`). After successful prefill: 8 manual-form inputs auto-populate, fields the LLM was uncertain about get a **yellow border** (`border-[#FFB800]/70 ring-1 ring-[#FFB800]/40`), a summary block shows filename + ocr_chars + yellow count + "Second IO detected: ..." (if applicable) + the explainer "Fields 03 / 13 / 14 / 15 are NOT on the FIR — fill manually below." Button label flips to "Re-upload FIR (overwrites fields)". Card de-emphasizes (opacity-60) + button disables when manualFormSubmitted=true.
+- ✅ **Critical non-touch guarantee**: Fields 03 (charge sheet date), 14 (dispatched on), 17 (ack copy), and 13 (court name) are **NEVER** auto-filled by the prefill flow. They remain writer-controlled (court is the datalist combo shipped in iteration 21, dates are HTML5 date pickers).
+- ✅ **Prompt-level safety** — FIR_PREFILL_SYSTEM_PROMPT explicitly says "NEVER invent dates", "NEVER auto-fill today's date", "NEVER derive chargesheet_no from BNS section numbers / Crime Number digits / ages / other numeric strings — only an explicitly-labelled CS field qualifies".
+
+**Part B — Brief Facts ¶10 must tag every person with LW/A number + role (V5.0):**
+- ✅ `intelligent_charge_sheet.SYSTEM_PROMPT` ¶10 was rewritten to enforce the tag-and-role pattern for every person in the conclusion paragraph:
+  - Complainant only → "LW-1 \<name\> is the complainant"
+  - Complainant + injured → "LW-1 \<name\> is the complainant and the injured party"
+  - Injured eyewitness → "LW-\<n\> \<name\> is an eyewitness and injured"
+  - Pure eyewitness → "LW-\<n\> \<name\> is an eyewitness to the incident"
+  - Multiple eyewitnesses → "LWs \<a\> to \<b\> are eyewitnesses"
+  - Single panch → "LW-\<n\> \<name\> is a panch witness"
+  - Multiple panch → "LWs \<a\> and \<b\> are panch witnesses"
+  - Doctor → "LW-\<n\> Dr. \<name\> is the medical officer who issued the wound certificate"
+  - IOs → "LW-\<n\> \<rank+name\> is the first/filing Investigating Officer"
+  - Accused → "The accused A1 \<name\> \<specific act\>..." for every accused (never stop at A1/A2)
+- ✅ Reference example from case 100/2025 included verbatim in the prompt. Explicit FORBIDDEN list at the end.
+- ✅ R2 strengthened to V5.0: "Plain names ('Jangiti Aruna abused...') are FORBIDDEN".
+- ✅ Verifier check **C13_para10_missing_lw_a_tags** added — flags any plain name in the last 2-3 paragraphs and auto-rewrites to "LW-X \<name\>, the \<role\>, ...". Audit count is now THIRTEEN MANDATORY AUDIT CHECKS.
+
+**Tests added (88 passing total):**
+- `tests/test_para10_lw_a_tagging.py` — 7 prompt-content + verifier-content tests.
+- `tests/test_fir_prefill_extractor.py` — 13 unit tests + 1 live OpenAI test (gated by `RUN_LIVE_FIR_PREFILL=1`, returns all 12 fields correctly in 4s).
+- `tests/test_fir_prefill_endpoint.py` (testing-agent created) — 7 HTTP-level tests covering auth, file-type allow-list, 20MB size cap, empty file, happy-path schema, OCR round-trip with reportlab-generated FIR PDF.
+- Zero regressions across all existing test suites.
+
+**End-to-end iteration 22**: 100% backend (88/88 + 2 skipped gated tests) + 100% frontend (10/10 exercised UI contracts).
+
+---
+
 ### 2026-06-11: Writer-Feedback Corrections (9 items) — Phases 1 + 2 + 3 (Option A)
 Detailed input from an actual Telangana police-station writer triggered a 3-phase upgrade.
 

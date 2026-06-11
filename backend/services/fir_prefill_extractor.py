@@ -59,8 +59,13 @@ FIELDS TO EXTRACT
                           (e.g., "23.04.2025"). If only DD-MM-YYYY or
                           YYYY-MM-DD is found, normalise to DD.MM.YYYY.
 02.  chargesheet_no    — Almost NEVER on an FIR. Leave EMPTY ("") unless
-                          you see "Charge Sheet Number" / "C.S.No."
-                          explicitly stamped on the document.
+                          you see an EXPLICIT label "Charge Sheet Number" /
+                          "C.S.No." / "ChS No." stamped on the document
+                          near the top header.
+                          NEVER derive this value from a BNS section
+                          number, a Crime Number digit, an accused age,
+                          or any other numeric string nearby — only an
+                          explicitly-labelled CS field qualifies.
 04.  sections          — the Acts and Sections charged at registration,
                           verbatim (e.g., "115(2), 351(2), 126(2) BNS").
                           Preserve sub-section numbers, "r/w", "BNS",
