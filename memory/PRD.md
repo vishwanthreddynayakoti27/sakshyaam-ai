@@ -41,6 +41,45 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-11: Writer-Feedback Corrections (9 items) — Phases 1 + 2 + 3 (Option A)
+Detailed input from an actual Telangana police-station writer triggered a 3-phase upgrade.
+
+**Phase 1 — Backend prompts + 12 audit checks (was 9):**
+- ✅ **Item 2 — CDF back-side panch witnesses**: `intelligent_charge_sheet.SYSTEM_PROMPT` now has a CDF DETECTION RULE that requires TWO conditions — page heading "Crime Detail Form" / "CDF" AND a structured 2-3 person list with name+father+age+address. Passing mentions of "CDF" inside FIR / statements / chargesheet body are explicitly excluded.
+- ✅ **Item 3 — Witness source map**: prompt now maps LW-1+statement witnesses → S.180 statements, panch → CDF back side, doctor → medical certificate, IO 1st + filing IO → always last two LWs regardless of physical presence.
+- ✅ **Item 4 — Endorsement in Brief Facts ¶3**: ¶3 was rewritten to two sentences: (1) registration "LW-<SHO> registered Cr.No.<X>/<year> U/s <FIR sections>", (2) endorsement "The said case was endorsed to LW-<IO>, <rank+name>, <PS> Police Station, for further investigation U/s <final sections>". Verifier check **C10_endorsement_missing** flags drafts that skip sentence 2.
+- ✅ **Item 5 — Confession-cum-seizure for theft**: Field 10 source priority now lists (a) F-91 / confession-cum-seizure PDF, (b) CDF back-side seizure column, (c) inline mahazar. Verifier check **C12_theft_property_empty** flags theft cases (BNS 303-309) with empty property.
+- ✅ **Item 6 — Inquest / Sec 194 BNSS**: new **RULE 5B** auto-detects `is_inquest_case=true` from sections (194/174/103/105) or explicit override. Panch role becomes "Panch for inquest". Verifier check **C11_inquest_panch_false_flag** removes false "missing statement" flags for inquest panchas.
+- ✅ **Item 7 — Sections can change between FIR and chargesheet**: RULE 4 now explicitly allows this — Field 04 uses manual-input final sections; ¶3 quotes FIR sections in registration sentence and final sections in endorsement sentence; ¶10 uses final sections. Never auto-rewrite either.
+- ✅ **Item 9 — Sureties / convictions / absconding (11 b/c/d)**: verifier now has a **C-SKIP** rule — these fields default to "--" and must NOT be flagged red/yellow.
+- ✅ JSON schema additions: `endorsing_officer`, `is_inquest_case`, `is_theft_case`. User-prompt now forwards `is_death_case` + `is_theft_case_override` from manual input.
+
+**Phase 2 — Manual form UX (Item 1 + Item 5):**
+- ✅ **Court name combo with autocomplete + saved courts**: Field 13 is now a free-text Input with HTML5 `<datalist>` autocomplete. Seeded with 4 default courts (Makthal JFCM / Narayanpet JFCM / Mahabubnagar JFCM / Mahabubnagar Sessions). A "+ Save" button persists new courts to `localStorage.np_saved_courts` so future cases auto-suggest them.
+- ✅ **Death/Inquest case checkbox**: New `manual-is-death-case` checkbox under Field 13 with explainer "Sec. 194 BNSS / 174 CrPC / 103 / 105 BNS — Panch witnesses will be labelled 'Panch for inquest' and won't be flagged for missing statements." Wired through `POST /staging/create-case` → `metadata.manual_input.is_death_case` → `raw_data` to LLM.
+
+**Phase 3 — Careful / Fast mode (Item 8, Option A "Pause before render"):**
+- ✅ **Fast / Careful toggle** in the Station-Writer Intelligent Charge Sheet card. Fast (default) auto-downloads; Careful pauses after generation and opens a Review & Edit modal. State persists to `localStorage.np_gen_mode`.
+- ✅ **ReviewAndEditModal** (`ChargeSheetFusion.js` lines 1308-1683) — a full editable form with: sections, court, FIR #, FIR date, IO name+rank, complainant (6 fields), every accused (7 fields each), every witness (4 fields each, official rows auto-locked), and brief_facts textarea. Patch-based state (snapshot stays immutable) keyed to remount cleanly between generations. Diff computed against snapshot at save time.
+- ✅ **NEW backend endpoint `POST /api/staging/apply-edits/{case_id}`** — the "cheap path" that:
+  - Loads the saved `structured_data`.
+  - Applies each edit by dot-path via `_set_by_path` (supports `accused[0].phone`, `complainant.caste`, etc.).
+  - Cascades old→new value through `brief_facts` via simple string replace (no LLM, guarded by `len(old) >= 2 AND old != new AND old in bf`).
+  - Re-renders the DOCX via `render_authentic_charge_sheet`.
+  - Persists updated structured_data + corrections_applied entries to MongoDB.
+  - Returns DOCX with `X-Cost: 0-credits-no-llm` header.
+- ✅ **Backlog ticket created**: Upgrade to Option B (full two-phase split with separate `extract-only` and `render-only` endpoints) when paying-station volume makes credit cost a real factor.
+
+**Tests (72 passing):**
+- `tests/test_writer_feedback_corrections.py` — 20 prompt-content + verifier tests for items 2/3/4/5/6/7/9 + CDF detection rule + JSON schema additions.
+- `tests/test_apply_edits_cheap_path.py` — 13 unit tests for `_set_by_path` (nested dict/list paths, malformed paths, out-of-bounds indices) + brief-facts cascade behaviour (length threshold, no-op on missing old, multi-edit chain).
+- `tests/test_apply_edits_e2e.py` — 4 live E2E tests (created by testing agent) hitting `POST /staging/apply-edits` + `POST /staging/create-case` with is_death_case=true.
+- All existing test files (`test_charge_sheet_verifier`, `test_v4_agnostic_extraction`, `test_layer3_review_banner`, `test_v3_subdocs`) — 38 tests — still pass with zero regressions.
+
+**End-to-end testing-agent iteration 21**: 100% backend (72/72 active tests) + 100% frontend (4/4 contracts).
+
+---
+
 ### 2026-06-10: 3-Layer Self-Verifying Architecture — Layer 1 + Layer 2 UI + Layer 3 DOCX Banner
 - ✅ **Layer 1 — Senior-Reviewer LLM (`charge_sheet_verifier.py`)**: A second OpenAI gpt-4o call audits the primary "Master IO" draft against 9 high-impact failure modes (C1 dual-listed person, C2 injury gravity, C3 duplicate phone, C4 non-independent panch, C5 identical start/end time, C6 IO as LW-1, C7 LW mentioned but missing, C8 duplicate paragraphs, C9 injuries wrong person), auto-applies fixes, and returns: corrected JSON + `quality_review` (completion %, fixes, items to verify, audit grid, overall_status) + `field_confidence` (per-field green/yellow/red colour map). Wired into the async ICGS background task (`_process_icgs_background` in `staged_upload.py`) between the primary LLM call and the renderer. Graceful degradation — if the verifier itself fails, the pipeline continues with the unverified draft + a degraded quality_review block (no crashes).
 - ✅ **Layer 2 — Frontend Confidence Flags UI (`QualityReviewPanel` in `ChargeSheetFusion.js`)**: A new panel sits between the orange "Station-Writer Intelligent Charge Sheet" card and the orange "Edit & Regenerate" card. It mirrors the verifier output with:

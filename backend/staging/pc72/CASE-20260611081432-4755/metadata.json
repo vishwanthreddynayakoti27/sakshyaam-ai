@@ -1,0 +1,29 @@
+{
+  "case_id": "CASE-20260611081432-4755",
+  "officer_id": "pc72",
+  "police_station": "MAKTHAL",
+  "district": "MAHABUBNAGAR",
+  "fir_number": "TEST-DEATH-CASE-001",
+  "sections": "",
+  "manual_input": {
+    "district": "MAHABUBNAGAR",
+    "police_station": "MAKTHAL",
+    "fir_number": "TEST-DEATH-CASE-001",
+    "fir_date": "",
+    "chargesheet_no": "",
+    "chargesheet_date": "",
+    "sections": "",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "",
+    "chargesheet_type": "Original",
+    "io_name": "",
+    "io_rank": "",
+    "court_name": "",
+    "dispatch_date": "",
+    "ack_enclosed": "No",
+    "is_death_case": true
+  },
+  "created_at": "2026-06-11T08:14:32.845808+00:00",
+  "status": "staging",
+  "files": []
+}

@@ -394,14 +394,74 @@ FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
       conducted by him/her, and found it correct and in accordance
       with proper legal procedure."
 
-  ¶10 EVIDENCE CONCLUSION:
-      "The evidence collected during the investigation, it is well
-      established that <full factual summary: complainant's name,
-      origin, relation with accused, what happened on incident date
-      naming EVERY accused by A-number, what injuries were caused,
-      what threats were made, who intervened>. Thus, the accused A1
-      to A<n> committed offences punishable under Sections <all
-      sections exactly> BNS."
+  ¶10 EVIDENCE CONCLUSION (UPDATED 2026-06 — every person must be
+       referenced by their LW or A number AND their role; plain
+       names without tags are forbidden):
+      Begin with "The evidence collected during the investigation, it
+      is well established that...". Then describe each person in the
+      case using their LW or A tag followed by a role descriptor.
+      Names appear AFTER the tag (e.g., "LW-1 Jangiti Aruna is the
+      complainant and injured party"), NEVER alone.
+
+      Tag-and-role pattern to follow for each person:
+        Complainant only          → "LW-1 <name> is the complainant"
+        Complainant + injured     → "LW-1 <name> is the complainant
+                                     and the injured party"
+        Injured eyewitness        → "LW-<n> <name> is an eyewitness
+                                     and injured"
+        Pure eyewitness           → "LW-<n> <name> is an eyewitness
+                                     to the incident"
+        Multiple eyewitnesses     → "LWs <a> to <b> are eyewitnesses"
+                                     or "LW-<a>, LW-<b> and LW-<c>
+                                     are eyewitnesses"
+        Single panch / mediator   → "LW-<n> <name> is a panch witness"
+        Multiple panch witnesses  → "LWs <a> and <b> are panch
+                                     witnesses" (for inquest cases:
+                                     "panch witnesses to the inquest
+                                     panchanama")
+        Doctor / medical officer  → "LW-<n> Dr. <name> is the medical
+                                     officer who issued the wound
+                                     certificate"
+        First IO                  → "LW-<n> <rank+name> is the first
+                                     Investigating Officer"
+        IO who filed              → "LW-<N> <rank+name> is the
+                                     Investigating Officer who filed
+                                     this charge sheet"
+
+      Then describe the accused's specific acts using A-numbers:
+        "The accused A1 <name> <specific act done — e.g., abused the
+        complainant with filthy language and beat her with a
+        wooden stick>. The accused A2 <name> <specific act>. ..."
+        Continue for ALL accused — never stop at A1 or A2 when there
+        are more.
+
+      Close with the canonical Sections sentence:
+        "Thus, the accused A1 to A<n> committed offences punishable
+        under Sections <exact final sections> BNS."
+
+      REFERENCE EXAMPLE (case 100/2025 — correct style):
+        "The evidence collected during the investigation, it is well
+        established that LW-1 Jangiti Aruna is the complainant and
+        the injured party, resident of Yellammakunta, who came to PS
+        Makthal on 23.04.2025 at 12:30 hrs. LWs 2 to 4 are
+        eyewitnesses to the incident. LW-5 and LW-6 are panch
+        witnesses to the Scene-of-Offence Panchanama. LW-7 Dr. A.
+        Mahesh Raj is the medical officer who issued the wound
+        certificate. The accused A1 Pothi Narayana and A2 Pothi
+        Lakshmi, who are the own sisters of LW-2, on 23.04.2025 at
+        about 12:00 hrs, abused LW-1 with filthy language and beat
+        her on the head and back with a wooden stick, causing
+        injuries. Thus, the accused A1 and A2 committed offences
+        punishable under Sections 115(2), 126(2), 351(2) r/w 3(5)
+        BNS."
+
+      FORBIDDEN in ¶10:
+        - "Jangiti Aruna lodged a petition..." → must be "LW-1
+          Jangiti Aruna, the complainant, lodged..."
+        - "Pothi Narayana beat the complainant..." → must be "The
+          accused A1 Pothi Narayana beat LW-1..."
+        - Plain names anywhere without their LW or A tag preceding
+          them.
 
   ¶11 PRAYER:
       "Therefore, the Hon'ble court is prayed that the accused
@@ -424,6 +484,12 @@ FIELD 16 — BRIEF FACTS — write 11 PARAGRAPHS (each is one paragraph,
   R2. Name EVERY accused by their A-number in ¶10. If there are 6
       accused, the conclusion must reference A1 to A6 (or A1, A2,
       A3, A4, A5, A6 individually) — never stop at A1 or A2.
+      (V5.0 — added 2026-06): Every PERSON in ¶10 must be prefixed
+      by their LW number (for witnesses/complainant) or A number
+      (for accused) AND followed by a role descriptor. Plain names
+      ("Jangiti Aruna abused...") are FORBIDDEN — write "LW-1
+      Jangiti Aruna, the complainant, abused..." or "The accused
+      A1 Jangiti Aruna abused...".
   R3. Use the SAME LW numbers consistently across all 11 paragraphs.
       LW-1 in ¶2 must be the same person as LW-1 in ¶4, ¶7, ¶10.
   R4. Medical injury finding (¶8) must use the doctor's EXACT words

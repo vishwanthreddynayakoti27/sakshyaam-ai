@@ -327,6 +327,137 @@ async def list_my_cases(
 # TRIPLE FUSION - CREDIT DEDUCTION ONLY HERE
 # =============================================================================
 
+# =====================================================================
+# FIR AUTO-PREFILL — Phase 4 (2026-06 writer feedback)
+#
+# Writer uploads ONE FIR file (PDF / image). We OCR it, call a small
+# focused LLM (services.fir_prefill_extractor), and return the 8
+# header fields the writer would otherwise type by hand:
+#   district, police_station, fir_number, fir_date,
+#   chargesheet_no, sections, report_type, chargesheet_type,
+#   io_name, io_rank, second_io_name, second_io_rank
+# Each field carries a confidence colour (green/yellow) so the
+# frontend can flag uncertain extractions for manual review.
+#
+# Fields that are NOT on the FIR (chargesheet_date, dispatch_date,
+# court_name, ack_enclosed, un_occurred_reason) are NEVER touched —
+# the writer always fills those manually.
+#
+# Cost: 0 credits — uses the same direct OpenAI key as the other
+# intelligent endpoints.
+# =====================================================================
+@router.post("/fir-prefill")
+async def fir_prefill(
+    file: UploadFile = File(...),
+    officer: dict = Depends(get_current_officer),
+):
+    """Extract the 8 manual-form header fields from a single FIR file.
+
+    Returns:
+        {
+          "success": True,
+          "fields": {
+            "district": "...", "police_station": "...",
+            "fir_number": "...", "fir_date": "...",
+            "chargesheet_no": "...", "sections": "...",
+            "report_type": "Charge Sheet",
+            "chargesheet_type": "Original",
+            "io_name": "...", "io_rank": "...",
+            "second_io_name": "...", "second_io_rank": ""
+          },
+          "confidence": { "<field>": "green" | "yellow", ... },
+          "ocr_chars": <int — characters of OCR text the LLM saw>
+        }
+
+    On any error returns success=False with `fields` set to a safe
+    empty schema (writer can still fill manually).
+    """
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    ext = Path(file.filename).suffix.lower()
+    allowed = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff"}
+    if ext not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type {ext}. Allowed: {', '.join(sorted(allowed))}",
+        )
+
+    # Save to a short-lived tmp path so extract_text_from_staged_file can read it
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (>20 MB)")
+
+    tmp_path = Path(tempfile.gettempdir()) / f"firpre-{uuid.uuid4().hex}{ext}"
+    try:
+        tmp_path.write_bytes(contents)
+        ocr_text = await extract_text_from_staged_file(tmp_path)
+    except Exception as e:
+        logger.exception(f"[FIR-PREFILL] OCR failed for {file.filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"OCR failed: {e}")
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
+    if not ocr_text or len(ocr_text.strip()) < 30:
+        return {
+            "success": False,
+            "fields": {
+                "district": "", "police_station": "",
+                "fir_number": "", "fir_date": "",
+                "chargesheet_no": "", "sections": "",
+                "report_type": "Charge Sheet", "chargesheet_type": "Original",
+                "io_name": "", "io_rank": "",
+                "second_io_name": "", "second_io_rank": "",
+            },
+            "confidence": {},
+            "ocr_chars": len(ocr_text or ""),
+            "error": "OCR returned too little text — file may be a blank scan or photo without text.",
+        }
+
+    # LLM call
+    try:
+        from services.fir_prefill_extractor import extract_fir_prefill_fields
+        parsed = await extract_fir_prefill_fields(
+            ocr_text,
+            session_id=f"firpre-{officer.get('officer_id','x')}-{uuid.uuid4().hex[:6]}",
+        )
+    except Exception as e:
+        logger.exception(f"[FIR-PREFILL] LLM call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"FIR pre-fill LLM failed: {e}")
+
+    confidence = parsed.pop("_confidence", {}) or {}
+    parsed.pop("_session_id", None)
+    err = parsed.pop("_error", None)
+
+    fields = {
+        k: parsed.get(k, "") for k in (
+            "district", "police_station", "fir_number", "fir_date",
+            "chargesheet_no", "sections", "report_type", "chargesheet_type",
+            "io_name", "io_rank", "second_io_name", "second_io_rank",
+        )
+    }
+
+    logger.info(
+        f"[FIR-PREFILL] officer={officer.get('officer_id')} "
+        f"FIR={fields.get('fir_number','?')} OCR={len(ocr_text)} chars "
+        f"yellow_flags={sum(1 for v in confidence.values() if v == 'yellow')}"
+    )
+
+    return {
+        "success": not err,
+        "fields": fields,
+        "confidence": confidence,
+        "ocr_chars": len(ocr_text),
+        **({"error": err} if err else {}),
+    }
+
+
+
 async def extract_text_from_staged_file(file_path: Path) -> str:
     """Extract text from a staged file using OCR/parsing."""
     ext = file_path.suffix.lower()

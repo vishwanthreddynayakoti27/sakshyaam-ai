@@ -38,7 +38,7 @@ audit rules below apply to EVERY case type (assault, accident, theft,
 murder, kidnapping, cheating, POCSO, robbery, dacoity, etc.).
 
 ═══════════════════════════════════════════════════════════
-SECTION 1 — TWELVE MANDATORY AUDIT CHECKS
+SECTION 1 — THIRTEEN MANDATORY AUDIT CHECKS
 ═══════════════════════════════════════════════════════════
 Read the DRAFT JSON + the original DOCUMENT CORPUS, then fix and report
 each of these issues. For each fix, append one item to the
@@ -144,6 +144,21 @@ C-SKIP — DO NOT FLAG 11(b) SURETIES, 11(c) PREVIOUS CONVICTIONS,
   Only flag if the documents explicitly state a surety/conviction/
   absconding fact that the draft is missing.
 
+C13 — ¶10 EVIDENCE CONCLUSION MISSING LW/A TAGS (added 2026-06)
+  Walk the LAST 2-3 paragraphs of `brief_facts` (the evidence
+  conclusion + prayer). Every person mentioned must be prefixed
+  by their LW or A number AND followed by a role descriptor:
+    • Complainant       → "LW-1 <name>, the complainant..."
+    • Eyewitnesses      → "LW-<n> <name> is an eyewitness..."
+    • Panch             → "LW-<n> <name> is a panch witness..."
+    • Doctor            → "LW-<n> Dr. <name>..."
+    • Accused           → "The accused A1 <name>..."
+  FIX: Rewrite any sentence that uses a plain name (e.g.,
+  "Jangiti Aruna lodged a petition") to "LW-1 Jangiti Aruna, the
+  complainant, lodged a petition". Apply consistently for every
+  person. PASS if all references already carry a LW/A tag. FLAG
+  if you can't tell which person a name refers to.
+
 ═══════════════════════════════════════════════════════════
 SECTION 2 — PER-FIELD CONFIDENCE TAGGING (LAYER 2)
 ═══════════════════════════════════════════════════════════
@@ -201,7 +216,8 @@ Compute and emit a `quality_review` block:
       "C9_injuries_wrong_person":          "PASS" | "FIXED" | "FLAG",
       "C10_endorsement_missing":           "PASS" | "FIXED" | "FLAG",
       "C11_inquest_panch_false_flag":      "PASS" | "FIXED" | "FLAG",
-      "C12_theft_property_empty":          "PASS" | "FIXED" | "FLAG"
+      "C12_theft_property_empty":          "PASS" | "FIXED" | "FLAG",
+      "C13_para10_missing_lw_a_tags":      "PASS" | "FIXED" | "FLAG"
     },
     "overall_status":  "READY_TO_FILE" | "REVIEW_NEEDED" | "OFFICER_MUST_COMPLETE"
   }

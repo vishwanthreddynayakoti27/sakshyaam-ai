@@ -98,6 +98,88 @@ const ChargeSheetFusion = () => {
   };
   const [manualFormSubmitted, setManualFormSubmitted] = useState(false);
 
+  // ── 2026-06 — FIR auto-prefill (Step 0) ────────────────────────────
+  // After the writer uploads ONE FIR file we call POST /staging/fir-prefill,
+  // which returns the 8 high-confidence header fields + a colour map. We
+  // populate state for fields that came back populated and stash the
+  // colour map so the form inputs can show a yellow flag next to fields
+  // the LLM was less sure about. Fields 03 / 14 / 15 / 17 stay untouched.
+  const [firPrefillUploading, setFirPrefillUploading] = useState(false);
+  const [firPrefillUploaded, setFirPrefillUploaded] = useState(false);
+  const [firPrefillConfidence, setFirPrefillConfidence] = useState({});
+  const [firPrefillSummary, setFirPrefillSummary] = useState(null); // {filename, ocr_chars, yellow_count}
+  const [secondIo, setSecondIo] = useState({ name: '', rank: '' });
+  const firPrefillInputRef = useRef(null);
+
+  // Map a manual-form input identity to its colour class. Used by the
+  // 8 FIR-prefillable fields below to render a yellow border when the
+  // LLM was uncertain. Other states (red/green) are intentionally NOT
+  // surfaced here — green is the default (no extra styling) and the
+  // LLM never emits red for these fields.
+  const _confClass = (key) => {
+    const c = firPrefillConfidence[key];
+    if (c === 'yellow') return 'border-[#FFB800]/70 ring-1 ring-[#FFB800]/40';
+    return 'border-white/20';
+  };
+
+  const handleFirPrefillUpload = async (file) => {    if (!file) return;
+    if (manualFormSubmitted) {
+      toast.warning('Manual form is locked — start a new case to re-extract.');
+      return;
+    }
+    setFirPrefillUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await api.post('/staging/fir-prefill', form, {
+        timeout: 90000,
+      });
+      const fields = resp.data?.fields || {};
+      const confidence = resp.data?.confidence || {};
+      // Populate the manual-form state — only for fields the LLM returned
+      // a non-empty value for. Field 03 (chargesheet date) and Field 14
+      // (dispatch date) are NEVER auto-filled per the writer's rule.
+      if (fields.district) setDistrict(fields.district);
+      if (fields.police_station) setPoliceStation(fields.police_station);
+      if (fields.fir_number) setFirNumber(fields.fir_number);
+      if (fields.fir_date) {
+        // Convert DD.MM.YYYY → YYYY-MM-DD for the date picker
+        const m = String(fields.fir_date).match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+        setFirDate(m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : fields.fir_date);
+      }
+      if (fields.chargesheet_no) setChargeSheetNo(fields.chargesheet_no);
+      if (fields.sections) setSections(fields.sections);
+      if (fields.report_type) setReportType(fields.report_type);
+      if (fields.chargesheet_type) setChargesheetType(fields.chargesheet_type);
+      if (fields.io_name) setIoName(fields.io_name);
+      if (fields.io_rank) setIoRank(fields.io_rank);
+      setSecondIo({
+        name: fields.second_io_name || '',
+        rank: fields.second_io_rank || '',
+      });
+      setFirPrefillConfidence(confidence);
+      setFirPrefillUploaded(true);
+      const yellowCount = Object.values(confidence).filter((v) => v === 'yellow').length;
+      setFirPrefillSummary({
+        filename: file.name,
+        ocr_chars: resp.data?.ocr_chars || 0,
+        yellow_count: yellowCount,
+        has_second_io: !!(fields.second_io_name || '').trim(),
+      });
+      if (resp.data?.error) {
+        toast.warning(`Pre-fill partial — ${resp.data.error}`);
+      } else if (yellowCount > 0) {
+        toast.success(`Pre-filled 8 fields · ${yellowCount} marked yellow — please verify`);
+      } else {
+        toast.success('All 8 header fields pre-filled cleanly — verify and proceed');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.message || 'FIR pre-fill failed');
+    } finally {
+      setFirPrefillUploading(false);
+    }
+  };
+
   // === FUSION STATUS ===
   // We no longer render the giant HTML preview (caused mobile "Script error" via
   // dangerouslySetInnerHTML). Just keep completion flags + summary.
@@ -494,6 +576,88 @@ const ChargeSheetFusion = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* === LEFT: STAGING AREA === */}
           <div className="col-span-1 space-y-4">
+            {/* ─── STEP 0: FIR AUTO-PREFILL (2026-06) ─── */}
+            <div
+              className={
+                'p-4 rounded-xl border ' +
+                (manualFormSubmitted
+                  ? 'bg-[#0B0F1A]/50 border-white/5 opacity-60'
+                  : 'bg-gradient-to-br from-[#4F7EFF]/10 to-[#1a2240] border-[#4F7EFF]/30')
+              }
+              data-testid="fir-prefill-card"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                  <Sparkles size={16} className="text-[#4F7EFF]" />
+                  Step 0 — Upload FIR to auto-fill (optional)
+                </h3>
+                {firPrefillUploaded && (
+                  <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Pre-filled
+                  </span>
+                )}
+              </div>
+              <p className="text-white/55 text-[11px] mb-3 leading-relaxed">
+                Upload a single FIR (PDF or scan) and the AI pre-fills the 8 header
+                fields below. <span className="text-[#FFB800]">Always editable</span> —
+                verify yellow-flagged values before locking.
+              </p>
+              <input
+                ref={firPrefillInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.tif,.tiff"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFirPrefillUpload(f);
+                  e.target.value = ''; // allow re-upload of same file
+                }}
+                className="hidden"
+                data-testid="fir-prefill-file-input"
+              />
+              <Button
+                type="button"
+                disabled={firPrefillUploading || manualFormSubmitted}
+                onClick={() => firPrefillInputRef.current?.click()}
+                className="w-full h-10 bg-gradient-to-r from-[#4F7EFF] to-[#7C9FFF] text-black font-bold hover:opacity-90 disabled:opacity-50"
+                data-testid="fir-prefill-upload-btn"
+              >
+                {firPrefillUploading ? (
+                  <><Loader2 size={14} className="animate-spin mr-2" /> Reading FIR…</>
+                ) : firPrefillUploaded ? (
+                  'Re-upload FIR (overwrites fields)'
+                ) : (
+                  <><Upload size={14} className="mr-2" /> Upload FIR &amp; auto-fill</>
+                )}
+              </Button>
+              {firPrefillSummary && (
+                <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
+                  <p className="text-white/60 text-[10px] flex items-center justify-between">
+                    <span className="truncate" title={firPrefillSummary.filename}>
+                      <FileText size={10} className="inline mr-1" />
+                      {firPrefillSummary.filename}
+                    </span>
+                    <span className="text-white/40">{firPrefillSummary.ocr_chars} chars</span>
+                  </p>
+                  {firPrefillSummary.yellow_count > 0 && (
+                    <p className="text-[#FFB800] text-[10px]" data-testid="fir-prefill-yellow-warning">
+                      ⚠ {firPrefillSummary.yellow_count} field{firPrefillSummary.yellow_count === 1 ? '' : 's'} need verification (look for yellow borders below)
+                    </p>
+                  )}
+                  {firPrefillSummary.has_second_io && (
+                    <p className="text-[#00FFB3] text-[10px]" data-testid="fir-prefill-second-io">
+                      Second IO detected: <span className="text-white">{secondIo.name}</span>
+                      {secondIo.rank ? <span className="text-white/50"> · {secondIo.rank}</span> : null}
+                      <span className="text-white/40"> (auto-applied at LLM stage if relevant)</span>
+                    </p>
+                  )}
+                  <p className="text-white/35 text-[10px]">
+                    Fields 03 (charge sheet date), 13 (court), 14 (dispatched on)
+                    and 15 (ack copy) are NOT on the FIR — fill manually below.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* ─── STEP 1: 15-FIELD MANUAL INPUT FORM ─── */}
             <div className="p-4 rounded-xl bg-[#0B0F1A] border border-white/10" data-testid="manual-input-form">
               <div className="flex items-center justify-between mb-3">
@@ -521,8 +685,9 @@ const ChargeSheetFusion = () => {
                 </div>
               </div>
               <p className="text-white/40 text-[11px] mb-3 leading-relaxed">
-                Fill all 15 fields manually. The AI will copy them verbatim and
-                never alter or re-extract them from your documents.
+                {firPrefillUploaded
+                  ? <>Pre-filled from your FIR. <span className="text-[#FFB800]">Yellow-bordered</span> fields were uncertain — verify them. Edit any field freely.</>
+                  : <>Fill all 15 fields manually. The AI will copy them verbatim and never alter or re-extract them from your documents.</>}
               </p>
               <div className="space-y-2.5">
                 {/* 01 District + 02 Police Station */}
@@ -531,14 +696,14 @@ const ChargeSheetFusion = () => {
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">01 District *</label>
                     <Input value={district} onChange={(e) => setDistrict(e.target.value)}
                       placeholder="Narayanpet"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('district')} text-white text-sm h-9`}
                       data-testid="manual-district" />
                   </div>
                   <div>
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">02 Police Station *</label>
                     <Input value={policeStation} onChange={(e) => setPoliceStation(e.target.value)}
                       placeholder="Makthal"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('police_station')} text-white text-sm h-9`}
                       data-testid="manual-police-station" />
                   </div>
                 </div>
@@ -549,13 +714,13 @@ const ChargeSheetFusion = () => {
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">03 FIR No. *</label>
                     <Input value={firNumber} onChange={(e) => setFirNumber(e.target.value)}
                       placeholder="100/2025"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('fir_number')} text-white text-sm h-9`}
                       data-testid="manual-fir-number" />
                   </div>
                   <div>
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">04 FIR Date *</label>
                     <Input type="date" value={firDate} onChange={(e) => setFirDate(e.target.value)}
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('fir_date')} text-white text-sm h-9`}
                       data-testid="manual-fir-date" />
                   </div>
                 </div>
@@ -566,7 +731,7 @@ const ChargeSheetFusion = () => {
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">05 CS No.</label>
                     <Input value={chargeSheetNo} onChange={(e) => setChargeSheetNo(e.target.value)}
                       placeholder="45"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('chargesheet_no')} text-white text-sm h-9`}
                       data-testid="manual-cs-number" />
                   </div>
                   <div>
@@ -582,7 +747,7 @@ const ChargeSheetFusion = () => {
                   <label className="text-white/50 text-[10px] uppercase tracking-wide">07 Act &amp; Sections *</label>
                   <Input value={sections} onChange={(e) => setSections(e.target.value)}
                     placeholder="126(2), 118(1), 352, 351(2) R/w 3(5) BNS"
-                    className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                    className={`bg-[#030614] ${_confClass('sections')} text-white text-sm h-9`}
                     data-testid="manual-sections" />
                 </div>
 
@@ -626,14 +791,14 @@ const ChargeSheetFusion = () => {
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">11 IO Name *</label>
                     <Input value={ioName} onChange={(e) => setIoName(e.target.value)}
                       placeholder="K. Lal Singh"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('io_name')} text-white text-sm h-9`}
                       data-testid="manual-io-name" />
                   </div>
                   <div>
                     <label className="text-white/50 text-[10px] uppercase tracking-wide">12 IO Rank / Belt</label>
                     <Input value={ioRank} onChange={(e) => setIoRank(e.target.value)}
                       placeholder="HC 248"
-                      className="bg-[#030614] border-white/20 text-white text-sm h-9"
+                      className={`bg-[#030614] ${_confClass('io_rank')} text-white text-sm h-9`}
                       data-testid="manual-io-rank" />
                   </div>
                 </div>
