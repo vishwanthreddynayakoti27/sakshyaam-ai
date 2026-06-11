@@ -41,6 +41,37 @@ Build a production-ready, highly modular backend document generation pipeline fo
 
 ## Completed Features (latest first)
 
+### 2026-06-13: Judicial Persona V6.0 + Step 0.5 Part-II Auto-Detect
+
+**Part A — Judicial Persona / Triple-Mindset Prompt (V6.0):**
+- ✅ `intelligent_charge_sheet.SYSTEM_PROMPT` now has a **SECTION ⋄ — PROFESSIONAL PERSONA & TRIPLE MINDSET** block injected before SECTION A. Forces the LLM to internalise three perspectives simultaneously before generating any Brief Facts / Conclusion:
+  - **⋄1 IO mindset** — knows the facts, witnesses, investigation sequence; writes confident, fact-anchored prose.
+  - **⋄2 Legal Advisor mindset** — knows which BNS/BNSS sections fit which fact pattern; uses proper court language.
+  - **⋄3 Judge mindset** — every line written for the Magistrate; zero errors, zero contradictions, zero ambiguity.
+- ✅ **FOUR-LENS PRE-WRITE QUESTION** (Q1 IO / Q2 Lawyer / Q3 Judge / Q4 Audit) the LLM internally answers before each paragraph.
+- ✅ **6 practical consequences**: Legal Accuracy, Evidence Clarity, Zero Contradictions, Proper Legal Language, Logical Narrative Flow, Complete Evidence Chain.
+- ✅ **FINAL CHECK with 8 [✓] ticks** the LLM must mentally verify before emitting JSON. "Would this pass the magistrate's first reading?" is the gating question.
+- ✅ Same Triple-Mindset framing mirrored into `charge_sheet_verifier.REVIEWER_SYSTEM_PROMPT` so the senior-reviewer pass also acts as the magistrate doing a final read.
+
+**Part B — Step 0.5 Part-II Statements Auto-Detect:**
+- ✅ **NEW `services/part2_prefill_extractor.py`** (4875-char prompt) — focused gpt-4o call (temp 0.0, max 800 tokens) that lifts only 5 fields from the Part-II / endorsement PDF: `io_name`, `io_rank`, `sections`, `second_io_name`, `second_io_rank`. BNSS/CrPC/IPC/BNS/POCSO-aware (preserves act suffixes verbatim, never auto-translates between codes).
+- ✅ **NEW `POST /api/staging/part2-prefill`** endpoint — mirrors `/fir-prefill` contract (auth, 20 MB cap, file-type allow-list, async OCR + LLM, tempfile cleanup, structured logging). Returns `{success, fields, confidence, ocr_chars}`.
+- ✅ **Frontend Step 0.5 card** sits between Step 0 (FIR upload) and Step 1 (manual form). Clean visual cue: card de-emphasizes when Step 0 hasn't been run yet (tip: "run Step 0 first") and brightens once FIR pre-fill is in.
+- ✅ **STRICT OVERWRITE RULE**: `firPrefillSnapshotRef` captures the Step 0 values as the "untouched baseline". On Part-II upload we apply the new value ONLY IF the current form value still equals the snapshot (writer hasn't typed since FIR). If the writer typed even one character → manual edit wins, Part-II's value is shown in the diff but skipped.
+- ✅ **Per-field diff visualisation**: each changed field appears as a row with old → new value. Green (`bg-[#00FFB3]/10`) row labelled "Updated from Part-II" for applied fields. Yellow (`bg-[#FFB800]/10`) row labelled "Manual edit kept" for skipped fields. Writer instantly sees `Sections: 115 BNS → 117(2) BNS — Updated from Part-II`.
+- ✅ **Dual-IO handling**: when Part-II's `second_io_name` differs from `io_name` (registering officer ≠ filing IO), both are captured. Step 0's IO (registering) becomes `secondIo.name` (will surface as IO 1st in witness table); Part-II's IO (filing) becomes the primary `io_name` (Field 08).
+- ✅ **Toast summary**: "Part-II: 3 applied · 1 kept (manual edit wins)" tells the writer exactly what happened.
+
+**Tests (121 passing total, +14 since iteration 22):**
+- `test_v6_triple_mindset.py` — 9 tests (3 personas, Q1-Q4 lens block, 6 practical-consequence items, 8 final-check ticks, reviewer triple-mindset, magistrate-first-reading enforcement).
+- `test_part2_prefill_extractor.py` — 17 unit + 1 live OpenAI test (gated by `RUN_LIVE_PART2_PREFILL=1`, returns K Lal Singh / 117(2) BNS / V. Kumar in 3 seconds).
+- `test_part2_prefill_endpoint.py` (testing-agent created) — 7 HTTP-level tests with reportlab-generated Part-II PDF.
+- Zero regressions across all existing test suites.
+
+**End-to-end iteration 23**: 121/121 backend (3 skipped gated) + 10/10 frontend contracts. CORE strict-overwrite + dirty-guard scenarios both passed under Playwright.
+
+---
+
 ### 2026-06-12: FIR Auto-Prefill (Step 0) + ¶10 LW/A-Tagging (V5.0)
 
 **Part A — FIR Auto-Prefill for Fields 01-08:**
