@@ -111,6 +111,24 @@ const ChargeSheetFusion = () => {
   const [secondIo, setSecondIo] = useState({ name: '', rank: '' });
   const firPrefillInputRef = useRef(null);
 
+  // ── 2026-06 — Part-II prefill (Step 0.5) ───────────────────────────
+  // OPTIONAL second-step companion to FIR prefill. Re-extracts ONLY
+  // io_name / io_rank / sections from the Part-II statements PDF
+  // (where the endorsement page names the FILING IO and the FINAL
+  // chargesheet sections — both of which may differ from the FIR).
+  //
+  // STRICT OVERWRITE RULE: never touch a field the writer manually
+  // edited. We track "dirty" fields by snapshotting the FIR-prefill
+  // values; if the current state value matches the snapshot, it's
+  // safe to overwrite. If the writer typed even one character, we
+  // leave their edit alone.
+  const [part2Uploading, setPart2Uploading] = useState(false);
+  const [part2Uploaded, setPart2Uploaded] = useState(false);
+  const [part2Diff, setPart2Diff] = useState(null); // { sections:{old,new}, io_name:{...}, ... }
+  const [part2Summary, setPart2Summary] = useState(null); // {filename, ocr_chars, applied_count, skipped_count}
+  const firPrefillSnapshotRef = useRef({}); // {sections, io_name, io_rank, second_io_name, second_io_rank}
+  const part2InputRef = useRef(null);
+
   // Map a manual-form input identity to its colour class. Used by the
   // 8 FIR-prefillable fields below to render a yellow border when the
   // LLM was uncertain. Other states (red/green) are intentionally NOT
@@ -157,6 +175,15 @@ const ChargeSheetFusion = () => {
         name: fields.second_io_name || '',
         rank: fields.second_io_rank || '',
       });
+      // Snapshot the 5 fields Step 0.5 may overwrite so we can later
+      // tell whether the writer manually edited them (dirty check).
+      firPrefillSnapshotRef.current = {
+        sections: fields.sections || '',
+        io_name: fields.io_name || '',
+        io_rank: fields.io_rank || '',
+        second_io_name: fields.second_io_name || '',
+        second_io_rank: fields.second_io_rank || '',
+      };
       setFirPrefillConfidence(confidence);
       setFirPrefillUploaded(true);
       const yellowCount = Object.values(confidence).filter((v) => v === 'yellow').length;
@@ -180,6 +207,108 @@ const ChargeSheetFusion = () => {
     }
   };
 
+  // ── 2026-06 — Step 0.5 PART-II UPLOAD HANDLER ──────────────────────
+  // Optional second prefill from the Part-II statements / endorsement
+  // page. STRICT overwrite rule: only auto-update a field if the
+  // writer hasn't already manually edited it since the FIR prefill.
+  const handlePart2Upload = async (file) => {
+    if (!file) return;
+    if (manualFormSubmitted) {
+      toast.warning('Manual form is locked — start a new case to re-extract.');
+      return;
+    }
+    setPart2Uploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await api.post('/staging/part2-prefill', form, { timeout: 90000 });
+      const newFields = resp.data?.fields || {};
+      // Compare each new value against (a) current state and (b) the
+      // FIR-prefill snapshot. Apply ONLY when:
+      //   - new value is non-empty
+      //   - current state value === snapshot value (writer untouched)
+      //   - new value !== current value (something actually changed)
+      const snapshot = firPrefillSnapshotRef.current || {};
+      const diff = {}; // { fieldKey: { old, new, applied } }
+      const tryApply = (key, currentVal, setter) => {
+        const newVal = (newFields[key] || '').trim();
+        if (!newVal) return;
+        const snapVal = (snapshot[key] || '').trim();
+        const curVal = (currentVal || '').trim();
+        const writerEdited = curVal !== snapVal; // dirty if differs from snapshot
+        const wouldChange = newVal !== curVal;
+        if (!wouldChange) return; // no-op, don't surface
+        if (writerEdited) {
+          diff[key] = { old: curVal, new: newVal, applied: false };
+        } else {
+          diff[key] = { old: curVal, new: newVal, applied: true };
+          setter(newVal);
+          // Refresh snapshot so a second Part-II upload uses the new baseline
+          snapshot[key] = newVal;
+        }
+      };
+      tryApply('sections', sections, setSections);
+      tryApply('io_name', ioName, setIoName);
+      tryApply('io_rank', ioRank, setIoRank);
+      // For the secondIo pair we treat both fields together since they
+      // carry the same overwrite semantics. We don't keep secondIo in
+      // editable state, but we display it for the writer.
+      const newSecondName = (newFields.second_io_name || '').trim();
+      const newSecondRank = (newFields.second_io_rank || '').trim();
+      if (newSecondName || newSecondRank) {
+        const curName = (secondIo.name || '').trim();
+        const curRank = (secondIo.rank || '').trim();
+        const snapName = (snapshot.second_io_name || '').trim();
+        const snapRank = (snapshot.second_io_rank || '').trim();
+        const writerEdited = (curName !== snapName) || (curRank !== snapRank);
+        const wouldChange = (newSecondName !== curName) || (newSecondRank !== curRank);
+        if (wouldChange) {
+          if (writerEdited) {
+            diff.second_io = {
+              old: `${curName}${curRank ? ' · ' + curRank : ''}`,
+              new: `${newSecondName}${newSecondRank ? ' · ' + newSecondRank : ''}`,
+              applied: false,
+            };
+          } else {
+            diff.second_io = {
+              old: `${curName}${curRank ? ' · ' + curRank : ''}`,
+              new: `${newSecondName}${newSecondRank ? ' · ' + newSecondRank : ''}`,
+              applied: true,
+            };
+            setSecondIo({ name: newSecondName, rank: newSecondRank });
+            snapshot.second_io_name = newSecondName;
+            snapshot.second_io_rank = newSecondRank;
+          }
+        }
+      }
+      firPrefillSnapshotRef.current = snapshot;
+      setPart2Diff(diff);
+      const applied = Object.values(diff).filter((d) => d.applied).length;
+      const skipped = Object.values(diff).filter((d) => !d.applied).length;
+      setPart2Summary({
+        filename: file.name,
+        ocr_chars: resp.data?.ocr_chars || 0,
+        applied_count: applied,
+        skipped_count: skipped,
+      });
+      setPart2Uploaded(true);
+      if (resp.data?.error) {
+        toast.warning(`Part-II partial — ${resp.data.error}`);
+      } else if (applied === 0 && skipped === 0) {
+        toast.info('Part-II extracted, no field changes detected (already in sync with FIR).');
+      } else if (applied > 0 && skipped === 0) {
+        toast.success(`Part-II updated ${applied} field${applied === 1 ? '' : 's'} — review the change indicators below.`);
+      } else if (applied === 0 && skipped > 0) {
+        toast.warning(`Part-II found ${skipped} difference${skipped === 1 ? '' : 's'} but kept your manual edits.`);
+      } else {
+        toast.success(`Part-II: ${applied} applied · ${skipped} kept (manual edit wins).`);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.message || 'Part-II pre-fill failed');
+    } finally {
+      setPart2Uploading(false);
+    }
+  };
   // === FUSION STATUS ===
   // We no longer render the giant HTML preview (caused mobile "Script error" via
   // dangerouslySetInnerHTML). Just keep completion flags + summary.
@@ -655,6 +784,131 @@ const ChargeSheetFusion = () => {
                     and 15 (ack copy) are NOT on the FIR — fill manually below.
                   </p>
                 </div>
+              )}
+            </div>
+
+            {/* ─── STEP 0.5: PART-II AUTO-DETECT (2026-06 — optional) ─── */}
+            <div
+              className={
+                'p-4 rounded-xl border ' +
+                (manualFormSubmitted
+                  ? 'bg-[#0B0F1A]/50 border-white/5 opacity-60'
+                  : firPrefillUploaded
+                    ? 'bg-gradient-to-br from-[#7C9FFF]/10 to-[#1a2240] border-[#7C9FFF]/30'
+                    : 'bg-[#0B0F1A]/70 border-white/10 opacity-70')
+              }
+              data-testid="part2-prefill-card"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+                  <Sparkles size={16} className="text-[#7C9FFF]" />
+                  Step 0.5 — Upload Part-II Statements (optional)
+                </h3>
+                {part2Uploaded && (
+                  <span className="text-[#00FFB3] text-[10px] font-mono uppercase tracking-wider flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Synced
+                  </span>
+                )}
+              </div>
+              <p className="text-white/55 text-[11px] mb-3 leading-relaxed">
+                Sections and the filing IO often change between FIR and chargesheet.
+                Upload the Part-II statements / endorsement page and the AI will
+                re-extract only <span className="text-[#7C9FFF]">io_name, io_rank, sections</span>.
+                <br />
+                <span className="text-[#FFB800]">Manual edits always win</span> — Part-II
+                updates only fields you haven&rsquo;t touched.
+              </p>
+              {!firPrefillUploaded && (
+                <p className="text-white/35 text-[10px] mb-2 italic">
+                  Tip: run Step 0 (FIR upload) first — Part-II compares against the FIR pre-fill.
+                </p>
+              )}
+              <input
+                ref={part2InputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.tif,.tiff"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handlePart2Upload(f);
+                  e.target.value = '';
+                }}
+                className="hidden"
+                data-testid="part2-prefill-file-input"
+              />
+              <Button
+                type="button"
+                disabled={part2Uploading || manualFormSubmitted}
+                onClick={() => part2InputRef.current?.click()}
+                className="w-full h-10 bg-gradient-to-r from-[#7C9FFF] to-[#A8C5FF] text-black font-bold hover:opacity-90 disabled:opacity-50"
+                data-testid="part2-prefill-upload-btn"
+              >
+                {part2Uploading ? (
+                  <><Loader2 size={14} className="animate-spin mr-2" /> Reading Part-II…</>
+                ) : part2Uploaded ? (
+                  'Re-upload Part-II'
+                ) : (
+                  <><Upload size={14} className="mr-2" /> Upload Part-II &amp; auto-detect</>
+                )}
+              </Button>
+
+              {/* Per-field diff display — shows old → new for each change */}
+              {part2Diff && Object.keys(part2Diff).length > 0 && (
+                <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5" data-testid="part2-diff-list">
+                  {Object.entries(part2Diff).map(([key, diff]) => {
+                    const label = {
+                      sections: 'Sections',
+                      io_name: 'IO Name',
+                      io_rank: 'IO Rank',
+                      second_io: 'Second IO (registering)',
+                    }[key] || key;
+                    return (
+                      <div
+                        key={key}
+                        className={
+                          'p-2 rounded text-[10px] leading-snug ' +
+                          (diff.applied
+                            ? 'bg-[#00FFB3]/10 border border-[#00FFB3]/30'
+                            : 'bg-[#FFB800]/10 border border-[#FFB800]/30')
+                        }
+                        data-testid={`part2-diff-${key}`}
+                      >
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className={`font-semibold uppercase tracking-wider ${diff.applied ? 'text-[#00FFB3]' : 'text-[#FFB800]'}`}>
+                            {label}
+                          </span>
+                          <span className={`text-[9px] ${diff.applied ? 'text-[#00FFB3]/70' : 'text-[#FFB800]/70'}`}>
+                            {diff.applied
+                              ? 'Updated from Part-II'
+                              : 'Manual edit kept'}
+                          </span>
+                        </div>
+                        <div className="text-white/70">
+                          <span className="line-through text-white/40 break-all">
+                            {diff.old || '(empty)'}
+                          </span>
+                          <span className="mx-1.5 text-white/30">→</span>
+                          <span className="text-white break-all">
+                            {diff.new || '(empty)'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {part2Summary && (
+                <p className="mt-2 text-white/40 text-[10px] flex items-center justify-between">
+                  <span className="truncate" title={part2Summary.filename}>
+                    <FileText size={10} className="inline mr-1" />
+                    {part2Summary.filename}
+                  </span>
+                  <span>
+                    {part2Summary.applied_count} applied
+                    {part2Summary.skipped_count > 0 && ` · ${part2Summary.skipped_count} kept`}
+                    {' · '}{part2Summary.ocr_chars} chars
+                  </span>
+                </p>
               )}
             </div>
 

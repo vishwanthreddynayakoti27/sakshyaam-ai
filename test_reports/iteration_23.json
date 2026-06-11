@@ -1,0 +1,55 @@
+{
+  "summary": "Iteration 23 — validated V6.0 Triple-Mindset prompt block + Step 0.5 Part-II Auto-Detect end-to-end. BACKEND PROMPT TESTS: test_v6_triple_mindset.py 9/9 PASS (SECTION ⋄ header, 3 personas IO/Lawyer/Judge, Q1-Q4 four-lens block, 6 practical consequences, ≥8 [✓] ticks, AS A JUDGE WOULD phrase, REVIEWER's three lenses + 'magistrate's first reading' enforcement). BACKEND PROMPT TESTS: test_part2_prefill_extractor.py 17/17 unit + 1 skipped live PASS (5 output fields documented, endorsement-lookup wording, '115 BNS → 117(2) BNS' upgrade example, BNS/BNSS/IPC/CrPC/POCSO act-suffix preservation, dual-IO rule, 3 confidence colors, NEVER-invent safety rules; JSON parsing handles plain/markdown-fence/prose; degraded payload on empty/short OCR + LLM failure; clean response pass-through). BACKEND ENDPOINT TESTS (NEW test_part2_prefill_endpoint.py): 7/7 PASS — unauth→401, no-file→4xx, .docx→400, empty→400, >20MB→400, happy-path PDF→200 with 5-field schema + confidence colors restricted to {'',green,yellow}, real OCR+gpt-4o extracted io_name containing 'Lal Singh', sections containing '117(2) BNS', second_io_name containing 'Kumar' from synthetic Part-II PDF with endorsement text. REGRESSION: 95 prior tests (apply_edits_cheap 13, charge_sheet_verifier 10+1skip, v4_agnostic 9, layer3_review_banner 4, v3_subdocs 12, writer_feedback_corrections 20, para10_lw_a_tagging 7, fir_prefill_extractor 13+1skip, fir_prefill_endpoint 7) all PASS. TOTAL: 121 passing + 3 skipped (exceeds target of 114+3). FRONTEND E2E (Playwright on /charge-sheet-fusion as pc72): Step 0.5 card present with data-testid='part2-prefill-card' positioned BETWEEN fir-prefill-card (top:190px) and manual-input-form (top:562px), heading 'Step 0.5 — Upload Part-II Statements (optional)' correct, upload button data-testid='part2-prefill-upload-btn' labelled 'Upload Part-II & auto-detect', hidden file input data-testid='part2-prefill-file-input' wired. CORE STRICT-OVERWRITE TEST PASSED: (Scenario A) After FIR upload sections='115 BNS', io_name='Inspector V Kumar'; after Part-II upload WITHOUT touching, sections auto-updated to '117(2), 351(2), 126(2) BNS r/w 3(5) BNS' and io_name to 'K Lal Singh', diff list shows 4 entries all labelled 'Updated from Part-II' (sections, io_name, io_rank, second_io). DIRTY-GUARD TEST PASSED: (Scenario B) After FIR upload manually edited sections to '116 BNS'; after Part-II upload sections REMAINED '116 BNS' (writer wins) and diff entry labelled 'Manual edit kept' visually shown in yellow style; the other 3 untouched fields still auto-updated. SECOND-IO HANDLING: second_io_name='V. Kumar' (Inspector) correctly populated when distinct from io_name='K Lal Singh' and writer untouched, diff entry appears. SUMMARY ROW: shows 'part2.pdf · 3 applied · 1 kept · 256 chars' at bottom of Step 0.5 card. Toast 'Part-II: 3 applied · 1 kept (manual edit wins)' confirms.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_contract_results": {
+    "T1_v6_triple_mindset_9_tests": "PASS (9/9)",
+    "T2_part2_prefill_extractor_unit_17_tests": "PASS (17/17 unit + 1 live skipped — gated by RUN_LIVE_PART2_PREFILL=1)",
+    "T3_part2_prefill_endpoint_http_7_tests": "PASS (7/7) — auth, no-file, .docx, empty, >20MB, happy-path schema, OCR-round-trip extracts K Lal Singh + 117(2) BNS + V. Kumar",
+    "T4_frontend_step05_card_visible_between_fir_and_manual": "PASS — fir-prefill-card (y=190) < part2-prefill-card (y=...) < manual-input-form (y=562)",
+    "T5_frontend_upload_button_label_and_hidden_input": "PASS — 'Upload Part-II & auto-detect' label, file-input wired",
+    "T6_frontend_strict_overwrite_clean_path": "PASS — sections 115 BNS→117(2) BNS, io 'Inspector V Kumar'→'K Lal Singh', diff testid='part2-diff-list' with 4 'Updated from Part-II' entries",
+    "T7_frontend_dirty_guard": "PASS — manual edit '116 BNS' preserved, diff shows 'Manual edit kept' for sections; other fields still updated from Part-II",
+    "T8_frontend_second_io_handling": "PASS — second_io_name='V. Kumar' applied, second_io_rank='Inspector', diff entry 'Updated from Part-II'",
+    "T9_frontend_summary_row": "PASS — 'part2.pdf · 3 applied · 1 kept · 256 chars' visible at bottom of card",
+    "T10_regression_95_prior_tests": "PASS (95 passed + 2 skipped live-gated)"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v6_triple_mindset.py",
+    "/app/backend/tests/test_part2_prefill_extractor.py",
+    "/app/backend/tests/test_part2_prefill_endpoint.py"
+  ],
+  "action_items": [
+    "MINOR (carryover from iteration 22, still applies): consider tightening chargesheet_no extraction in FIR_PREFILL_SYSTEM_PROMPT to forbid derivation from BNS section numbers.",
+    "OPTIONAL: ChargeSheetFusion.js continues to grow (Step 0.5 card added 130+ lines) — please continue to flag for component-splitting into src/components/ or src/pages/charge-sheet-fusion/.",
+    "OPTIONAL: Add a Cypress/Playwright visual-regression assertion on the exact Tailwind background classes 'bg-[#00FFB3]/10' (green) and 'bg-[#FFB800]/10' (yellow) on diff entries. Visually verified in screenshot but not asserted programmatically."
+  ],
+  "critical_code_review_comments": [
+    "V6.0 Triple-Mindset block is well-structured in both intelligent_charge_sheet.SYSTEM_PROMPT and charge_sheet_verifier.REVIEWER_SYSTEM_PROMPT — 3 personas, 4-lens pre-write Q1-Q4, 6 practical-consequence items, 8 [✓] final-check ticks all present.",
+    "part2_prefill_extractor.py mirrors fir_prefill_extractor.py architecture cleanly (same _build_user_prompt + _extract_json_from_response + _degraded_payload + async extract_*_fields pattern). Reuses services/llm_compat.LlmChat with gpt-4o, T=0, max 800 tokens.",
+    "POST /api/staging/part2-prefill correctly mirrors /fir-prefill contract: auth gate, file-type allow-list, 20MB size cap, empty-file rejection, async OCR + LLM, tempfile cleanup, structured logging.",
+    "Frontend dirty-check logic is correct: compares current form value against firPrefillSnapshotRef.current[key]. Snapshot is updated on each overwrite so subsequent Part-II uploads use the new baseline. Verified empirically that dirty-guard fires for the edited field while letting clean fields auto-update.",
+    "Diff list correctly renders both labels ('Updated from Part-II' green vs 'Manual edit kept' yellow) with old→new values. data-testid='part2-diff-list' parent + per-key data-testids confirmed in source (line 873).",
+    "ChargeSheetFusion.js has grown further (was 2907 lines after iteration 22, now larger after Step 0.5 — 895+ lines just for the upload cards). Strongly recommend extracting Step 0 + Step 0.5 cards into separate components."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_part2_prefill_endpoint.py (NEW — 7 HTTP-level tests covering auth, file-type validation, size limit, empty file, happy-path schema, OCR round-trip with reportlab-generated Part-II PDF)"
+  ],
+  "success_rate": {
+    "backend": "100% (121 passed + 3 skipped live-gated)",
+    "frontend": "100% (10/10 testable UI contracts pass — including the two CORE strict-overwrite + dirty-guard scenarios)"
+  },
+  "test_credentials": "pc72 / Test123! (admin) — works correctly for API and UI.",
+  "seed_data_creation": "None persisted. Two reportlab-generated PDFs (FIR + Part-II) written to /tmp/p2test/ per test run; the /api/staging/part2-prefill endpoint is stateless (no MongoDB writes, no case creation) — no cleanup required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Step 0.5 Part-II Auto-Detect is live and functional. Endpoint POST /api/staging/part2-prefill accepts PDF/PNG/JPG/WEBP/HEIC/TIF up to 20MB and returns {success, fields:{io_name,io_rank,sections,second_io_name,second_io_rank}, confidence:{color map}, ocr_chars}. Frontend has 6 stable data-testids: part2-prefill-card, part2-prefill-upload-btn, part2-prefill-file-input, part2-diff-list, plus per-field part2-diff-{sections|io_name|io_rank|second_io}. Use page.set_input_files on hidden inputs — DO NOT click the visible button. CRITICAL flow dependency: Step 0.5 dirty-check compares against firPrefillSnapshotRef which is set by Step 0 — so Step 0 FIR upload MUST happen FIRST in any E2E test. The reportlab Part-II PDF helper is reusable from /app/backend/tests/test_part2_prefill_endpoint.py::_make_part2_pdf. V6.0 Triple-Mindset prompt block is in services/intelligent_charge_sheet.SYSTEM_PROMPT (primary IO) and services/charge_sheet_verifier.REVIEWER_SYSTEM_PROMPT (senior reviewer).",
+  "rca of the issue": "n/a — both features (V6.0 Triple-Mindset + Step 0.5 Part-II Auto-Detect) work as designed. No bugs found."
+}

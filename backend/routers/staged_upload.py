@@ -457,6 +457,105 @@ async def fir_prefill(
     }
 
 
+# =====================================================================
+# STEP 0.5 — PART-II AUTO-DETECT (2026-06 writer feedback companion)
+#
+# After Step 0 (FIR pre-fill) the writer may upload the Part-II
+# statements + endorsement page. We re-extract ONLY:
+#   • io_name + io_rank   (the FILING IO)
+#   • sections            (the FINAL chargesheet sections — often
+#                          upgraded from FIR header)
+#   • second_io_name + rank (when registering officer ≠ filing IO)
+#
+# The frontend enforces a STRICT overwrite rule: we never touch a
+# field the writer has manually edited.
+# =====================================================================
+@router.post("/part2-prefill")
+async def part2_prefill(
+    file: UploadFile = File(...),
+    officer: dict = Depends(get_current_officer),
+):
+    """Extract IO + Sections from a Part-II statements PDF (optional)."""
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    ext = Path(file.filename).suffix.lower()
+    allowed = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff"}
+    if ext not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type {ext}. Allowed: {', '.join(sorted(allowed))}",
+        )
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (>20 MB)")
+
+    tmp_path = Path(tempfile.gettempdir()) / f"p2pre-{uuid.uuid4().hex}{ext}"
+    try:
+        tmp_path.write_bytes(contents)
+        ocr_text = await extract_text_from_staged_file(tmp_path)
+    except Exception as e:
+        logger.exception(f"[PART2-PREFILL] OCR failed for {file.filename}: {e}")
+        raise HTTPException(status_code=500, detail=f"OCR failed: {e}")
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
+    if not ocr_text or len(ocr_text.strip()) < 50:
+        return {
+            "success": False,
+            "fields": {
+                "io_name": "", "io_rank": "", "sections": "",
+                "second_io_name": "", "second_io_rank": "",
+            },
+            "confidence": {},
+            "ocr_chars": len(ocr_text or ""),
+            "error": "OCR returned too little text — file may be a blank scan or "
+                     "a photo without legible text. The FIR pre-fill values stand.",
+        }
+
+    try:
+        from services.part2_prefill_extractor import extract_part2_prefill_fields
+        parsed = await extract_part2_prefill_fields(
+            ocr_text,
+            session_id=f"p2pre-{officer.get('officer_id','x')}-{uuid.uuid4().hex[:6]}",
+        )
+    except Exception as e:
+        logger.exception(f"[PART2-PREFILL] LLM call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Part-II pre-fill LLM failed: {e}")
+
+    confidence = parsed.pop("_confidence", {}) or {}
+    parsed.pop("_session_id", None)
+    err = parsed.pop("_error", None)
+
+    fields = {
+        k: parsed.get(k, "") for k in (
+            "io_name", "io_rank", "sections",
+            "second_io_name", "second_io_rank",
+        )
+    }
+
+    logger.info(
+        f"[PART2-PREFILL] officer={officer.get('officer_id')} "
+        f"OCR={len(ocr_text)} chars "
+        f"populated={sum(1 for v in fields.values() if v)} "
+        f"yellow_flags={sum(1 for v in confidence.values() if v == 'yellow')}"
+    )
+
+    return {
+        "success": not err,
+        "fields": fields,
+        "confidence": confidence,
+        "ocr_chars": len(ocr_text),
+        **({"error": err} if err else {}),
+    }
+
+
 
 async def extract_text_from_staged_file(file_path: Path) -> str:
     """Extract text from a staged file using OCR/parsing."""
