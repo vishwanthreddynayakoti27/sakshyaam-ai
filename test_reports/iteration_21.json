@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 21: validated Phase 1/2/3 writer-feedback corrections. BACKEND — ran 68 unit tests across 7 test files (writer_feedback_corrections=20, apply_edits_cheap_path=13, charge_sheet_verifier=10+1skip, v4_agnostic=9, fixed_layout=3 collected via test_v4_agnostic_extraction since fixed_layout file exists separately, layer3_review_banner=4, v3_subdocs=12) — all pass. Wrote new E2E test_apply_edits_e2e.py with 4 tests covering: (1) is_death_case=true persists in metadata.manual_input, (2) is_death_case default=false, (3) apply-edits endpoint returns DOCX + X-Cost=0-credits-no-llm + X-Edits-Applied + persists structured_data.complainant.caste, (4) apply-edits brief-facts cascade replaces io.name everywhere. All 4 E2E pass. FRONTEND — on /charge-sheet-fusion as pc72 with seeded CASE-20260610073343-C30D: manual-court-name input + court-name-suggestions datalist (4 defaults) ✓, manual-court-save-btn persists new courts to localStorage.np_saved_courts ✓ (with toast confirmation), manual-is-death-case checkbox toggles + correct explainer text containing 194 BNSS / 174 CrPC / 103 / 105 BNS + 'Panch for inquest' + 'won\\'t be flagged' ✓, gen-mode-toggle with fast/careful buttons ✓ (default=fast, Careful click persists to localStorage.np_gen_mode='careful', highlights the pill with orange border, changes generate button label to 'Generate & Review (Careful mode)').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Manual form court datalist", "issues": ["Review-request spec listed default suggestions as abbreviated form (e.g. 'MAKTHAL JFCM', 'NARAYANPET JFCM', 'MAHABUBNAGAR JFCM', 'PRINCIPAL DISTRICT & SESSIONS COURT MAHABUBNAGAR') but actual implementation uses FULL names ('JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL', 'JUDICIAL FIRST CLASS MAGISTRATE AT NARAYANPET', 'JUDICIAL FIRST CLASS MAGISTRATE AT MAHABUBNAGAR', 'PRINCIPAL DISTRICT & SESSIONS COURT AT MAHABUBNAGAR'). All 4 options ARE present and functional — only copy differs from spec. The full form is arguably more accurate for chargesheet rendering. Confirm with PM/writer which form is preferred; no code change needed if full names are intentional."]}
+    ]
+  },
+  "test_contract_results": {
+    "B1_writer_feedback_20_tests": "PASS (20/20)",
+    "B2_apply_edits_cheap_path_13_tests": "PASS (13/13)",
+    "B3_charge_sheet_verifier": "PASS (10 active + 1 skipped live-OpenAI)",
+    "B4_v4_agnostic_extraction_9_tests": "PASS (9/9) — note: review-request listed test_fixed_layout.py as 3 tests separately; the 3 fixed-layout tests are inside test_v4_agnostic_extraction.py — test_fixed_layout.py itself collected 0 from listed scope but does not exist as a 3-test file. All listed tests covered.",
+    "B5_layer3_review_banner_4_tests": "PASS (4/4)",
+    "B6_v3_subdocs_12_tests": "PASS (12/12)",
+    "B7_create_case_is_death_case_true_persists": "PASS — metadata.manual_input.is_death_case === true after POST with is_death_case=true",
+    "B8_create_case_is_death_case_default_false": "PASS — defaults to False when not provided",
+    "B9_apply_edits_simple_field": "PASS — POST /api/staging/apply-edits/CASE-20260610073343-C30D with [{path:'complainant.caste', old_value:..., new_value:'BC-A'}] returns 200 + Content-Type=DOCX + X-Cost=0-credits-no-llm + X-Edits-Applied>=1 + body starts with PK + subsequent GET /staging/intelligent-chargesheet shows persisted value",
+    "B10_apply_edits_brief_facts_cascade": "PASS — io.name edit replaced everywhere in brief_facts; no LLM call (verified via X-Cost header)",
+    "F1_manual_court_name_input": "PASS — data-testid='manual-court-name' present, list='court-name-suggestions' bound, 4 default datalist options visible",
+    "F2_manual_court_save_btn": "PASS — clicking + Save persists value to localStorage.np_saved_courts as JSON array; success toast 'Saved \"X\" — will autocomplete next time'",
+    "F3_manual_is_death_case_checkbox": "PASS — toggles correctly; container text contains '194 BNSS', '174 CrPC', '103', '105 BNS', 'Panch for inquest', and 'won\\'t be flagged for missing statements'",
+    "F4_gen_mode_toggle_fast_careful": "PASS — default localStorage.np_gen_mode='fast'; clicking gen-mode-careful sets to 'careful', highlights pill (orange border), changes button label to 'Generate & Review (Careful mode)'; clicking gen-mode-fast switches back to 'fast'"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_apply_edits_e2e.py",
+    "/app/test_reports/pytest/iteration_21_results.xml",
+    "/app/test_reports/pytest/iteration_21_e2e_results.xml"
+  ],
+  "action_items": [
+    "Verify with PM whether court-datalist defaults should use abbreviated form ('MAKTHAL JFCM') from spec or full form ('JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL') from implementation. Implementation works and is consistent; only copy decision required.",
+    "Pre-existing (iteration 20 noted): hydration warnings about <span> children of <select>/<option> from Emergent's x-ve-dynamic instrumentation on EditAndRegeneratePanel — not blocking, not related to this iteration."
+  ],
+  "critical_code_review_comments": [
+    "apply-edits endpoint properly uses 0-credit no-LLM path — verified via X-Cost header. Brief-facts cascade only triggers when old_value > 1 char + present in brief_facts — matches unit-test specs in test_apply_edits_cheap_path.py.",
+    "is_death_case form field correctly coerced to bool via str(...).lower() in ('true','1','yes','on') — robust against form-encoding variations.",
+    "manual-court-save-btn persists JSON array (not single string) — supports multiple custom courts. Good design.",
+    "Fast/Careful toggle correctly persists to localStorage and is gated by genMode state. Generate button label change is conditional on genMode==='careful' — works as designed.",
+    "ChargeSheetFusion.js still 2069+ lines — recommend splitting (already flagged in iteration 20)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_apply_edits_e2e.py (NEW — 4 E2E tests for create-case is_death_case + apply-edits endpoint + brief-facts cascade)"
+  ],
+  "success_rate": {"backend": "100% (72/72 tests excluding 1 skipped live-OpenAI test)", "frontend": "100% (4/4 UI contracts pass; 1 minor copy discrepancy noted under design_issues)"},
+  "test_credentials": "pc72 / Test123! (admin) — primary, works correctly. Seeded case CASE-20260610073343-C30D has structured_data populated (used for apply-edits E2E and Careful-mode UI mounting).",
+  "seed_data_creation": "Created 2 short-lived staging cases via POST /staging/create-case to verify is_death_case persistence (TEST-DEATH-CASE-001 and TEST-NON-DEATH-001 FIR numbers). No cleanup needed as these are isolated staging cases under pc72's folder.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 9 Phase 1/2/3 writer-feedback items validated. apply-edits endpoint (POST /api/staging/apply-edits/{case_id}) is fully tested at the API level — auto-saves to MongoDB structured_data, cascades through brief_facts, returns DOCX without LLM call. is_death_case=true correctly persists in metadata.json. Frontend UI elements all carry correct data-testids. The actual Careful-mode modal (ReviewAndEditModal in ChargeSheetFusion.js lines 1308-1683) was NOT triggered end-to-end because that would re-run the live LLM (per review-request note); the modal-trigger toggle + state-persistence + button-label-swap WERE validated. If a future iteration needs to assert the modal's data-testids visually, use page.evaluate to manually set reviewModalOpen=true + reviewSnapshot={...sample}.",
+  "rca of the issue": "n/a — all features work as designed. Only finding is a minor spec/impl copy mismatch on court datalist default values (4 short-form names in review-request spec vs 4 full names actually shipped) — both forms convey the same 4 courts."
+}

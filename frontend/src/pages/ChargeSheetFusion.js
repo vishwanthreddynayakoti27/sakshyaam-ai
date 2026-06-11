@@ -1286,6 +1286,433 @@ const QualityReviewPanel = ({ qualityReview, fieldConfidence }) => {
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────
+// REVIEW & EDIT MODAL (Phase 3 — Careful mode)
+//
+// Pops up after generation completes in CAREFUL mode. Lets the writer
+// inline-edit a curated set of high-impact fields (sections, court,
+// complainant, accused/witness names + caste + phone, brief facts
+// excerpt) and ship them through one of two backend paths:
+//   "Save edits & Download"   → POST /staging/apply-edits/{case_id}
+//                                (NO LLM, NO credits — just JSON patch +
+//                                 brief-facts cascade + DOCX re-render)
+//   "Re-extract with LLM"      → POST /staging/regenerate-charge-sheet
+//                                (full LLM cascade, ~3 credits)
+//
+// `snapshot` is the structured_data returned by GET intelligent-chargesheet.
+// ─────────────────────────────────────────────────────────────────────
+const ReviewAndEditModal = ({ open, snapshot, caseId, firNumber, onClose, onSavedDownload, saving }) => {
+  // The parent re-mounts this modal via `key` whenever a new snapshot
+  // arrives, so we can keep patch state purely local with no resets.
+  const [patch, setPatch] = React.useState({});
+
+  // Merge snapshot + patch deeply into `draft`.
+  const draft = React.useMemo(() => {
+    const base = JSON.parse(JSON.stringify(snapshot || {}));
+    const apply = (target, p) => {
+      Object.entries(p || {}).forEach(([k, v]) => {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          if (!target[k] || typeof target[k] !== 'object' || Array.isArray(target[k])) target[k] = {};
+          apply(target[k], v);
+        } else {
+          target[k] = v;
+        }
+      });
+    };
+    apply(base, patch);
+    return base;
+  }, [snapshot, patch]);
+
+  if (!open) return null;
+
+  const setField = (pathSegs, value) => {
+    setPatch((prev) => {
+      const next = JSON.parse(JSON.stringify(prev || {}));
+      let cursor = next;
+      for (let i = 0; i < pathSegs.length - 1; i++) {
+        const seg = pathSegs[i];
+        if (typeof seg === 'number') {
+          if (!Array.isArray(cursor)) return prev;
+          cursor = cursor[seg];
+        } else {
+          if (!cursor[seg] || typeof cursor[seg] !== 'object' || Array.isArray(cursor[seg])) cursor[seg] = {};
+          cursor = cursor[seg];
+        }
+      }
+      cursor[pathSegs[pathSegs.length - 1]] = value;
+      return next;
+    });
+  };
+
+  // Compute the diff between snapshot and draft as an array of edits
+  // for the /apply-edits endpoint.
+  const computeEdits = () => {
+    const edits = [];
+    const flat = (orig, edited, prefix = '') => {
+      // Walk only the fields we EXPOSE in the modal (whitelist by structure)
+      // — top-level scalar keys
+      const SCALAR_KEYS = ['sections', 'court', 'fir_number', 'fir_date',
+        'chargesheet_no', 'chargesheet_date', 'property_recovered',
+        'medical_findings', 'brief_facts'];
+      SCALAR_KEYS.forEach((k) => {
+        if (orig?.[k] !== edited?.[k] && (orig?.[k] != null || edited?.[k] != null)) {
+          edits.push({
+            path: prefix + k,
+            old_value: String(orig?.[k] ?? ''),
+            new_value: String(edited?.[k] ?? ''),
+          });
+        }
+      });
+      // io
+      ['name', 'rank'].forEach((k) => {
+        if ((orig?.io || {})[k] !== (edited?.io || {})[k]) {
+          edits.push({
+            path: `${prefix}io.${k}`,
+            old_value: String((orig?.io || {})[k] ?? ''),
+            new_value: String((edited?.io || {})[k] ?? ''),
+          });
+        }
+      });
+      // complainant
+      const COMP_KEYS = ['name', 'father_name', 'age', 'caste', 'address', 'phone'];
+      COMP_KEYS.forEach((k) => {
+        if ((orig?.complainant || {})[k] !== (edited?.complainant || {})[k]) {
+          edits.push({
+            path: `${prefix}complainant.${k}`,
+            old_value: String((orig?.complainant || {})[k] ?? ''),
+            new_value: String((edited?.complainant || {})[k] ?? ''),
+          });
+        }
+      });
+      // accused
+      (edited?.accused || []).forEach((a, i) => {
+        const o = (orig?.accused || [])[i] || {};
+        ['name', 'father_name', 'age', 'caste', 'occupation', 'address', 'phone'].forEach((k) => {
+          if (o[k] !== a[k]) {
+            edits.push({
+              path: `${prefix}accused[${i}].${k}`,
+              old_value: String(o[k] ?? ''),
+              new_value: String(a[k] ?? ''),
+            });
+          }
+        });
+      });
+      // witnesses (limit to civilians' name/caste/phone — keep payload small)
+      (edited?.witnesses || []).forEach((w, i) => {
+        const o = (orig?.witnesses || [])[i] || {};
+        ['name', 'caste', 'phone', 'address'].forEach((k) => {
+          if (o[k] !== w[k]) {
+            edits.push({
+              path: `${prefix}witnesses[${i}].${k}`,
+              old_value: String(o[k] ?? ''),
+              new_value: String(w[k] ?? ''),
+            });
+          }
+        });
+      });
+    };
+    flat(snapshot || {}, draft || {});
+    return edits;
+  };
+
+  const edits = computeEdits();
+  const hasChanges = edits.length > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      data-testid="review-edit-modal"
+    >
+      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col rounded-xl border border-white/15 bg-gradient-to-br from-[#0d1330] to-[#070b1e] shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-white/10">
+          <div>
+            <h3 className="text-white font-bold text-base">Review &amp; Edit Extracted Data</h3>
+            <p className="text-white/55 text-xs mt-0.5">
+              FIR {firNumber || ''} · {edits.length} field{edits.length === 1 ? '' : 's'} edited so far ·
+              {' '}Edits cascade through Brief Facts at save time (no LLM call).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-white/60 hover:text-white text-2xl leading-none px-2"
+            data-testid="review-modal-close"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body — scrollable */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* Top scalars */}
+          <div className="grid grid-cols-2 gap-3">
+            <_ReviewField
+              label="07 Sections (final)"
+              value={draft.sections || ''}
+              onChange={(v) => setField(['sections'], v)}
+              testid="review-sections"
+            />
+            <_ReviewField
+              label="13 Court"
+              value={draft.court || ''}
+              onChange={(v) => setField(['court'], v)}
+              testid="review-court"
+            />
+            <_ReviewField
+              label="01 FIR No."
+              value={draft.fir_number || ''}
+              onChange={(v) => setField(['fir_number'], v)}
+              testid="review-fir-number"
+            />
+            <_ReviewField
+              label="01 FIR Date"
+              value={draft.fir_date || ''}
+              onChange={(v) => setField(['fir_date'], v)}
+              testid="review-fir-date"
+            />
+          </div>
+
+          {/* IO */}
+          <div>
+            <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider mb-2">Investigating Officer</p>
+            <div className="grid grid-cols-2 gap-3">
+              <_ReviewField
+                label="IO Name"
+                value={draft.io?.name || ''}
+                onChange={(v) => setField(['io', 'name'], v)}
+                testid="review-io-name"
+              />
+              <_ReviewField
+                label="IO Rank"
+                value={draft.io?.rank || ''}
+                onChange={(v) => setField(['io', 'rank'], v)}
+                testid="review-io-rank"
+              />
+            </div>
+          </div>
+
+          {/* Complainant */}
+          <div>
+            <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider mb-2">Complainant (LW-1)</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['name', 'Name'], ['father_name', 'Father / Spouse'],
+                ['age', 'Age'], ['caste', 'Caste'],
+                ['address', 'Address'], ['phone', 'Phone'],
+              ].map(([k, lbl]) => (
+                <_ReviewField
+                  key={k}
+                  label={lbl}
+                  value={draft.complainant?.[k] || ''}
+                  onChange={(v) => setField(['complainant', k], v)}
+                  testid={`review-complainant-${k.replaceAll('_', '-')}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Accused list */}
+          {(draft.accused || []).length > 0 && (
+            <div>
+              <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider mb-2">
+                Accused ({(draft.accused || []).length})
+              </p>
+              <div className="space-y-3">
+                {(draft.accused || []).map((a, i) => (
+                  <div
+                    key={i}
+                    className="p-3 rounded-md bg-white/[0.025] border border-white/10"
+                    data-testid={`review-accused-${i}`}
+                  >
+                    <p className="text-[#FF8800] text-[10px] font-bold uppercase mb-2">A{i + 1}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        ['name', 'Name'], ['father_name', 'Father / Spouse'],
+                        ['age', 'Age'], ['caste', 'Caste'],
+                        ['occupation', 'Occupation'], ['address', 'Address'],
+                        ['phone', 'Phone'],
+                      ].map(([k, lbl]) => (
+                        <_ReviewField
+                          key={k}
+                          label={lbl}
+                          value={a[k] || ''}
+                          onChange={(v) => {
+                            const next = JSON.parse(JSON.stringify(draft.accused || []));
+                            next[i] = { ...(next[i] || {}), [k]: v };
+                            setField(['accused'], next);
+                          }}
+                          testid={`review-accused-${i}-${k.replaceAll('_', '-')}`}
+                          compact
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Witness list (slim) */}
+          {(draft.witnesses || []).length > 0 && (
+            <div>
+              <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider mb-2">
+                Witnesses ({(draft.witnesses || []).length}) — edit civilian rows; official rows (police/doctor) are auto-locked
+              </p>
+              <div className="space-y-2">
+                {(draft.witnesses || []).map((w, i) => {
+                  const isOfficial = !!(w.rank || w.station) && !(w.father_name || w.caste);
+                  return (
+                    <div
+                      key={i}
+                      className={
+                        'p-2.5 rounded-md border ' +
+                        (isOfficial
+                          ? 'bg-white/[0.015] border-white/5 opacity-70'
+                          : 'bg-white/[0.025] border-white/10')
+                      }
+                      data-testid={`review-witness-${i}`}
+                    >
+                      <p className="text-[#00FFB3] text-[10px] font-bold uppercase mb-2">
+                        LW-{i + 1} · {w.role || (isOfficial ? 'Official' : 'Civilian')}
+                        {isOfficial && <span className="text-white/40 ml-2">(locked)</span>}
+                      </p>
+                      <div className="grid grid-cols-4 gap-2">
+                        <_ReviewField
+                          label="Name"
+                          value={w.name || ''}
+                          onChange={(v) => {
+                            const next = JSON.parse(JSON.stringify(draft.witnesses || []));
+                            next[i] = { ...(next[i] || {}), name: v };
+                            setField(['witnesses'], next);
+                          }}
+                          testid={`review-witness-${i}-name`}
+                          disabled={isOfficial}
+                          compact
+                        />
+                        {!isOfficial && (
+                          <>
+                            <_ReviewField
+                              label="Caste"
+                              value={w.caste || ''}
+                              onChange={(v) => {
+                                const next = JSON.parse(JSON.stringify(draft.witnesses || []));
+                                next[i] = { ...(next[i] || {}), caste: v };
+                                setField(['witnesses'], next);
+                              }}
+                              testid={`review-witness-${i}-caste`}
+                              compact
+                            />
+                            <_ReviewField
+                              label="Phone"
+                              value={w.phone || ''}
+                              onChange={(v) => {
+                                const next = JSON.parse(JSON.stringify(draft.witnesses || []));
+                                next[i] = { ...(next[i] || {}), phone: v };
+                                setField(['witnesses'], next);
+                              }}
+                              testid={`review-witness-${i}-phone`}
+                              compact
+                            />
+                            <_ReviewField
+                              label="Address"
+                              value={w.address || ''}
+                              onChange={(v) => {
+                                const next = JSON.parse(JSON.stringify(draft.witnesses || []));
+                                next[i] = { ...(next[i] || {}), address: v };
+                                setField(['witnesses'], next);
+                              }}
+                              testid={`review-witness-${i}-address`}
+                              compact
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Brief facts excerpt */}
+          <div>
+            <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider mb-2">
+              Brief Facts (full narrative — heavy edits should use Re-extract instead)
+            </p>
+            <textarea
+              className="w-full h-44 bg-[#030614] border border-white/15 rounded-md p-3 text-white/85 text-xs font-mono resize-y"
+              value={draft.brief_facts || ''}
+              onChange={(e) => setField(['brief_facts'], e.target.value)}
+              data-testid="review-brief-facts"
+            />
+            <p className="text-white/35 text-[10px] mt-1">
+              Tip: small textual fixes (names, dates, sections) are best done here. For wholesale
+              rephrasing or new paragraphs, click <em>Re-extract with LLM</em> below instead.
+            </p>
+          </div>
+        </div>
+
+        {/* Footer actions */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-t border-white/10 bg-black/30">
+          <div className="text-white/45 text-[11px]">
+            <span className="text-[#00FFB3] font-bold">{edits.length}</span> change{edits.length === 1 ? '' : 's'} pending ·
+            {' '}{hasChanges
+              ? 'Save & Download cascades them through Brief Facts (0 credits)'
+              : 'No changes yet — Download will deliver the AI-generated DOCX as-is'}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-2 rounded-md border border-white/15 text-white/70 hover:text-white hover:bg-white/5 text-xs"
+              data-testid="review-modal-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => onSavedDownload(edits)}
+              className="px-4 py-2 rounded-md bg-gradient-to-r from-[#00FFB3] to-[#00C2FF] text-black font-bold text-xs disabled:opacity-60"
+              data-testid="review-modal-save-download"
+            >
+              {saving
+                ? 'Saving…'
+                : hasChanges
+                  ? `Save ${edits.length} edit${edits.length === 1 ? '' : 's'} & Download`
+                  : 'Download as-is'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Small input cell used inside the modal — kept private (`_`) so it
+// can't be mistakenly imported elsewhere.
+const _ReviewField = ({ label, value, onChange, testid, compact, disabled }) => (
+  <div>
+    <label className={`text-white/45 ${compact ? 'text-[9px]' : 'text-[10px]'} uppercase tracking-wide block mb-1`}>
+      {label}
+    </label>
+    <input
+      type="text"
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={
+        'w-full bg-[#030614] border border-white/15 rounded text-white ' +
+        (compact ? 'h-7 text-[11px] px-2' : 'h-8 text-xs px-2.5') +
+        ' focus:outline-none focus:border-[#00FFB3]/50 disabled:opacity-50 disabled:cursor-not-allowed'
+      }
+      data-testid={testid}
+    />
+  </div>
+);
+
 const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extractedData, onDownload, caseId, onStartNewCase }) => {
   const [smartLoading, setSmartLoading] = React.useState(false);
   const [diaryLoading, setDiaryLoading] = React.useState(false);
@@ -1300,6 +1727,25 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
   const [smartElapsed, setSmartElapsed] = React.useState(0);
   const [diaryElapsed, setDiaryElapsed] = React.useState(0);
   const [remandElapsed, setRemandElapsed] = React.useState(0);
+  // 2026-06 — Careful mode (Phase 3 Option A "Pause before render"):
+  //   - 'fast'    : default — auto-download as soon as generation finishes
+  //   - 'careful' : after generation, suppress the download and pop a
+  //                 Review & Edit modal. Writer tweaks fields and either
+  //                 (a) saves edits without a second LLM call (cheap path,
+  //                     via POST /staging/apply-edits/{case_id}) and
+  //                     downloads, OR
+  //                 (b) clicks Re-extract which goes through the existing
+  //                     /regenerate-charge-sheet (full LLM cascade).
+  const [genMode, setGenMode] = React.useState(() => {
+    try { return localStorage.getItem('np_gen_mode') || 'fast'; }
+    catch { return 'fast'; }
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('np_gen_mode', genMode); } catch { /* private mode */ }
+  }, [genMode]);
+  const [reviewModalOpen, setReviewModalOpen] = React.useState(false);
+  const [reviewSnapshot, setReviewSnapshot] = React.useState(null); // structured_data from backend
+  const [reviewSaving, setReviewSaving] = React.useState(false);
 
   // Live elapsed-time counters so the user sees real progress, not a stuck "~20s" hint
   React.useEffect(() => {
@@ -1421,22 +1867,27 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         }
       }
 
-      // STEP 3 — download the saved DOCX
-      const dl = await api.get(
-        `/staging/intelligent-chargesheet/${caseId}/download`,
-        { responseType: 'blob', timeout: 60000 }
-      );
-      const blob = new Blob([dl.data], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentChargeSheet.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      // STEP 3 — In FAST mode, auto-download immediately.
+      //          In CAREFUL mode, fetch the structured data + open the
+      //          Review & Edit modal first; download happens after the
+      //          writer clicks Confirm.
+      if (genMode === 'fast') {
+        const dl = await api.get(
+          `/staging/intelligent-chargesheet/${caseId}/download`,
+          { responseType: 'blob', timeout: 60000 }
+        );
+        const blob = new Blob([dl.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentChargeSheet.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
 
       // STEP 4 — fetch the corrections list + Layer 2/3 review for the panel
       try {
@@ -1450,10 +1901,20 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         if (meta.data?.field_confidence && Object.keys(meta.data.field_confidence).length) {
           setFieldConfidence(meta.data.field_confidence);
         }
+        // CAREFUL MODE — snapshot the structured_data and open the
+        // Review & Edit modal. The writer must click Confirm to download.
+        if (genMode === 'careful' && meta.data?.structured_data) {
+          setReviewSnapshot(meta.data.structured_data);
+          setReviewModalOpen(true);
+        }
       } catch (e) { /* non-critical */ }
 
       setHasChargeSheet(true);
-      toast.success('Station-format charge sheet generated & downloaded');
+      if (genMode === 'careful') {
+        toast.success('Extracted data ready — review the editable fields below before downloading');
+      } else {
+        toast.success('Station-format charge sheet generated & downloaded');
+      }
     } catch (error) {
       let msg = error.response?.data?.detail || error.message || 'Intelligent generation failed';
       if (error.response?.data instanceof Blob) {
@@ -1552,6 +2013,69 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
     }
   };
 
+  // 2026-06 — Careful mode handler. Persists edits + downloads via the
+  // no-LLM /apply-edits endpoint, then refreshes corrections + review.
+  const handleSaveEditsAndDownload = async (edits) => {
+    if (!caseId) return;
+    setReviewSaving(true);
+    try {
+      if (!edits || edits.length === 0) {
+        // No edits — just download the already-generated DOCX
+        const dl = await api.get(
+          `/staging/intelligent-chargesheet/${caseId}/download`,
+          { responseType: 'blob', timeout: 60000 }
+        );
+        const blob = new Blob([dl.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(firNumber || 'case').replaceAll('/', '-')}_IntelligentChargeSheet.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success('Downloaded (no edits — 0 credits)');
+      } else {
+        const resp = await api.post(
+          `/staging/apply-edits/${caseId}`,
+          { edits },
+          { responseType: 'blob', timeout: 60000 }
+        );
+        const blob = new Blob([resp.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(firNumber || 'case').replaceAll('/', '-')}_ChargeSheet_edited.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success(`${edits.length} edit${edits.length === 1 ? '' : 's'} applied & downloaded — 0 LLM credits used`);
+
+        // Refresh corrections list so the panel reflects the new history
+        try {
+          const meta = await api.get(`/staging/intelligent-chargesheet/${caseId}`);
+          if (meta.data?.corrections_applied?.length) {
+            setCorrections(meta.data.corrections_applied);
+          }
+        } catch (e) { /* non-critical */ }
+      }
+      setReviewModalOpen(false);
+    } catch (error) {
+      let msg = error.response?.data?.detail || 'Save & Download failed';
+      if (error.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await error.response.data.text()).detail || msg; } catch (e) { /* ignore */ }
+      }
+      toast.error(msg);
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-lg" data-testid="fusion-completed-view">
       <div className="text-center mb-6 relative">
@@ -1613,6 +2137,43 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
             </p>
           </div>
         </div>
+
+        {/* 2026-06 — FAST / CAREFUL mode toggle (Phase 3 Option A) */}
+        <div
+          className="mb-3 grid grid-cols-2 gap-2 p-1 rounded-md bg-[#030614]/70 border border-white/10"
+          data-testid="gen-mode-toggle"
+        >
+          {[
+            {
+              v: 'fast',
+              label: 'Fast',
+              hint: 'Auto-download — no review step',
+            },
+            {
+              v: 'careful',
+              label: 'Careful',
+              hint: 'Review & edit before download',
+            },
+          ].map(({ v, label, hint }) => (
+            <button
+              key={v}
+              type="button"
+              disabled={smartLoading}
+              onClick={() => setGenMode(v)}
+              className={
+                'px-3 py-2 rounded text-left transition-colors ' +
+                (genMode === v
+                  ? 'bg-[#FFB800]/15 border border-[#FFB800]/50 text-[#FFB800]'
+                  : 'border border-transparent text-white/55 hover:bg-white/5')
+              }
+              data-testid={`gen-mode-${v}`}
+            >
+              <div className="text-xs font-bold uppercase tracking-wider">{label}</div>
+              <div className="text-[10px] text-white/55 mt-0.5 leading-tight">{hint}</div>
+            </button>
+          ))}
+        </div>
+
         <Button
           onClick={downloadSmartChargeSheet}
           disabled={smartLoading}
@@ -1621,6 +2182,8 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
         >
           {smartLoading ? (
             <><Loader2 className="animate-spin mr-2" size={16} /> Running AI · {smartElapsed}s elapsed...</>
+          ) : genMode === 'careful' ? (
+            <><Sparkles size={16} className="mr-2" /> Generate &amp; Review (Careful mode)</>
           ) : (
             <><Sparkles size={16} className="mr-2" /> Generate Station-Format Charge Sheet</>
           )}
@@ -1859,6 +2422,20 @@ const FusionCompletedView = ({ firNumber, creditsUsed, documentsCount, extracted
           Remand Case Diary
         </Button>
       </div>
+
+      {/* 2026-06 — REVIEW & EDIT MODAL (Careful mode only) — `key` ties
+          the modal's local patch state to the current snapshot so each
+          new generation starts with a clean slate. */}
+      <ReviewAndEditModal
+        key={`review-${reviewSnapshot?.fir_number || ''}-${reviewSnapshot?.brief_facts?.length || 0}`}
+        open={reviewModalOpen}
+        snapshot={reviewSnapshot}
+        caseId={caseId}
+        firNumber={firNumber}
+        onClose={() => setReviewModalOpen(false)}
+        onSavedDownload={handleSaveEditsAndDownload}
+        saving={reviewSaving}
+      />
     </div>
   );
 };

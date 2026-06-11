@@ -1985,6 +1985,199 @@ async def regenerate_charge_sheet(
 
 
 # =====================================================================
+# APPLY-EDITS (CHEAP PATH — no LLM, no credits)
+# Phase-3 "Careful mode" companion to /regenerate-charge-sheet.
+#
+# Use case: writer opens the "Review & Edit Extracted Data" modal,
+# tweaks a handful of fields (e.g., complainant caste, accused phone,
+# court name), and clicks "Save edits & Download". We:
+#   1. Load the saved structured_data from MongoDB.
+#   2. Apply each edit by dot-path (sets nested keys).
+#   3. Cascade the old→new value through brief_facts via simple
+#      string replacement so the narrative stays consistent.
+#   4. Re-render the DOCX via the existing fixed_layout_renderer
+#      (NO LLM call — no OpenAI tokens consumed).
+#   5. Persist updated structured_data back to MongoDB.
+#   6. Return the fresh DOCX bytes.
+#
+# For semantic / multi-paragraph rewrites the writer should still
+# use /regenerate-charge-sheet (which DOES run the LLM cascade).
+# =====================================================================
+class _EditItem(BaseModel):
+    path: str          # dot-notation, e.g., "complainant.caste" or
+                       # "accused[0].phone" or "sections"
+    old_value: str = ""  # current value (used for brief_facts cascade)
+    new_value: str = ""  # writer's correction
+
+
+class _ApplyEditsRequest(BaseModel):
+    edits: List[_EditItem]
+
+
+def _set_by_path(obj, path: str, new_value):
+    """Set a value inside a nested dict/list by dot+bracket notation.
+
+    Supports:
+      "sections"                → obj['sections']
+      "complainant.caste"       → obj['complainant']['caste']
+      "accused[0].phone"        → obj['accused'][0]['phone']
+      "witnesses[2].name"       → obj['witnesses'][2]['name']
+
+    Silently creates nested dicts but never expands lists (a write
+    to accused[5] when the list has 2 items is a no-op).
+    """
+    import re as _re
+    # Split path into tokens — handles bracket indices
+    tokens = []
+    for chunk in path.split('.'):
+        m = _re.match(r'^([A-Za-z_][A-Za-z0-9_]*)((?:\[\d+\])+)?$', chunk)
+        if not m:
+            return False  # malformed token — skip
+        key, brackets = m.group(1), m.group(2)
+        tokens.append(('key', key))
+        if brackets:
+            for idx in _re.findall(r'\[(\d+)\]', brackets):
+                tokens.append(('idx', int(idx)))
+    if not tokens:
+        return False
+    cursor = obj
+    for kind, t in tokens[:-1]:
+        if kind == 'key':
+            if not isinstance(cursor, dict):
+                return False
+            if t not in cursor or not isinstance(cursor[t], (dict, list)):
+                cursor[t] = {}
+            cursor = cursor[t]
+        else:  # idx
+            if not isinstance(cursor, list) or t >= len(cursor):
+                return False
+            cursor = cursor[t]
+    kind, t = tokens[-1]
+    if kind == 'key':
+        if not isinstance(cursor, dict):
+            return False
+        cursor[t] = new_value
+        return True
+    else:
+        if not isinstance(cursor, list) or t >= len(cursor):
+            return False
+        cursor[t] = new_value
+        return True
+
+
+@router.post("/apply-edits/{case_id}")
+async def apply_edits(
+    case_id: str,
+    body: _ApplyEditsRequest,
+    officer: dict = Depends(get_current_officer),
+):
+    """
+    Apply lightweight field-level edits to a generated chargesheet
+    WITHOUT calling the LLM, then re-render the DOCX.
+
+    Cost: 0 credits, 0 OpenAI tokens.
+    """
+    officer_id = officer.get("officer_id", "unknown")
+    folder = get_case_folder(officer_id, case_id)
+    if not folder.exists():
+        raise HTTPException(status_code=404, detail="Case folder not found")
+    if not body.edits:
+        raise HTTPException(status_code=400, detail="Provide at least one edit")
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Load the previously-generated chargesheet JSON
+    prev = await db.intelligent_chargesheets.find_one(
+        {"case_id": case_id, "officer_id": officer_id},
+        sort=[("created_at", -1)],
+    )
+    if not prev or not prev.get("structured_data"):
+        raise HTTPException(
+            status_code=404,
+            detail="No prior chargesheet found to edit. Run the generator first.",
+        )
+
+    cs_data = dict(prev["structured_data"])
+
+    # 1) Apply each edit to the JSON tree
+    applied = []
+    skipped = []
+    for edit in body.edits:
+        path = (edit.path or "").strip()
+        if not path:
+            continue
+        ok = _set_by_path(cs_data, path, edit.new_value)
+        (applied if ok else skipped).append(path)
+
+    # 2) Brief-facts cascade — replace any non-trivial old→new strings
+    bf = cs_data.get("brief_facts", "")
+    if isinstance(bf, str) and bf:
+        for edit in body.edits:
+            ov = (edit.old_value or "").strip()
+            nv = (edit.new_value or "").strip()
+            # Only cascade when both sides are meaningful (>=2 chars)
+            # AND they actually differ. Skip empty/whitespace-only cases.
+            if len(ov) >= 2 and len(nv) >= 2 and ov != nv and ov in bf:
+                bf = bf.replace(ov, nv)
+        cs_data["brief_facts"] = bf
+
+    # 3) Track this edit batch on the corrections_applied list (so the
+    #    UI's correction history shows it alongside LLM regenerations)
+    existing_corrections = list(cs_data.get("corrections_applied") or [])
+    for edit in body.edits:
+        if edit.path in applied:
+            existing_corrections.append(
+                f"Manual edit · {edit.path}: "
+                f"'{(edit.old_value or '').strip()[:40]}' → "
+                f"'{(edit.new_value or '').strip()[:40]}'"
+            )
+    cs_data["corrections_applied"] = existing_corrections
+
+    # 4) Re-render the DOCX (no LLM)
+    try:
+        from services.fixed_layout_renderer import render_charge_sheet as render_authentic_charge_sheet
+        from fastapi.responses import Response
+
+        cs_data = _scrub_v4_placeholders(cs_data)
+        adapted = _adapt_llm_schema_to_fixed_layout(cs_data)
+        docx_bytes = render_authentic_charge_sheet(adapted)
+
+        # 5) Persist updated structured_data back
+        await db.intelligent_chargesheets.update_one(
+            {"_id": prev["_id"]},
+            {"$set": {
+                "structured_data": cs_data,
+                "corrections_applied": existing_corrections,
+                "last_edited_at": datetime.now(timezone.utc).isoformat(),
+                "last_edit_path": "apply-edits (no-LLM)",
+            }},
+        )
+
+        logger.info(
+            f"[ICGS-APPLY-EDITS] case {case_id}: applied {len(applied)} edits "
+            f"(skipped {len(skipped)}) — 0 LLM credits used"
+        )
+
+        fname = f"ChargeSheet_{cs_data.get('fir_number', case_id)}_edited.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{fname}"',
+                "X-Edits-Applied": str(len(applied)),
+                "X-Edits-Skipped": str(len(skipped)),
+                "X-Cost": "0-credits-no-llm",
+            },
+        )
+    except Exception as e:
+        logger.exception(f"[ICGS-APPLY-EDITS] render failed for case {case_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Apply-edits render failed: {str(e)}",
+        )
+
+
+# =====================================================================
 # V4.0 helpers — defensive placeholder scrubber + cache wipe
 # =====================================================================
 _V4_PLACEHOLDER_TOKENS = (
