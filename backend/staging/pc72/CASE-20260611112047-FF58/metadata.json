@@ -1,0 +1,87 @@
+{
+  "case_id": "CASE-20260611112047-FF58",
+  "officer_id": "pc72",
+  "police_station": "Makthal",
+  "district": "Narayanpet",
+  "fir_number": "249/2025",
+  "sections": "125(a) BNS",
+  "manual_input": {
+    "district": "Narayanpet",
+    "police_station": "Makthal",
+    "fir_number": "249/2025",
+    "fir_date": "2025-09-15",
+    "chargesheet_no": "25",
+    "chargesheet_date": "2026-06-09",
+    "sections": "125(a) BNS",
+    "report_type": "Charge Sheet",
+    "un_occurred_reason": "----",
+    "chargesheet_type": "Original",
+    "io_name": "B. Balaram",
+    "io_rank": "HC 693",
+    "court_name": "JUDICIAL FIRST CLASS MAGISTRATE AT MAKTHAL",
+    "dispatch_date": "2026-06-11",
+    "ack_enclosed": "No",
+    "is_death_case": false
+  },
+  "created_at": "2026-06-11T11:20:47.126135+00:00",
+  "status": "completed",
+  "files": [
+    {
+      "original_name": "Signed-PS_2028045-FIR_249_2025-1757949310.pdf",
+      "saved_name": "9e90badb_Signed-PS_2028045-FIR_249_2025-1757949310.pdf",
+      "size": 673844,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T11:21:04.189244+00:00",
+      "ocr_text": "FIRST\tINFORMATION\tREPORT\n(Under\tsection\t173\tand\t176\tBNSS)\nT.S.P.M.\tOrders\t\n470,500\n1.\nDistrict\nNarayanpet\nP.S.\nMakthal\nYear\n2025\nFIR\tNo.\n249/2025\nDate\n15-09-2025\n2.\nActs\t&\tSection(s):\n125(a)\tBNS\n3.\na)\tOccurrence\tof\tOffence:\nDay\nTuesday\nDate\t&\tTime\tFrom\n09-09-2025\t11:00:00\nDate\t&\tTime\tTo\nPrior\tTo\nTime\tPeriod\nb)\tInformation\tReceived\tat\tP.S.:\nDate\t&\tTime\n15-09-2025\t10:00:00\nGeneral\tDiary\tReference:\nEntry\tNo\n4\nDate\t&\tTime\n15-09-2025\t10:00:00\n4.\nType\tof\tInformation:\nWritten\n5.\nPlace\tof\tOccurrence:\na)\tDistance\tand\tDirection\tFrom\tP.S.:\n1\tkm,\tWest\nBeat\tNo.\nb)\tAddress\nPlace\nArea/Mandal\nMakthal\nStreet/Village\nMakthal\nCity/District\nNARAYANPET\nState\nTelangana\nPIN\nc)\tIn\tcase,\toutside\tthe\tlimit\tof\tthis\tPolice\tStation,\tthen\nName\tof\tP.S.\nDistrict\n6.\nComplainant\t/\tInformant:\na)\nName\nSrinivas\tKarni\nb)\nFather's\t/Husband's\tName\nKarni\tThimmaiah\nc)\nDate/Year\tof\tBirth\nAge\n40\tYears\nd)\nNationality\nIndia\ne)\tCaste\nMadiga\nf)\nPassport\tNo\nDate\tof\tIssue\nPlace\tof\tIssue\ng)\nOccupation\nPrivate\tEmployee\nMobile\tNo.\n9440655712\nh)\nAddress\nHouse\tNo\n1-00\nArea/Mandal\nMakthal\nStreet/Village\nMadhawar\nCity/District\nNARAYANPET\nState\nTELANGANA\nPIN\n7.\nDetails\tof\tknown/suspected/unknown\taccused\twith\tfull\t\nparticulars:\nSerial\tNo\t:\n1\na)\nName\nDriver\tof\tbus\tbr.no.AR01T-7055\nb)\nFather's\t/Husband's\tName\nc)\nOccupation\nd)\tCaste\ne)\tGender\nMale\nf)\nAge\nNationality\nIndia\ng)\nAddress\nHouse\tNo\nStreet/Village\nArea/Mandal\nCity/District\nState\nPIN\nh)\nPhone(Off)\nPhone(Resi)\nCell\tNo\ni)\nEmail\nPhysical\tfeatures,\tdeformities\tand\tother\tdetails\tof\tthe\tSuspect:\nS.\tNo.\nSex\nDate/Year\tof\nBirth\nBuild\nHeight\n(cms)\nComplexion\nIdentification\nMarks(s)\n1\n2\n3\n4\n5\n6\n7\n1\nMale\nDeformalities/\nPeculiarities\nTeeth\nHair\nEyes\nHabbit(s)\nDress\nHabit(s)\nLanguages/\nDialect\n8\n9\n10\n11\n12\n13\n14\nPlace\tOf\nBurn\tMark\nLeucoderma\nMole\nScar\nTattoo\n15\n16\n17\n18\n19\n8.\nReasons\tfor\tdelay\tin\treporting\tby\tthe\tcomplainant\t/\tinformant:\nComplainant\ttook\ttreatment\tin\tthe\thospital\thence\tdelay.\n9.\nParticulars\tof\tproperties\tstolen/involved\t(Attach\tseparate\t\nsheet,\tif\tnecessary):\n10.\nTotal\tvalue\tof\tproperty\tstolen:\n11.\n14.\nSignature\t/\tThumb\timpression\tof\tthe\ncomplainant\t/\tinformant.\nSignature\tof\tOfficer\tin\tcharge,\tPolice\tStation\nName\nYEDDULA\tBHAGYALAKSHMI\nREDDY\nInquest\tReport/\tU.D.\tCase\n12.\nContents\tof\tthe\tcomplaint\t/\tstatement\tof\tthe\tcomplainant\tor\t\ninformant:\nIN\tTHE\tCOURT\tOF\tADDL.JUDICIAL\tFIRST\tCLASS\tMAGISTRATE\tAT\tNARAYANAPET.\tHonored\tSir,\t\nThe\nbrief\tfacts\tof\tthe\tcase\tare\tthat\ton\t15.09.2025\tat\t10:00\thours\tthe\tcomplainant\tKarni\tSrinivas\tS/o\tKarni\tThimmaiah,\nAge:\t40\tyears,\tCaste:\tSC-Madiga,\tOcc:\tPrivate\temployee\tR/o\tMadwar\tvillage,\tMakthal\tmandal,\tPh.9440655712\ncame\tto\tMakthal\tPS\tand\tlodged\ta\tTelugu\twritten\tpetition\tin\twhich\the\tstated\tthat\ton\t09.09.2025\tat\t11:00\thours\the\ncame\tto\tSociety\tOffice,\tMakthal\tfor\turea\tand\ttook\tinformation\tabout\turea.\tWhile\treturning\ton\this\tbike\ton\n09.09.2025\tat\t11:40\thours\tbefore\tthe\toffice\ton\tNH-167\ta\ttourist\tbus\tbelonging\tto\tHRIDDY\tTOURS\tAND\nTRAVELS\tbr.no.AR01T-7055\tits\tdriver\tovertaking\ta\tlorry\tbeside\tit\tin\ta\trash\tand\tnegligent\tmanner\tdashed\this\tbike\nby\twhich\the\treceived\tsevere\tbleeding\tinjury\tto\this\tleft\tleg.\tHe\ttook\ttreatment\tin\tthe\thospital\tso\tcame\ttoday\tto\tlodge\npetition.\tHence\trequested\tto\ttake\tnecessary\tlegal\taction\tas\tper\tlaw.\t\nReceived\ton\t15.09.2025\tat\t10:00\thours:\t\nAs\tper\nthe\tcontents\tof\tthe\tabove\tpetition,\tI,\tSIP\tof\tMakthal\tPS\tregistered\ta\tcase\tin\tCr.No.249/2025\tU/s\t125(a)\tBNS\tand\nfurther\tinvestigation\tentrusted\tto\tB.Balram,\tHC-693.\t\nSd/-\t\nY.Bhagyalakshmi\tReddy,\tSub-Inspector\tof\tPolice,\nMAKTHAL\tP.S.\n13.\nAction\ttaken:\nSince\tThe\tabove\tinformation\treveals\tcommission\tof\toffence(s)\tU/s\t\nas\tmentioned\tat\titem\tNo:\n1)\nRegistered\tthe\tcase\tand\ttook\tup\tthe\tinvestigation\tor\nName\nBANDI\tBALRAM\n2)\nDirected\tto\ttake\tup\tthe\tInvestigation\tor\nRank:\nHC\nNo.\n693\n3)\nRefused\tinvestigation\tdue\tto\n4)\nTransferred\tto\tP.S\nDistrict\non\tpoint\tof\tjurisdiction.\nF.I.R.\tread\tover\tto\tthe\tcomplainant\t/\tinformant,\tadmitted\tto\tbe\t\ncorrectly\trecorded\t\nand\ta\tcopy\tgiven\tto\tthe\tcomplainant\t/informant,\t\nfree\tof\tcost.\tR.O.A.C\nRank\nSI\nNo\n4872\n15.\nDate\tand\ttime\tof\tdispatch\tto\tthe\tcourt:\n15-09-2025\t12:00:00"
+    },
+    {
+      "original_name": "249 bail.pdf",
+      "saved_name": "2d030aaa_249 bail.pdf",
+      "size": 1865901,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T11:21:04.190982+00:00",
+      "ocr_text": "[PDF OCR error: Unable to get page count. Is poppler installed and in PATH?]"
+    },
+    {
+      "original_name": "249 mc.pdf",
+      "saved_name": "13a13439_249 mc.pdf",
+      "size": 1880742,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T11:21:04.192652+00:00",
+      "ocr_text": "[PDF OCR error: Unable to get page count. Is poppler installed and in PATH?]"
+    },
+    {
+      "original_name": "249 cdf.pdf",
+      "saved_name": "a35baa27_249 cdf.pdf",
+      "size": 963256,
+      "type": ".pdf",
+      "uploaded_at": "2026-06-11T11:21:04.193178+00:00",
+      "ocr_text": "[PDF OCR error: Unable to get page count. Is poppler installed and in PATH?]"
+    },
+    {
+      "original_name": "WhatsApp Image 2026-06-11 at 1.16.17 PM (2).jpeg",
+      "saved_name": "b529cea1_WhatsApp Image 2026-06-11 at 1.16.17 PM (2).jpeg",
+      "size": 147459,
+      "type": ".jpeg",
+      "uploaded_at": "2026-06-11T11:21:04.193293+00:00",
+      "ocr_text": "CASE DIARY PART-II PS: Makthal I FIRNO: 249/25 circle: Makthal Dist : Narayanpet Statement of Sri. Kame Srinivas ·(madiga), OCC!- K. Thimaiah, age:-40 yrs, caste:- sc Private employee, R/o madwar village, makthal mandal, cell:- 9440655712 recorded by B. Balaram HC 693 of makthal PS on 15.09.2025 Did he make a statement during the investigation? Nari Madyar village, Muktal mandal, I went to the M Ac„ office in Makthal for Muria from my village on the morning of 09.09.2025 and did not find any information about Muriwagu. On the way back, I was on my bike Brino Te38 5773. On the way, on the morning of 09.09.25 at 11:40 am, a tourist bus bearing the number ARO1T 7055 overtook the lorry next to it and hit me very quickly and carelessly. As a result, my left leg was severely injured. Why did I not get treatment at the hospital today, i.e. on 15.09.25, I came and applied. Therefore, the bus driver made a statement that he was the one who was accused, and action should be taken. Ballam a ricer Investigation Ps Makthal."
+    },
+    {
+      "original_name": "WhatsApp Image 2026-06-11 at 1.16.17 PM (1).jpeg",
+      "saved_name": "e7d4c8c1_WhatsApp Image 2026-06-11 at 1.16.17 PM (1).jpeg",
+      "size": 156224,
+      "type": ".jpeg",
+      "uploaded_at": "2026-06-11T11:21:04.193395+00:00",
+      "ocr_text": "CASE DTARY PART-II Ps: makthal FIRNO: 249/2025 Circle: Makthal Dist: Narayanpet Statement of Gudise Rama Krishna So Gr. Yerra Thayappa, age:- Baps, caste:- Sc-madiga occ:- RMP Doctor Y/o Madwar village, Now at Yellamma -Kunta, Makthal toon cell:- 9505146315 recorded by B. Balaram Hc693 of makthal ps on 15.09.2025 at Soc Vuntanu. Ai has made a statement during the investigation, hasn&#39;t he! If it is Madwar village, then I am a villager of Yellamma Kunta in Makeka town. Aiuna Kanni Srinivas S/o K. 1852, Jason)-40 yrs, 5000-SC JODE, 528:- (2245 2-Draw 1/0 Madwar village garu Date: 09/09/25 at 11 am || I came to the society office in Maktal for mooriya and returned at 11:40 Tower MPDO office 500000 NH 167 a Travells Bus Brno AR01 T7055 06 3 Toño, while going, I got careless and hit the lorry going in front, and while going, my bike Bajaj friend (villager (Srinivas) had a blood clot in his left leg, so I got into a badr (psychiatric This accident happened due to speeding and carelessness. It was a terrible accident (Srinivas called me and immediately went to Du-Patri and took me to the police station. Investigation officer ps makthal."
+    },
+    {
+      "original_name": "WhatsApp Image 2026-06-11 at 1.16.17 PM.jpeg",
+      "saved_name": "64c917a4_WhatsApp Image 2026-06-11 at 1.16.17 PM.jpeg",
+      "size": 153375,
+      "type": ".jpeg",
+      "uploaded_at": "2026-06-11T11:21:04.193517+00:00",
+      "ocr_text": "CASE DIARY PART-II PS: Makthal FIRNO: 249/2025 Circle: Makthal Dist: Narayampet Statement of Sri Karne Balraj s/o occ:- mason, Laxmanna, ge :- 36yrs, caste:- Sc-madiga, 4/0 madwar village, makthal mandal cell:-9989413916 recorded by B. Balaram HC693 of makthal ps on 15.09.2025 at soc But he was informed about the investigation! My name is Madyar (village, I am a goat herder and I am a farmer and my brother Karne Srinivas S/o K. Thimmaiah, age - 40yrs o/o Madwar garu Date: 09/09/25 At 7 am in the morning, I went to the society office in Maktal on his plant Bjj CTiooz Grino T$3&amp; 5773 and went to the MPDO office in Maktal. Three times 7B: 09/09/25580 550500 -40502 -25000 91:40hr P My brother was coming to the MPDO office in Tane on the falcon At1167 when a travels bus BrinD ARO1 T 7055 HRIDDY Tours &amp; Travels Bus was driving very fast and carelessly and was going in front of the vehicle. While ticking, my brother gave a knock on the bike while he was going, and my brother said that his left leg was bleeding. Ba TR093 Investigation officer ps maktual."
+    }
+  ],
+  "fusion_transaction_id": "TXN-20260611112116-889f"
+}
